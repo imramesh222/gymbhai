@@ -1,0 +1,80 @@
+# Pinned so the Compose project name does not follow the directory name;
+# renaming the folder would otherwise orphan the pgdata volume.
+name: gymbahi
+
+x-backend: &backend
+  build:
+    context: ./backend
+    args:
+      INSTALL_DEV: "true"
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    # Development only: every member sign-in code is this, so the member app
+    # can be tried (and the end-to-end tests run) without an SMS gateway.
+    OTP_TEST_CODE: ${OTP_TEST_CODE:-246810}
+    # Inside the compose network the database host is the service name.
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gymbahi}:${POSTGRES_PASSWORD:-gymbahi}@db:5432/${POSTGRES_DB:-gymbahi}
+  volumes:
+    - ./backend:/app
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gymbahi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymbahi}
+      POSTGRES_DB: ${POSTGRES_DB:-gymbahi}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gymbahi} -d ${POSTGRES_DB:-gymbahi}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *backend
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # The slim image has no curl.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    <<: *backend
+    command: python -m app.worker
+    depends_on:
+      # Healthy api means migrations have run.
+      api:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    environment:
+      # Next.js proxies /api/* to this, so the browser only ever talks to one
+      # origin and the refresh cookie stays first-party.
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  pgdata:

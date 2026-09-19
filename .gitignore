@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+coverage/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# Env & local state
+.env
+.env.*
+!.env.example
+*.log
+
+# Uploaded files in development (member photos, logos)
+media/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

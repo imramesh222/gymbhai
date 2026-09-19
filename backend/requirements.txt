@@ -1,0 +1,20 @@
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+sqlalchemy==2.0.54
+alembic==1.20.0
+psycopg[binary]==3.3.6
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.3.0
+pyjwt==2.14.0
+bcrypt==5.0.0
+# zoneinfo needs a tz database, and the slim image has none.
+tzdata==2026.4
+# The Bikram Sambat calendar table (BS 1975-2100), for plan months and display.
+nepali-datetime==1.0.8.5
+# Multipart uploads: member photos, logos, payment QR images.
+python-multipart==0.0.32
+# Calls to the SMS gateways.
+httpx==0.28.1
+# Excel import and export (PLAN.md §1: "it's their data").
+openpyxl==3.1.5

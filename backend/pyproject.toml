@@ -1,0 +1,36 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "unit: no database, no network",
+    "integration: needs a live PostgreSQL",
+    "regression: pins a rule that must never break (tenancy, permissions)",
+]
+filterwarnings = [
+    "error",
+    # Raised inside Starlette's own TestClient, not by our code.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+# FastAPI's dependency-injection idiom is a call in an argument default.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Path",
+    "fastapi.Cookie",
+    "fastapi.File",
+    "app.api.deps.require",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]
+"tests/*" = ["E402"]
