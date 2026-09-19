@@ -43,7 +43,9 @@ export async function priceOneMonthPlan(page: Page, rupees: string) {
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(
     page.getByRole("button", {
-      name: new RegExp(`^1 month.*Rs ${new Intl.NumberFormat("en-IN").format(Number(rupees))}`),
+      name: new RegExp(
+        `^1 month.*Rs ${new Intl.NumberFormat("en-IN").format(Number(rupees))}`,
+      ),
     }),
   ).toBeVisible();
 }

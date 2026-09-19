@@ -28,6 +28,7 @@ from app.core.security import (
 )
 from app.core.time import utcnow
 from app.db.session import get_db
+from app.models.gym import GYM_ACTIVE, Gym
 from app.models.member import Member
 from app.models.member_app import Device, MemberSession
 from app.models.staff import StaffBranchAccess, StaffSession, StaffUser
@@ -74,6 +75,11 @@ def staff_context(
     if staff.gym_id is None:
         # A platform admin has no gym of their own; /admin routes serve them.
         raise AppError(403, "no_gym", "This account does not belong to a gym.")
+    gym = db.get(Gym, staff.gym_id)
+    if gym is None or gym.status != GYM_ACTIVE:
+        raise AppError(
+            403, "gym_suspended", "This gym's account is suspended. Contact GymBhai."
+        )
 
     branch_ids = frozenset(
         db.scalars(
@@ -119,7 +125,7 @@ def require(
             raise AppError(
                 402,
                 "subscription_lapsed",
-                "Your GymBahi subscription has lapsed. You can still see and export "
+                "Your GymBhai subscription has lapsed. You can still see and export "
                 "everything; pay to make changes again.",
             )
         for permission in permissions:
@@ -181,6 +187,9 @@ def current_device(
     ).first()
     if device is None or device.revoked_at is not None:
         raise unauthorized("device_revoked", "This device is no longer registered.")
+    gym = db.get(Gym, device.gym_id)
+    if gym is None or gym.status != GYM_ACTIVE:
+        raise AppError(403, "gym_suspended", "This gym's account is suspended.")
     device.last_seen_at = utcnow()
     return device
 

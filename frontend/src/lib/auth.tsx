@@ -59,16 +59,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    refreshSession()
-      .then((session) => {
-        if (!cancelled && session) apply(session);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Keep trying while the network is down: "signed out" only when the
+    // server says so, never because the Wi-Fi dropped for a moment.
+    const attempt = (delay: number) => {
+      refreshSession()
+        .then((session) => {
+          if (cancelled) return;
+          if (session) apply(session);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (!cancelled)
+            timer = setTimeout(() => attempt(Math.min(delay * 2, 15_000)), delay);
+        });
+    };
+    attempt(1000);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [apply]);
 

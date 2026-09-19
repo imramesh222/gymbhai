@@ -8,8 +8,10 @@ way to enumerate endpoints.
 from fastapi import APIRouter, FastAPI
 
 from app.api.routes import (
+    admin,
     auth,
     branches,
+    data,
     door,
     files,
     gym,
@@ -23,6 +25,7 @@ from app.api.routes import (
     payments,
     plans,
     staff,
+    subscription,
 )
 from app.core.config import settings
 
@@ -39,9 +42,12 @@ ROUTERS: list[tuple[str, APIRouter]] = [
     (settings.api_v1_prefix, memberships.router),
     (settings.api_v1_prefix, payments.router),
     (settings.api_v1_prefix, messaging.router),
+    (settings.api_v1_prefix, data.router),
     (settings.api_v1_prefix, door.router),
     (settings.api_v1_prefix, payment_requests.router),
     (settings.api_v1_prefix, member_app.router),
+    (settings.api_v1_prefix, subscription.router),
+    (settings.api_v1_prefix, admin.router),
     (settings.api_v1_prefix, files.router),
 ]
 

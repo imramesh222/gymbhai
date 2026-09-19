@@ -1,0 +1,34 @@
+# HTTPS for GymBhai (PLAN.md §3, §13). Caddy gets and renews the certificates.
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# The API directly, skipping the Next.js proxy: one hop fewer.
+	# TRUSTED_PROXY_COUNT=1 in .env.prod matches this single hop.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /health* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The kiosk and the staff scanner need the camera; nothing needs more.
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
+# The bare domain goes to the app until there is a marketing site.
+{$ROOT_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri}
+}

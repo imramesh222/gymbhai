@@ -9,6 +9,17 @@ from app.core.errors import AppError, app_error_handler, validation_error_handle
 
 logging.basicConfig(level=logging.INFO)
 
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    # Errors only; no request bodies, which hold phone numbers and payments.
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        send_default_pii=False,
+        traces_sample_rate=0.0,
+    )
+
 # No CORS middleware: the browser reaches the API through the Next.js server's
 # /api proxy, so every request is same-origin.
 app = FastAPI(

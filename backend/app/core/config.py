@@ -15,11 +15,11 @@ class Settings(BaseSettings):
         env_file=("../.env", ".env"), env_file_encoding="utf-8", extra="ignore"
     )
 
-    app_name: str = "GymBahi"
+    app_name: str = "GymBhai"
     environment: Literal["local", "test", "staging", "production"] = "local"
     api_v1_prefix: str = "/api/v1"
 
-    database_url: str = "postgresql+psycopg://gymbahi:gymbahi@localhost:5433/gymbahi"
+    database_url: str = "postgresql+psycopg://gymbhai:gymbhai@localhost:5433/gymbhai"
 
     # --- Sessions (PLAN.md §11) ---
     secret_key: str = INSECURE_SECRET
@@ -33,8 +33,22 @@ class Settings(BaseSettings):
     trusted_proxy_count: int = 0
 
     # --- Files ---
+    # "local" keeps uploads on disk (development); "s3" in any S3-compatible
+    # bucket, e.g. Cloudflare R2 (production, PLAN.md §3).
+    storage_backend: Literal["local", "s3"] = "local"
     # Local directory for uploads in development (relative to backend/).
     media_root: str = "media"
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_region: str = "auto"
+    s3_bucket: str | None = None
+    # Daily database backups go here (PLAN.md §11), kept BACKUP_KEEP_DAYS.
+    backup_bucket: str | None = None
+    backup_keep_days: int = 30
+
+    # --- Monitoring ---
+    sentry_dsn: str | None = None
 
     # --- SMS (PLAN.md §15: gateway not chosen yet) ---
     sms_provider: Literal["console", "sparrow", "aakash"] = "console"
@@ -43,6 +57,10 @@ class Settings(BaseSettings):
     # the gateway and operators first (PLAN.md §10).
     sparrow_sender: str = "InfoSMS"
     aakash_token: str | None = None
+    # Where gyms pay us (PLAN.md §5.7), shown on their Subscription screen.
+    platform_pay_to_name: str | None = None
+    platform_pay_to_esewa: str | None = None
+    platform_pay_to_bank: str | None = None
     # SMS credits a new gym starts its trial with.
     trial_sms_credits: int = 50
 
@@ -55,7 +73,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str | None = None
     smtp_password: str | None = None
-    email_from: str = "GymBahi <no-reply@gymbahi.com>"
+    email_from: str = "GymBhai <no-reply@gymbhai.com>"
 
     # --- Member sign-in (§11) ---
     otp_minutes: int = 5
@@ -79,6 +97,10 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be set to a long random value.")
         if self.otp_test_code and self.environment not in ("local", "test"):
             raise ValueError("OTP_TEST_CODE is for local end-to-end tests only.")
+        if self.storage_backend == "s3" and not (
+            self.s3_bucket and self.s3_access_key_id and self.s3_secret_access_key
+        ):
+            raise ValueError("STORAGE_BACKEND=s3 needs S3_BUCKET and S3 keys.")
         return self
 
     @property

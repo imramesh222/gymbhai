@@ -21,7 +21,8 @@ export default function StaffLoginPage() {
 
   // Already signed in (a returning tab): go straight in.
   useEffect(() => {
-    if (!loading && me) router.replace("/staff");
+    if (!loading && me)
+      router.replace(me.staff.is_platform_admin ? "/admin" : "/staff");
   }, [loading, me, router]);
 
   async function submit(event: React.FormEvent) {
@@ -29,8 +30,8 @@ export default function StaffLoginPage() {
     setPending(true);
     setError(null);
     try {
-      await signIn(identifier, password);
-      router.push("/staff");
+      const signedIn = await signIn(identifier, password);
+      router.push(signedIn.staff.is_platform_admin ? "/admin" : "/staff");
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);

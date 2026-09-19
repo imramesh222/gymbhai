@@ -28,7 +28,7 @@ from app.core.config import settings
 from app.core.time import utcnow
 from app.models.job import Job
 
-log = logging.getLogger("gymbahi.worker")
+log = logging.getLogger("gymbhai.worker")
 
 Handler = Callable[[Session, dict[str, Any]], None]
 GiveUp = Callable[[Session, dict[str, Any], str], None]

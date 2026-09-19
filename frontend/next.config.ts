@@ -10,6 +10,8 @@ const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // A self-contained server for the production image (Dockerfile.prod).
+  output: "standalone",
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
   },

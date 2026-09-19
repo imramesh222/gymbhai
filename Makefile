@@ -11,8 +11,8 @@ COMPOSE := docker compose
 -include .env
 export
 
-.PHONY: help setup env deps db migrate migration up down logs ps \
-        test test-backend test-frontend e2e lint fmt admin shell psql
+.PHONY: help setup env deps db migrate migration migration-check up down logs ps \
+        test test-backend test-frontend e2e e2e-dev lint fmt admin shell psql
 
 help:  ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -35,11 +35,20 @@ db:  ## Start Postgres and wait for it
 	@docker info >/dev/null 2>&1 || { echo "Start Docker first."; exit 1; }
 	@$(COMPOSE) up -d db
 	@for i in $$(seq 1 30); do \
-		$(COMPOSE) exec -T db pg_isready -q -U "$${POSTGRES_USER:-gymbahi}" && exit 0; \
+		$(COMPOSE) exec -T db pg_isready -q -U "$${POSTGRES_USER:-gymbhai}" && exit 0; \
 		sleep 1; done; echo "postgres did not start: make logs"; exit 1
 
 migrate:  ## Apply migrations (host venv)
 	@cd backend && ../$(PY) -m alembic upgrade head
+
+migration-check:  ## Migrations apply, match the models and roll back — in a scratch database
+	@# Never against the development database: `downgrade base` empties it.
+	@$(COMPOSE) exec -T db psql -q -U "$${POSTGRES_USER:-gymbhai}" -d postgres \
+		-c "DROP DATABASE IF EXISTS gymbhai_migrations" -c "CREATE DATABASE gymbhai_migrations"
+	@cd backend && export DATABASE_URL="postgresql+psycopg://$${POSTGRES_USER:-gymbhai}:$${POSTGRES_PASSWORD:-gymbhai}@localhost:$${POSTGRES_PORT:-5433}/gymbhai_migrations" \
+		&& ../$(PY) -m alembic upgrade head && ../$(PY) -m alembic check \
+		&& ../$(PY) -m alembic downgrade base && ../$(PY) -m alembic upgrade head
+	@echo "migrations ok"
 
 migration:  ## New migration from model changes: make migration m="add members"
 	@cd backend && ../$(PY) -m alembic revision --autogenerate -m "$(m)"
@@ -67,7 +76,12 @@ test-backend:  ## pytest (needs `make db`)
 test-frontend:  ## Vitest
 	@cd frontend && npm test --silent
 
-e2e:  ## Playwright against the running stack (`make up` first)
+e2e:  ## Playwright against a production build of the web app (as in CI)
+	@$(COMPOSE) -f docker-compose.yml -f docker-compose.e2e.yml up -d --wait web
+	@cd frontend && npx playwright test; status=$$?; \
+		cd .. && $(COMPOSE) up -d web >/dev/null; exit $$status
+
+e2e-dev:  ## Playwright against the dev server as it is (slower, can flake)
 	@cd frontend && npx playwright test
 
 lint:  ## ruff, eslint, tsc
@@ -88,4 +102,4 @@ shell:  ## Shell in the api container
 	@$(COMPOSE) exec api bash
 
 psql:  ## psql into the dev database
-	@$(COMPOSE) exec db psql -U "$${POSTGRES_USER:-gymbahi}" "$${POSTGRES_DB:-gymbahi}"
+	@$(COMPOSE) exec db psql -U "$${POSTGRES_USER:-gymbhai}" "$${POSTGRES_DB:-gymbhai}"

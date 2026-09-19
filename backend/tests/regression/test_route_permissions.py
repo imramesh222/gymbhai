@@ -6,7 +6,12 @@ A new route fails this test until it either declares what it needs with
 
 from fastapi.dependencies.models import Dependant
 
-from app.api.deps import current_device, current_member, current_staff
+from app.api.deps import (
+    current_device,
+    current_member,
+    current_staff,
+    require_platform_admin,
+)
 from tests.routes import all_routes
 
 # No sign-in at all.
@@ -71,6 +76,11 @@ def test_every_route_is_accounted_for() -> None:
             # The member app: signed in as a member, never as staff.
             assert current_member in calls and current_staff not in calls, (
                 f"{method} {path} is a member route without member sign-in"
+            )
+        elif path.startswith("/api/v1/admin/"):
+            # Us: every gym. Never reachable with a gym staff account.
+            assert require_platform_admin in calls, (
+                f"{method} {path} is an admin route without the admin check"
             )
         elif path.startswith("/api/v1/kiosk/"):
             # A door scanner: it can check people in and nothing else (§4.3).

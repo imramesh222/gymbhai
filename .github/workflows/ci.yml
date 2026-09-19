@@ -15,15 +15,15 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: gymbahi
-          POSTGRES_PASSWORD: gymbahi
-          POSTGRES_DB: gymbahi
+          POSTGRES_USER: gymbhai
+          POSTGRES_PASSWORD: gymbhai
+          POSTGRES_DB: gymbhai
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U gymbahi" --health-interval 3s
+          --health-cmd "pg_isready -U gymbhai" --health-interval 3s
           --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: postgresql+psycopg://gymbahi:gymbahi@localhost:5432/gymbahi
+      DATABASE_URL: postgresql+psycopg://gymbhai:gymbhai@localhost:5432/gymbhai
     defaults:
       run:
         working-directory: backend
@@ -73,19 +73,23 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: gymbahi
-          POSTGRES_PASSWORD: gymbahi
-          POSTGRES_DB: gymbahi
+          POSTGRES_USER: gymbhai
+          POSTGRES_PASSWORD: gymbhai
+          POSTGRES_DB: gymbhai
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U gymbahi" --health-interval 3s
+          --health-cmd "pg_isready -U gymbhai" --health-interval 3s
           --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: postgresql+psycopg://gymbahi:gymbahi@localhost:5432/gymbahi
+      DATABASE_URL: postgresql+psycopg://gymbhai:gymbhai@localhost:5432/gymbhai
       # Read by `next build`, which fixes the /api rewrite at build time.
       API_INTERNAL_URL: http://localhost:8000
       # The member sign-in code in end-to-end tests (refused in production).
       OTP_TEST_CODE: "246810"
+      # Every e2e request comes from one address.
+      OTP_PER_IP: "1000"
+      E2E_ADMIN_EMAIL: e2e-admin@gymbhai.com
+      E2E_ADMIN_PASSWORD: e2e-admin-password-123
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -103,6 +107,8 @@ jobs:
         run: |
           pip install -r requirements.txt
           alembic upgrade head
+          echo "$E2E_ADMIN_PASSWORD" | python -m scripts.create_platform_admin \
+            --name "E2E admin" --email "$E2E_ADMIN_EMAIL" --password-stdin
           nohup uvicorn app.main:app --port 8000 > ../api.log 2>&1 &
           nohup python -m app.worker > ../worker.log 2>&1 &
       - name: Build and start the web app
@@ -126,11 +132,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: frontend/playwright-report
+          path: .e2e/report
 
   images:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: The Docker images build
+      - name: The development images build
         run: docker compose build
+      - name: The production images build
+        run: |
+          cp .env.prod.example .env.prod
+          docker compose -f docker-compose.prod.yml --env-file .env.prod build

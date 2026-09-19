@@ -1,6 +1,6 @@
 # Pinned so the Compose project name does not follow the directory name;
 # renaming the folder would otherwise orphan the pgdata volume.
-name: gymbahi
+name: gymbhai
 
 x-backend: &backend
   build:
@@ -14,8 +14,11 @@ x-backend: &backend
     # Development only: every member sign-in code is this, so the member app
     # can be tried (and the end-to-end tests run) without an SMS gateway.
     OTP_TEST_CODE: ${OTP_TEST_CODE:-246810}
+    # Development and end-to-end runs send every request from one address;
+    # production keeps the default of 20 codes per address per 15 minutes.
+    OTP_PER_IP: ${OTP_PER_IP:-1000}
     # Inside the compose network the database host is the service name.
-    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gymbahi}:${POSTGRES_PASSWORD:-gymbahi}@db:5432/${POSTGRES_DB:-gymbahi}
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gymbhai}:${POSTGRES_PASSWORD:-gymbhai}@db:5432/${POSTGRES_DB:-gymbhai}
   volumes:
     - ./backend:/app
 
@@ -23,15 +26,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-gymbahi}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymbahi}
-      POSTGRES_DB: ${POSTGRES_DB:-gymbahi}
+      POSTGRES_USER: ${POSTGRES_USER:-gymbhai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymbhai}
+      POSTGRES_DB: ${POSTGRES_DB:-gymbhai}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gymbahi} -d ${POSTGRES_DB:-gymbahi}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gymbhai} -d ${POSTGRES_DB:-gymbhai}"]
       interval: 3s
       timeout: 3s
       retries: 20

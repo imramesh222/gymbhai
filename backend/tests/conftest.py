@@ -269,3 +269,29 @@ def sell(db: Session, fixture: "GymFixture", member, *, paid: int = 0, **sale):
     )
     db.commit()
     return membership, payment_row
+
+
+@pytest.fixture
+def platform_admin(db: Session) -> StaffUser:
+    admin = StaffUser(
+        name="GymBhai admin",
+        email="admin@gymbhai.com",
+        password_hash=shared_password_hash(),
+        is_platform_admin=True,
+    )
+    db.add(admin)
+    db.commit()
+    return admin
+
+
+def lapse(db: Session, gym: Gym, days_ago: int = 30) -> None:
+    """End the gym's subscription `days_ago` days ago (past the 7-day grace)."""
+    import datetime as dt
+
+    from app.core.time import today_in_nepal
+    from app.services import subscription
+
+    row = subscription.latest(db, gym.id)
+    row.starts_on = today_in_nepal() - dt.timedelta(days=days_ago + 14)
+    row.ends_on = today_in_nepal() - dt.timedelta(days=days_ago)
+    db.commit()

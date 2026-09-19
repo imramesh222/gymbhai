@@ -18,3 +18,7 @@ python-multipart==0.0.32
 httpx==0.28.1
 # Excel import and export (PLAN.md §1: "it's their data").
 openpyxl==3.1.5
+# S3-compatible storage (Cloudflare R2) for photos and backups in production.
+boto3==1.43.98
+# Error tracking, only when SENTRY_DSN is set.
+sentry-sdk[fastapi]==2.69.2

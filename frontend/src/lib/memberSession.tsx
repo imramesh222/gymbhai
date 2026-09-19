@@ -18,7 +18,7 @@ import {
 
 import { memberApi, memberClient, type MemberMe, type MemberSignIn } from "./memberApi";
 
-const storageKey = (slug: string) => `gymbahi.member.${slug}`;
+const storageKey = (slug: string) => `gymbhai.member.${slug}`;
 
 function remember(slug: string, me: MemberMe | null) {
   try {
@@ -80,16 +80,23 @@ export function MemberProvider({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const session = await memberClient.refreshSession();
+      let session;
+      try {
+        session = await memberClient.refreshSession();
+      } catch {
+        // No signal (or the server can't be reached): show what we had, QR
+        // included. The member is signed out only if the server says so.
+        if (cancelled) return;
+        const saved = recall(slug);
+        setMe(saved);
+        setOffline(Boolean(saved));
+        setLoading(false);
+        return;
+      }
       if (cancelled) return;
       if (session?.me && session.me.gym.slug === slug) {
         apply(session.me);
         setOffline(false);
-      } else if (session === null && !navigator.onLine) {
-        // No signal: show what we had, QR included.
-        const saved = recall(slug);
-        setMe(saved);
-        setOffline(Boolean(saved));
       } else {
         forget();
       }

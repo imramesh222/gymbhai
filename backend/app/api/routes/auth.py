@@ -16,10 +16,8 @@ from app.core.errors import AppError
 from app.core.permissions import effective_permissions
 from app.core.phone import normalize_phone
 from app.core.security import burn_password_check, hash_password, verify_password
-from app.core.time import today_in_nepal
 from app.db.session import get_db
-from app.models.billing import GymSubscription
-from app.models.gym import Gym
+from app.models.gym import GYM_ACTIVE, Gym
 from app.models.staff import StaffBranchAccess, StaffUser
 from app.schemas.auth import (
     GymRead,
@@ -31,7 +29,7 @@ from app.schemas.auth import (
     SubscriptionRead,
 )
 from app.schemas.staff import PasswordChange
-from app.services import activity, registration, sessions, storage
+from app.services import activity, registration, sessions, storage, subscription
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -71,22 +69,20 @@ def _gym_read(gym: Gym) -> GymRead:
 
 def build_me(db: Session, staff: StaffUser) -> Me:
     gym = db.get(Gym, staff.gym_id) if staff.gym_id else None
-    subscription = None
+    subscription_read = None
     branch_ids = None
     if gym is not None:
-        latest = db.scalars(
-            select(GymSubscription)
-            .where(GymSubscription.gym_id == gym.id)
-            .order_by(GymSubscription.ends_on.desc())
-        ).first()
-        if latest is not None:
-            days_left = (latest.ends_on - today_in_nepal()).days + 1
-            subscription = SubscriptionRead(
-                status=latest.status,
-                starts_on=latest.starts_on,
-                ends_on=latest.ends_on,
-                days_left=max(days_left, 0),
-            )
+        state = subscription.state(db, gym.id)
+        subscription_read = SubscriptionRead(
+            status=state.status,
+            plan_name=state.plan_name,
+            starts_on=state.starts_on,
+            ends_on=state.ends_on,
+            days_left=state.days_left,
+            phase=state.phase,
+            grace_ends_on=state.grace_ends_on,
+            over_limit=state.over_limit,
+        )
         if not staff.is_owner:
             rows = db.scalars(
                 select(StaffBranchAccess.branch_id).where(
@@ -105,7 +101,7 @@ def build_me(db: Session, staff: StaffUser) -> Me:
         gym=_gym_read(gym) if gym else None,
         permissions=permissions,
         branch_ids=branch_ids,
-        subscription=subscription,
+        subscription=subscription_read,
     )
 
 
@@ -169,6 +165,14 @@ def login(
         raise BAD_LOGIN
     if not staff.is_active:
         raise AppError(403, "account_disabled", "This account has been disabled.")
+    if staff.gym_id is not None:
+        gym = db.get(Gym, staff.gym_id)
+        if gym is not None and gym.status != GYM_ACTIVE:
+            raise AppError(
+                403,
+                "gym_suspended",
+                "This gym's account is suspended. Contact GymBhai.",
+            )
 
     issued = sessions.start(db, staff, request)
     activity.staff_action(

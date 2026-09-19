@@ -29,7 +29,7 @@ import { useAuth } from "@/lib/auth";
 import type { PublicGym } from "@/lib/memberApi";
 import { useLoad } from "@/lib/useLoad";
 
-const TOKEN_KEY = "gymbahi.kiosk";
+const TOKEN_KEY = "gymbhai.kiosk";
 const SHOW_FOR_MS = 3000;
 
 function storedToken(): string | null {

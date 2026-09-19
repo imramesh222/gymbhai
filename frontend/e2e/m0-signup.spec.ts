@@ -7,17 +7,13 @@ test("sign up a gym, sign out, sign back in with the phone number", async ({
 }) => {
   const gym = await signUpGym(page);
 
-  await expect(
-    page.getByRole("heading", { name: "Welcome, Sita Sharma" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome, Sita" })).toBeVisible();
   await expect(page.getByText("14 days left in your free trial.")).toBeVisible();
-  await expect(page.getByText(`app.gymbahi.com/${gym.slug}`)).toBeVisible();
+  await expect(page.getByText(`app.gymbhai.com/${gym.slug}`)).toBeVisible();
 
   // A reload keeps the session: the refresh cookie restores it.
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Welcome, Sita Sharma" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome, Sita" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.waitForURL("**/staff/login");

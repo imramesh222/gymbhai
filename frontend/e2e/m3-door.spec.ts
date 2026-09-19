@@ -95,8 +95,17 @@ test("renew from the app, approve at the desk", async ({ browser }) => {
   const gym = await signUpGym(desk, "AD");
   await priceOneMonthPlan(desk, "1500");
   await desk.goto("/staff/settings");
-  await desk.getByRole("button", { name: "Add" }).nth(1).click(); // payment accounts
+  await desk
+    .locator("section", { hasText: "Your payment accounts" })
+    .getByRole("button", { name: "Add", exact: true })
+    .click();
   await desk.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+  // Wait for it to be saved: leaving the page at once can cancel the request.
+  await expect(
+    desk
+      .locator("section", { hasText: "Your payment accounts" })
+      .getByText("Upload QR"),
+  ).toBeVisible();
 
   const phone = `98${randomDigits(8)}`;
   await desk.goto("/staff/members/new");

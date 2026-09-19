@@ -16,7 +16,7 @@ import { useLoad } from "@/lib/useLoad";
 
 /**
  * Plans -> the gym's payment QR -> transaction ID or screenshot -> waiting for
- * the gym to confirm (§5.2). The money goes to the gym, never to GymBahi.
+ * the gym to confirm (§5.2). The money goes to the gym, never to GymBhai.
  */
 export default function RenewPage() {
   const { me } = useMember();

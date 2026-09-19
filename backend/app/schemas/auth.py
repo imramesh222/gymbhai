@@ -103,10 +103,15 @@ class GymRead(BaseModel):
 
 class SubscriptionRead(BaseModel):
     status: str
-    starts_on: date
-    ends_on: date
+    plan_name: str | None = None
+    starts_on: date | None
+    ends_on: date | None
     # Including today; 0 once it has ended.
     days_left: int
+    # ok, ending (a week or less left), grace, read_only (PLAN.md §5.7).
+    phase: str = "ok"
+    grace_ends_on: date | None = None
+    over_limit: bool = False
 
 
 class StaffRead(BaseModel):

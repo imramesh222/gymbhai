@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { RequireStaff } from "@/components/staff/RequireStaff";
+import { SubscriptionBanner } from "@/components/staff/SubscriptionBanner";
 import { t, type MessageKey } from "@/i18n";
 import { paymentRequestsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -28,9 +29,12 @@ const NAV: NavItem[] = [
   },
   { href: "/staff/payments", label: "nav.payments", anyOf: ["reports.money"] },
   { href: "/staff/attendance", label: "nav.attendance", anyOf: ["members.view"] },
+  { href: "/staff/reports", label: "nav.reports", anyOf: ["reports.money"] },
   { href: "/staff/notices", label: "nav.notices", anyOf: ["messages.notices"] },
   { href: "/staff/sms", label: "nav.sms", anyOf: ["messages.sms"] },
   { href: "/staff/team", label: "nav.staff", anyOf: ["staff.manage"] },
+  { href: "/staff/data", label: "nav.data", anyOf: ["members.view"] },
+  { href: "/staff/subscription", label: "nav.subscription", anyOf: ["setup.gym"] },
   {
     href: "/staff/settings",
     label: "nav.settings",
@@ -132,6 +136,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <RequireStaff>
       <Header />
+      <SubscriptionBanner />
       <main className="mx-auto max-w-6xl px-4 py-6 print:max-w-none print:p-0">
         {children}
       </main>

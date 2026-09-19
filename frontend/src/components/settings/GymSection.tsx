@@ -7,7 +7,7 @@ import { Choice } from "@/components/Choice";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
-import { Select } from "@/components/ui/inputs";
+import { Checkbox, Select } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import {
   errorMessage,
@@ -29,6 +29,7 @@ export function GymSection({ gym }: { gym: Gym }) {
     plan_months: gym.settings.plan_months,
     date_display: gym.settings.date_display,
     member_code_prefix: gym.settings.member_code_prefix,
+    daily_summary_sms: gym.settings.daily_summary_sms,
   });
   const [message, setMessage] = useState<{
     tone: "success" | "error";
@@ -46,6 +47,7 @@ export function GymSection({ gym }: { gym: Gym }) {
           plan_months: form.plan_months,
           date_display: form.date_display,
           member_code_prefix: form.member_code_prefix.toUpperCase(),
+          daily_summary_sms: form.daily_summary_sms,
         },
       });
       await refreshMe();
@@ -149,6 +151,12 @@ export function GymSection({ gym }: { gym: Gym }) {
             { value: "ad", label: t("signup.dateDisplay.ad") },
             { value: "both", label: t("signup.dateDisplay.both") },
           ]}
+        />
+        <Checkbox
+          label={t("settings.dailySummary")}
+          checked={form.daily_summary_sms}
+          onChange={(daily_summary_sms) => setForm({ ...form, daily_summary_sms })}
+          hint={t("settings.dailySummaryHelp")}
         />
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <Button type="submit">{t("common.save")}</Button>

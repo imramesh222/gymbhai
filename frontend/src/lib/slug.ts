@@ -12,5 +12,5 @@ export function slugify(name: string): string {
 
 /** Where a gym's member app lives. */
 export function memberAppUrl(slug: string): string {
-  return `app.gymbahi.com/${slug || "…"}`;
+  return `app.gymbhai.com/${slug || "…"}`;
 }

@@ -4,7 +4,7 @@ import { isMessageKey, plural, t } from "./index";
 
 describe("t", () => {
   it("returns the English text", () => {
-    expect(t("app.name")).toBe("GymBahi");
+    expect(t("app.name")).toBe("GymBhai");
   });
 
   it("fills in variables and leaves unknown ones visible", () => {

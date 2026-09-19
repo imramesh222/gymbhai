@@ -1,5 +1,5 @@
 /**
- * Talking to the GymBahi API.
+ * Talking to the GymBhai API.
  *
  * Requests go to /api/* on this origin; Next.js forwards them to FastAPI
  * (next.config.ts). The access token lives only in memory. The refresh token
@@ -35,6 +35,7 @@ export interface GymSettings {
   rescan_minutes: number;
   reminder_language: "en" | "ne";
   member_code_prefix: string;
+  daily_summary_sms: boolean;
 }
 
 export interface Gym {
@@ -61,9 +62,13 @@ export interface Staff {
 
 export interface Subscription {
   status: string;
-  starts_on: string;
-  ends_on: string;
+  plan_name: string | null;
+  starts_on: string | null;
+  ends_on: string | null;
   days_left: number;
+  phase: "ok" | "ending" | "grace" | "read_only";
+  grace_ends_on: string | null;
+  over_limit: boolean;
 }
 
 export interface Me {
@@ -108,25 +113,36 @@ export function createClient<S extends { access_token: string | null }>(options:
   let onSessionLost: (() => void) | null = null;
   let refreshing: Promise<S | null> | null = null;
 
+  /**
+   * A new access token from the refresh cookie. Null means the session is
+   * over (the server said 401). Anything else — no signal, a timeout, a
+   * server error — throws ApiError "network": a flaky gym Wi-Fi must never
+   * sign the desk out.
+   */
   function refreshSession(): Promise<S | null> {
     // Concurrent callers share one request: the server rotates the cookie on
     // every refresh, and two overlapping refreshes would race each other.
     refreshing ??= (async () => {
       if (!options.refreshPath) return null;
       try {
-        const response = await fetch(options.refreshPath, {
-          method: "POST",
-          credentials: "same-origin",
-        });
-        if (!response.ok) {
+        let response: Response;
+        try {
+          response = await fetch(options.refreshPath, {
+            method: "POST",
+            credentials: "same-origin",
+          });
+        } catch {
+          throw new ApiError(0, "network", t("errors.network"));
+        }
+        if (response.status === 401 || response.status === 403) {
           accessToken = null;
           return null;
         }
+        if (!response.ok)
+          throw new ApiError(response.status, "network", t("errors.network"));
         const session = (await response.json()) as S;
         accessToken = session.access_token;
         return session;
-      } catch {
-        return null;
       } finally {
         refreshing = null;
       }
@@ -168,6 +184,8 @@ export function createClient<S extends { access_token: string | null }>(options:
   return {
     request,
     refreshSession,
+    authHeader: (): Record<string, string> =>
+      accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     setAccessToken: (token: string | null) => {
       accessToken = token;
     },
@@ -195,6 +213,7 @@ export const request = staff.request;
 export const refreshSession = staff.refreshSession;
 export const setAccessToken = staff.setAccessToken;
 export const setSessionLostHandler = staff.setSessionLostHandler;
+const staffAuthHeader = staff.authHeader;
 
 /** A message for the person at the screen, in their language. */
 export function errorMessage(error: unknown): string {
@@ -816,4 +835,207 @@ export const accessApi = {
   card: (id: string) => request<CardInfo>(`/api/v1/members/${id}/card`),
   reissueCard: (id: string) =>
     request<CardInfo>(`/api/v1/members/${id}/card/reissue`, send("POST")),
+};
+
+// --- M4: Today, reports, data, subscription, platform admin ---------------------
+
+export interface TodayData {
+  date: string;
+  check_ins: number;
+  unique_visitors: number;
+  inside_now: { member_id: string; name: string; at: string }[];
+  due_today: number;
+  expiring_this_week: number;
+  turned_away: { member_id: string; name: string; at: string; result: string }[];
+  members_with_dues: number;
+  dues_total: number;
+  active_members: number;
+  collected: number | null;
+  collected_by_method: Record<string, number> | null;
+  pending_requests: number | null;
+}
+
+export interface MonthlyReport {
+  month: string;
+  calendar: "ad" | "bs";
+  first_day: string;
+  last_day: string;
+  income: number;
+  income_by_method: Record<string, number>;
+  new_members: number;
+  new_memberships: number;
+  renewals: number;
+  lapsed: number;
+  due_to_renew: number;
+  renewed: number;
+  renewal_rate: number | null;
+  active_members: number;
+  visits: number;
+  by_plan: Record<string, number>;
+}
+
+export interface ImportPreview {
+  id: string;
+  filename: string;
+  headers: string[];
+  mapping: Record<string, number | null>;
+  total_rows: number;
+  sample: string[][];
+  problems: [number, string][];
+  ready: number;
+  status: "preview" | "committed";
+  result: { created: number; skipped: number; problems: [number, string][] } | null;
+}
+
+export interface PlatformPlan {
+  id: string;
+  name: string;
+  max_active_members: number | null;
+  max_branches: number | null;
+  monthly_price: number | null;
+  included_sms: number;
+  is_active: boolean;
+}
+
+export interface SubscriptionPayment {
+  id: string;
+  gym_id: string;
+  kind: "subscription" | "sms";
+  platform_plan_id: string | null;
+  months: number | null;
+  sms_credits: number | null;
+  amount: number;
+  transaction_ref: string | null;
+  status: "pending" | "approved" | "rejected";
+  reject_reason: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  gym_name: string | null;
+  plan_name: string | null;
+}
+
+export interface SubscriptionOverview extends Omit<Subscription, "over_limit"> {
+  active_members: number;
+  max_active_members: number | null;
+  over_limit: boolean;
+  sms_balance: number;
+  plans: PlatformPlan[];
+  payments: SubscriptionPayment[];
+  pay_to: { name: string | null; esewa: string | null; bank: string | null };
+}
+
+export interface AdminGym {
+  id: string;
+  slug: string;
+  name: string;
+  status: "active" | "suspended";
+  owner_name: string | null;
+  owner_phone: string | null;
+  owner_email: string | null;
+  created_at: string;
+  subscription_status: string;
+  plan_name: string | null;
+  ends_on: string | null;
+  phase: Subscription["phase"];
+  active_members: number;
+  sms_balance: number;
+  pending_payments: number;
+}
+
+export const reportsApi = {
+  today: () => request<TodayData>("/api/v1/dashboard/today"),
+  monthly: (month?: string) =>
+    request<MonthlyReport>(`/api/v1/reports/monthly${query({ month })}`),
+  exportUrl: (kind: "members" | "memberships" | "payments" | "check-ins") =>
+    `/api/v1/export/${kind}.xlsx`,
+  /** Downloads through fetch, so the access token goes with it. */
+  download: async (kind: "members" | "memberships" | "payments" | "check-ins") => {
+    const response = await fetch(`/api/v1/export/${kind}.xlsx`, {
+      headers: staffAuthHeader(),
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw await toError(response);
+    const blob = await response.blob();
+    const name =
+      /filename="([^"]+)"/.exec(
+        response.headers.get("Content-Disposition") ?? "",
+      )?.[1] ?? `${kind}.xlsx`;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  },
+  uploadRegister: (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<ImportPreview>("/api/v1/members/import", {
+      method: "POST",
+      body: form,
+    });
+  },
+  previewRegister: (id: string, mapping: Record<string, number | null>) =>
+    request<ImportPreview>(
+      `/api/v1/members/import/${id}/preview`,
+      send("POST", { mapping }),
+    ),
+  commitRegister: (id: string, mapping: Record<string, number | null>) =>
+    request<ImportPreview>(
+      `/api/v1/members/import/${id}/commit`,
+      send("POST", { mapping }),
+    ),
+};
+
+export const subscriptionApi = {
+  overview: () => request<SubscriptionOverview>("/api/v1/subscription"),
+  pay: (body: {
+    kind: "subscription" | "sms";
+    platform_plan_id?: string | null;
+    months?: number | null;
+    sms_credits?: number | null;
+    amount: number;
+    transaction_ref: string;
+  }) =>
+    request<SubscriptionPayment>("/api/v1/subscription/payments", send("POST", body)),
+};
+
+export const adminApi = {
+  gyms: (q?: string) => request<AdminGym[]>(`/api/v1/admin/gyms${query({ q })}`),
+  grant: (
+    id: string,
+    body: { platform_plan_id?: string | null; months?: number; ends_on?: string },
+  ) => request<AdminGym>(`/api/v1/admin/gyms/${id}/subscription`, send("POST", body)),
+  credits: (id: string, credits: number, reason: string) =>
+    request<AdminGym>(
+      `/api/v1/admin/gyms/${id}/sms-credits`,
+      send("POST", { credits, reason }),
+    ),
+  suspend: (id: string, reason: string) =>
+    request<AdminGym>(`/api/v1/admin/gyms/${id}/suspend`, send("POST", { reason })),
+  unsuspend: (id: string) =>
+    request<AdminGym>(`/api/v1/admin/gyms/${id}/unsuspend`, send("POST")),
+  ownerPassword: (id: string, new_password: string) =>
+    request<void>(
+      `/api/v1/admin/gyms/${id}/owner-password`,
+      send("POST", { new_password }),
+    ),
+  payments: (status = "pending") =>
+    request<SubscriptionPayment[]>(
+      `/api/v1/admin/subscription-payments?status=${status}`,
+    ),
+  approve: (id: string) =>
+    request<SubscriptionPayment>(
+      `/api/v1/admin/subscription-payments/${id}/approve`,
+      send("POST", {}),
+    ),
+  reject: (id: string, reason: string) =>
+    request<SubscriptionPayment>(
+      `/api/v1/admin/subscription-payments/${id}/reject`,
+      send("POST", { reason }),
+    ),
+  plans: () => request<PlatformPlan[]>("/api/v1/admin/plans"),
+  createPlan: (body: Partial<PlatformPlan>) =>
+    request<PlatformPlan>("/api/v1/admin/plans", send("POST", body)),
+  updatePlan: (id: string, body: Partial<PlatformPlan>) =>
+    request<PlatformPlan>(`/api/v1/admin/plans/${id}`, send("PATCH", body)),
 };

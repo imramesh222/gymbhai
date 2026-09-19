@@ -90,3 +90,14 @@ def test_permission_changes_take_effect_on_the_next_request(
     db.commit()
     # Same token, no sign-in in between.
     assert client.patch("/api/v1/gym", json={"address": "Koteshwor"}).status_code == 403
+
+
+def test_the_daily_summary_can_be_turned_on(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    sign_in(db, client, gym_a.owner)
+    assert client.get("/api/v1/gym").json()["settings"]["daily_summary_sms"] is False
+    response = client.patch(
+        "/api/v1/gym", json={"settings": {"daily_summary_sms": True}}
+    )
+    assert response.json()["settings"]["daily_summary_sms"] is True

@@ -16,7 +16,7 @@ import httpx
 
 from app.core.config import settings
 
-log = logging.getLogger("gymbahi.sms")
+log = logging.getLogger("gymbhai.sms")
 
 
 class SmsError(Exception):

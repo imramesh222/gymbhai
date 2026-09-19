@@ -3,7 +3,8 @@
     docker compose exec api python -m scripts.create_platform_admin \
         --name "Ramesh" --email you@example.com
 
-Prompts for the password so it never lands in shell history.
+Prompts for the password so it never lands in shell history. For scripts,
+--password-stdin reads it from standard input instead.
 """
 
 import argparse
@@ -23,13 +24,18 @@ def main() -> int:
     parser.add_argument("--name", required=True)
     parser.add_argument("--email")
     parser.add_argument("--phone")
+    parser.add_argument("--password-stdin", action="store_true")
     args = parser.parse_args()
     if not args.email and not args.phone:
         parser.error("give --email or --phone")
 
     email = args.email.lower() if args.email else None
     phone = normalize_phone(args.phone) if args.phone else None
-    password = getpass.getpass("Password: ")
+    password = (
+        sys.stdin.readline().rstrip("\n")
+        if args.password_stdin
+        else getpass.getpass("Password: ")
+    )
     if len(password) < 12:
         print("Use at least 12 characters for a platform admin.", file=sys.stderr)
         return 1

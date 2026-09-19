@@ -28,6 +28,10 @@ SMS_REMINDER = "reminder"
 SMS_NOTICE = "notice"
 SMS_MANUAL = "manual"
 SMS_PAYMENT = "payment"
+# From GymBhai to the owner (subscription reminders): on us, like sign-in codes.
+SMS_PLATFORM = "platform"
+SMS_SUMMARY = "summary"
+FREE_KINDS = (SMS_OTP, SMS_PLATFORM)
 
 # Where it is.
 SMS_QUEUED = "queued"

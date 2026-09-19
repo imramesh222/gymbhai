@@ -1,6 +1,6 @@
-# GymBahi — implementation plan
+# GymBhai — implementation plan
 
-*Drafted 2026-09-19. Domain: gymbahi.com.*
+*Drafted 2026-09-19. Domain: gymbhai.com.*
 
 One product, used by many gyms. Each gym signs up, manages its members, collects fees and tracks visits; its members get a phone app with their membership, payments and a personal QR code for check-in. Gyms pay us monthly.
 
@@ -121,10 +121,10 @@ Staff sign in with email or phone and a password. Members sign in with a one-tim
 
 | URL | What |
 |---|---|
-| `app.gymbahi.com/fitness-zone` | Fitness Zone's member app; the gym QR opens this |
-| `app.gymbahi.com/staff` | Staff dashboard (gym comes from the login) |
-| `app.gymbahi.com/kiosk` | Door scanner on a registered tablet or phone |
-| `app.gymbahi.com/admin` | Platform admin |
+| `app.gymbhai.com/fitness-zone` | Fitness Zone's member app; the gym QR opens this |
+| `app.gymbhai.com/staff` | Staff dashboard (gym comes from the login) |
+| `app.gymbhai.com/kiosk` | Door scanner on a registered tablet or phone |
+| `app.gymbhai.com/admin` | Platform admin |
 
 Each gym's member app has its own web manifest (`/fitness-zone/manifest.webmanifest`), so "Add to Home Screen" installs an icon with **that gym's** name and logo.
 
@@ -136,7 +136,7 @@ Two kinds, as decided.
 
 ### 4.1 Gym QR (one per gym, one per branch)
 
-- Opens `app.gymbahi.com/<gym-slug>` (branch QR adds `?b=<branch>` so the app starts on that branch's notices).
+- Opens `app.gymbhai.com/<gym-slug>` (branch QR adds `?b=<branch>` so the app starts on that branch's notices).
 - Printed as an A4 poster from **Settings → QR poster**: gym logo, "Scan to see your membership", QR.
 - Used for: first sign-in, installing the app, a member who lost the welcome SMS.
 - Static. Nothing secret in it.
@@ -301,9 +301,12 @@ Same approach as members paying gyms: no gateway in v1.
 - **Free trial:** 14 days from sign-up (the day of sign-up and 13 more, in Nepal time), full features, no payment details asked. A trial is a `gym_subscriptions` row with no platform plan, so it works before any price is set.
 - **Paying:** the owner pays our eSewa / bank QR and sends the transaction ID from **Settings → Subscription** (or tells us). We check and activate from `/admin`; they get an SMS and email.
 - **Before it ends:** the owner sees a banner and gets an SMS 7 and 2 days before.
-- **If it lapses:** 7 days' grace with a red banner, then the staff dashboard becomes **read-only** — they can see and export everything but can't add members, renew or take payments until they pay.
+- **If it lapses:** 7 days' grace with a red banner, then the staff dashboard becomes **read-only** (enforced in `require()` for every change; the API answers 402 `subscription_lapsed`) — they can see and export everything but can't add members, renew or take payments until they pay.
 - **Members are never punished for the owner's unpaid bill:** the member app and door check-in keep working, so the gym never has an angry queue at the entrance. That protects our reputation with the gym's members too.
 - **Too many members for their tier:** a warning, never a lock-out; we talk to them about upgrading.
+- **Suspending** a gym (from `/admin`, for abuse) is different from an unpaid bill: staff can't sign in, and the member app and door stop too.
+- Reminders to the owner (7 and 2 days before, and when grace starts) and admin notices are SMS from us: they never use the gym's credits. The optional 8 pm daily summary is the gym's own SMS and does.
+- Where gyms pay us is configured with `PLATFORM_PAY_TO_NAME`, `PLATFORM_PAY_TO_ESEWA` and `PLATFORM_PAY_TO_BANK`.
 - **SMS credits** are topped up the same way and run separately; when they run out, reminders and notices stop and the owner is told — nothing else is affected.
 - **Sign-in codes are never blocked** by a gym's SMS credit or subscription — they're on us (and rate-limited, §11), because a member who can't sign in can't see their QR at the door.
 
@@ -373,7 +376,8 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 |---|---|
 | `platform_plans` | `name`, `max_active_members`, `max_branches`, `monthly_price`, `included_sms`, `is_active` — **all prices live here and are edited from `/admin`; none are written into the code**, so pricing can be set and changed any time |
 | `gym_subscriptions` | `gym_id`, `platform_plan_id`, `starts_on`, `ends_on`, `status` |
-| `subscription_payments` | `gym_id`, `platform_plan_id`, `months`, `amount`, `transaction_ref`, `screenshot_url`, `status` (pending, approved, rejected), `reviewed_at`, `reject_reason` — an owner's "we've paid you" (§5.7) |
+| `subscription_payments` | `gym_id`, `kind` (subscription, sms), `platform_plan_id`, `months`, `sms_credits`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected), `submitted_by`, `reviewed_by`, `reviewed_at`, `reject_reason` — an owner's "we've paid you", for a plan or for SMS credits (§5.7) |
+| `member_imports` | `gym_id`, `filename`, `status` (preview, committed), `headers`, `rows`, `mapping`, `result`, `created_by`, `committed_at` — an uploaded register, checked before anything is saved |
 | `sms_credit_ledger` | `gym_id`, `change`, `reason`, `balance_after`, `sms_message_id` — top-ups and each SMS sent. The balance is the sum of `change` (rows written in one transaction share a timestamp, so "the latest row" is not reliable); changes lock the gym row so two sends can't spend one credit |
 
 ---
@@ -398,7 +402,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | **Staff** | Staff accounts: add, disable, reset password; permission checklist and branch access per person, with *Manager* / *Front desk* / *Blank* starting points |
 | **Subscription** | Their plan with us, days left, pay and submit transaction ID, SMS credit balance and top-up |
 | **Settings** | Gym profile, logo and colour, calendar (plan counting and date display), branches, plans, payment methods and QR images, reminder rules and wording, check-in rules, QR poster, devices, SMS credits |
-| **Import / Export** | Upload an Excel/CSV register, map columns, preview, import members with their current expiry dates. Download members, memberships, payments and check-ins as Excel |
+| **Import / Export** | Upload an Excel/CSV register, map columns, preview, import members with their current expiry dates. Download members, memberships, payments and check-ins as Excel. Dates in a register may be AD or BS (a year of 2050 or more is read as BS). Imported memberships carry no price — what members paid before GymBhai isn't income in GymBhai — and no SMS is sent until the gym chooses "Resend welcome" |
 
 ### Member app (`/<gym-slug>`)
 
@@ -520,7 +524,7 @@ Platform admin
 
 ## 10. Nepal-specific details
 
-- **Dates:** always stored in AD; shown and counted per the gym's choice (§5.1). Python: `nepali-datetime`. Frontend: a BS converter package, with a date picker in AD or BS to match the gym. Report months follow the gym's calendar.
+- **Dates:** always stored in AD; shown and counted per the gym's choice (§5.1). Gyms that show BS can also *enter* dates in BS (year, month, day of the BS calendar). Python: `nepali-datetime`. Frontend: a BS converter package, with a date picker in AD or BS to match the gym. Report months follow the gym's calendar.
 - **Time zone:** Asia/Kathmandu (+05:45) for every "today", reminder time and report boundary.
 - **Money:** Nepali grouping — Rs 1,00,000, not 100,000.
 - **SMS wording:** the welcome and "active until" SMS are gym settings (`welcome_sms`, `membership_sms`), editable with the reminder rules. The defaults stay within one SMS even with dates shown in AD and BS. New gyms start with 50 trial SMS credits (`TRIAL_SMS_CREDITS`).
@@ -571,6 +575,8 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M1 | Done 2026-09-19 |
 | M2 | Done 2026-09-19 |
 | M3 | Done 2026-09-19 |
+| M4 | Done 2026-09-20 |
+| M5 | Ready to deploy 2026-09-20: production stack (Caddy, R2 storage, nightly backups with restore, Sentry) verified locally; runbook in `docs/DEPLOY.md`, onboarding checklist in `docs/PILOT.md`. Waiting on: the server, the domain's DNS, the R2 buckets, an SMS gateway account (its adapter then tested live), and the pilot gyms |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -583,9 +589,10 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 - Frontend: Vitest + Testing Library for components.
 - End-to-end (Playwright), the one flow that must never break: *add member → take payment → member signs in → scans QR at kiosk → allowed; membership ends → scan denied.*
 - CI runs all of it on every push.
+- Migrations are checked (apply, match the models, roll back) in CI and with `make migration-check`, always in a scratch database: rolling back empties whatever database it runs in.
 
 **Deployment (first gyms)**
-- One VPS running Docker Compose, Caddy in front for HTTPS. Postgres on the same machine at first, with the off-site backups above; move to managed Postgres when there are enough gyms to justify it.
+- One VPS running Docker Compose (`docker-compose.prod.yml`), Caddy in front for HTTPS; Caddy sends `/api` straight to the API and everything else to the web app. Postgres on the same machine at first, with the off-site backups above (a `backup` container, 02:00 Nepal time, 30 days kept); move to managed Postgres when there are enough gyms to justify it. See `docs/DEPLOY.md`.
 - Domain, SMS gateway account with credit, S3-compatible storage for photos and backups.
 - Error tracking (Sentry free tier) and an uptime check.
 
@@ -616,7 +623,7 @@ All of these can be changed later.
 
 | Topic | Decision | What the build does now |
 |---|---|---|
-| **Name and domain** | **GymBahi**, `gymbahi.com` | Used in every URL, the member app and the code. Register the domain (and the Facebook / Instagram names) soon — it was free on 2026-09-19 |
+| **Name and domain** | **GymBhai**, `gymbhai.com` | Used in every URL, the member app and the code. Register the domain (and the Facebook / Instagram names) soon — it was free on 2026-09-19 |
 | **SMS gateway** | Later | Built ready: one SMS interface, `console` provider for development, Sparrow and Aakash adapters ready. Choosing one is an environment setting plus the account's API key. The adapters follow the gateways' published APIs but have not been run against a live account: send a test message before going live |
 | **Pricing** | Later | Plans with us are rows edited in `/admin`, never hard-coded; the trial works without any price set |
 | **Door hardware** | Later — maybe fingerprint or face | v1 ships QR (kiosk, staff phone, USB scanner, manual). The check-in service accepts other sources, so fingerprint / face readers plug in later (§4.3) |

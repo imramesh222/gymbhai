@@ -6,7 +6,7 @@ from email.message import EmailMessage
 
 from app.core.config import settings
 
-log = logging.getLogger("gymbahi.email")
+log = logging.getLogger("gymbhai.email")
 
 
 class EmailError(Exception):

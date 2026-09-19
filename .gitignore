@@ -26,6 +26,7 @@ blob-report/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 *.log
 
 # Uploaded files in development (member photos, logos)
@@ -35,3 +36,6 @@ media/
 .DS_Store
 .idea/
 .vscode/
+
+# Playwright output (kept outside frontend/, which the dev server watches)
+/.e2e/

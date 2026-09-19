@@ -13,6 +13,7 @@ from pydantic_core import to_jsonable_python
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.time import utcnow
 from app.models.activity import ACTOR_STAFF, ActivityLog
 from app.models.staff import StaffUser
 
@@ -69,6 +70,10 @@ def record(
         changes=to_jsonable_python(changes) if changes is not None else None,
         reason=reason,
         ip=client_ip(request),
+        # The real time, not the database's now(): that is fixed for a whole
+        # transaction, so entries written together would tie and the History
+        # tab could list them in either order.
+        at=utcnow(),
     )
     db.add(entry)
     return entry

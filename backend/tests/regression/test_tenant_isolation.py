@@ -20,6 +20,7 @@ from app.models.gym import Gym
 from app.models.member_app import Device, PaymentRequest
 from app.models.messaging import Notice, ReminderRule
 from app.models.payment import GymPaymentMethod
+from app.models.platform import MemberImport
 from app.services import memberships as ms
 from tests.conftest import (
     GymFixture,
@@ -74,7 +75,10 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
         amount=1500_00,
         status="pending",
     )
-    db.add_all([device, b_request])
+    b_import = MemberImport(
+        gym_id=gym_b.gym.id, filename="b.csv", headers=["Name"], rows=[["Ram"]]
+    )
+    db.add_all([device, b_request, b_import])
     db.commit()
     return World(
         ids={
@@ -90,6 +94,7 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
             "notice_id": notice.id,
             "device_id": device.id,
             "request_id": b_request.id,
+            "import_id": b_import.id,
         }
     )
 
@@ -144,6 +149,8 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("POST", "/api/v1/members/{member_id}/qr/reissue", None),
     ("POST", "/api/v1/members/{member_id}/card/reissue", None),
     ("GET", "/api/v1/members/{member_id}/card", None),
+    ("POST", "/api/v1/members/import/{import_id}/preview", {}),
+    ("POST", "/api/v1/members/import/{import_id}/commit", {}),
 ]
 
 # Id routes whose permission is not the gym at all.
@@ -154,6 +161,18 @@ NOT_GYM_SCOPED = {
     ("GET", "/api/v1/m/{slug}/logo"),
     ("POST", "/api/v1/m/{slug}/otp/request"),
     ("POST", "/api/v1/m/{slug}/otp/verify"),
+    # Not an id: which export (members, payments, ...), of the caller's gym.
+    ("GET", "/api/v1/export/{kind}.xlsx"),
+    # Platform admin: every gym, by design (test_platform_admin.py).
+    ("GET", "/api/v1/admin/gyms/{gym_id}"),
+    ("POST", "/api/v1/admin/gyms/{gym_id}/subscription"),
+    ("POST", "/api/v1/admin/gyms/{gym_id}/sms-credits"),
+    ("POST", "/api/v1/admin/gyms/{gym_id}/suspend"),
+    ("POST", "/api/v1/admin/gyms/{gym_id}/unsuspend"),
+    ("POST", "/api/v1/admin/gyms/{gym_id}/owner-password"),
+    ("POST", "/api/v1/admin/subscription-payments/{payment_id}/approve"),
+    ("POST", "/api/v1/admin/subscription-payments/{payment_id}/reject"),
+    ("PATCH", "/api/v1/admin/plans/{plan_id}"),
     # The member's own records: tests/regression/test_member_isolation.py.
     ("POST", "/api/v1/m/payment-requests/{request_id}/screenshot"),
     ("POST", "/api/v1/m/payment-requests/{request_id}/withdraw"),

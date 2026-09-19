@@ -1,4 +1,4 @@
-# GymBahi
+# GymBhai
 
 Multi-tenant gym membership software for gyms in Nepal: one product, many gyms. Gyms manage members, plans, payments and check-ins; members get an installable web app with their membership and a personal QR code.
 

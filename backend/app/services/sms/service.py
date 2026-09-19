@@ -17,9 +17,9 @@ from app.core.sms_text import segments
 from app.core.time import utcnow
 from app.models.gym import Gym
 from app.models.messaging import (
+    FREE_KINDS,
     SMS_FAILED,
     SMS_NO_CREDIT,
-    SMS_OTP,
     SMS_QUEUED,
     SMS_SENT,
     SmsCreditLedger,
@@ -98,7 +98,7 @@ def deliver(db: Session, message: SmsMessage) -> None:
     """Send one message now. Raises SmsError for the worker to retry."""
     if message.status != SMS_QUEUED:
         return
-    charged = message.kind != SMS_OTP
+    charged = message.kind not in FREE_KINDS
     if charged:
         _lock_gym(db, message.gym_id)
         if balance(db, message.gym_id) < message.segments:

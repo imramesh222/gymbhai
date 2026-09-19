@@ -4,14 +4,17 @@ Files are stored under a key such as `gyms/<gym_id>/members/<uuid>.jpg` and
 never exposed by a permanent public link: they are handed out as signed URLs
 that expire (§11), served by GET /api/v1/files/<key>.
 
-Local disk in development. Production swaps in S3-compatible storage behind
-the same three functions (see PLAN.md §13).
+Local disk in development; any S3-compatible bucket (Cloudflare R2) in
+production, behind the same three functions: put, read, delete. Files are
+still served through the API with signed links either way, so the bucket
+itself stays private.
 """
 
 import hashlib
 import hmac
 import time
 import uuid
+from functools import cache
 from pathlib import Path
 from urllib.parse import quote
 
@@ -58,7 +61,32 @@ def new_key(gym_id: uuid.UUID, folder: str, extension: str) -> str:
     return f"gyms/{gym_id}/{folder}/{uuid.uuid4().hex}.{extension}"
 
 
+@cache
+def _s3():
+    import boto3
+
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.s3_access_key_id,
+        aws_secret_access_key=settings.s3_secret_access_key,
+        region_name=settings.s3_region,
+    )
+
+
+def _content_type(key: str) -> str:
+    return CONTENT_TYPES.get(key.rsplit(".", 1)[-1], "application/octet-stream")
+
+
 def put(key: str, data: bytes) -> str:
+    if settings.storage_backend == "s3":
+        _s3().put_object(
+            Bucket=settings.s3_bucket,
+            Key=key,
+            Body=data,
+            ContentType=_content_type(key),
+        )
+        return key
     path = _path(key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -66,13 +94,26 @@ def put(key: str, data: bytes) -> str:
 
 
 def read(key: str) -> bytes | None:
+    if settings.storage_backend == "s3":
+        from botocore.exceptions import ClientError
+
+        try:
+            return _s3().get_object(Bucket=settings.s3_bucket, Key=key)["Body"].read()
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                return None
+            raise
     path = _path(key)
     return path.read_bytes() if path.is_file() else None
 
 
 def delete(key: str | None) -> None:
-    if key:
-        _path(key).unlink(missing_ok=True)
+    if not key:
+        return
+    if settings.storage_backend == "s3":
+        _s3().delete_object(Bucket=settings.s3_bucket, Key=key)
+        return
+    _path(key).unlink(missing_ok=True)
 
 
 def _signature(key: str, expires: int) -> str:

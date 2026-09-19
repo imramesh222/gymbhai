@@ -9,7 +9,7 @@ from app.core.time import utcnow
 from app.models.job import Job
 from app.models.member_app import MemberSession, OtpCode
 from app.models.staff import StaffSession
-from app.services import reminders
+from app.services import owner_messages, reminders
 from app.services.sms import service as sms
 from app.worker import DAILY, handler
 
@@ -17,6 +17,12 @@ JOB_CLEANUP = "maintenance.cleanup"
 
 handler(sms.JOB_SEND, on_give_up=sms.give_up)(sms.handle_send)
 handler(reminders.JOB_DAILY)(reminders.handle_daily)
+handler(owner_messages.JOB_SUBSCRIPTION)(
+    lambda db, payload: owner_messages.subscription_reminders(db)
+)
+handler(owner_messages.JOB_SUMMARY)(
+    lambda db, payload: owner_messages.daily_summaries(db)
+)
 
 
 @handler(JOB_CLEANUP)
@@ -34,5 +40,7 @@ DAILY.extend(
     [
         (reminders.JOB_DAILY, dt.time(9, 0)),
         (JOB_CLEANUP, dt.time(3, 0)),
+        (owner_messages.JOB_SUBSCRIPTION, dt.time(10, 0)),
+        (owner_messages.JOB_SUMMARY, dt.time(20, 0)),
     ]
 )

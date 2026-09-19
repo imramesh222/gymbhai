@@ -13,6 +13,7 @@ class GymSettingsUpdate(Strict):
     plan_months: PlanMonths | None = None
     date_display: DateDisplay | None = None
     member_code_prefix: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,5}$")
+    daily_summary_sms: bool | None = None
 
 
 class CheckInRulesUpdate(Strict):

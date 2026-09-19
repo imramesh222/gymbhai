@@ -87,7 +87,7 @@ export default function SignupPage() {
               setSlugEdited(true);
               setSlug(value.toLowerCase());
             }}
-            prefix="app.gymbahi.com/"
+            prefix="app.gymbhai.com/"
             required
             help={t("signup.slugHelp", { url: memberAppUrl(slug) })}
           />

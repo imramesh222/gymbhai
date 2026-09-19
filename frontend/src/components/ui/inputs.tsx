@@ -3,7 +3,20 @@
 import { useId, useState } from "react";
 
 import { t } from "@/i18n";
-import { formatBs, type DateDisplay } from "@/lib/dates";
+import {
+  BS_MONTHS,
+  daysInBsMonth,
+  formatAd,
+  formatBs,
+  fromBs,
+  todayInNepal,
+  toBs,
+  type BsDate,
+  type DateDisplay,
+} from "@/lib/dates";
+
+// Years a membership could plausibly start or end in.
+const BS_YEARS = Array.from({ length: 16 }, (_, i) => 2075 + i);
 import { parseRs, toInput } from "@/lib/money";
 
 const box =
@@ -67,7 +80,10 @@ export function MoneyInput({
   );
 }
 
-/** An AD date picker that also shows the BS date, for gyms that think in BS. */
+/**
+ * A date, stored in AD. Gyms that think in BS (PLAN.md §5.1) can enter it in
+ * BS too: year, month and day of the BS calendar, converted as they choose.
+ */
 export function DateInput({
   label,
   value,
@@ -82,25 +98,101 @@ export function DateInput({
   required?: boolean;
 }) {
   const id = useId();
-  let bs = "";
+  const [inBs, setInBs] = useState(display === "bs");
+  let bs: BsDate | null = null;
   try {
-    bs = value && display !== "ad" ? formatBs(value) : "";
+    bs = value ? toBs(value) : null;
   } catch {
-    bs = "";
+    bs = null;
   }
+  const canBs = display !== "ad";
+
+  function setBs(patch: Partial<BsDate>) {
+    const base = bs ?? toBs(todayInNepal());
+    const next = { ...base, ...patch };
+    next.day = Math.min(next.day, daysInBsMonth(next.year, next.month));
+    onChange(fromBs(next));
+  }
+
+  const small = "rounded-lg border border-slate-300 bg-white px-2 py-2.5 text-base";
   return (
     <div>
-      <Label htmlFor={id}>{label}</Label>
-      <input
-        id={id}
-        type="date"
-        value={value}
-        required={required}
-        onChange={(e) => onChange(e.target.value)}
-        className={box}
-      />
-      {bs && (
-        <p className="mt-1 text-xs text-slate-600">{t("date.bsIs", { date: bs })}</p>
+      <div className="flex items-baseline justify-between gap-2">
+        <Label htmlFor={id}>{label}</Label>
+        {canBs && (
+          <button
+            type="button"
+            onClick={() => setInBs(!inBs)}
+            className="text-xs font-medium text-brand-700 hover:underline"
+          >
+            {inBs ? t("date.enterAd") : t("date.enterBs")}
+          </button>
+        )}
+      </div>
+      {inBs && canBs ? (
+        <div
+          className="mt-1 grid grid-cols-[1fr_2fr_1fr] gap-2"
+          role="group"
+          aria-label={label}
+        >
+          <select
+            id={id}
+            aria-label={t("date.bsYear")}
+            value={bs?.year ?? ""}
+            onChange={(e) => setBs({ year: Number(e.target.value) })}
+            className={small}
+          >
+            {!bs && <option value="">—</option>}
+            {BS_YEARS.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={t("date.bsMonth")}
+            value={bs?.month ?? ""}
+            onChange={(e) => setBs({ month: Number(e.target.value) })}
+            className={small}
+          >
+            {!bs && <option value="">—</option>}
+            {BS_MONTHS.map((name, i) => (
+              <option key={name} value={i + 1}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={t("date.bsDay")}
+            value={bs?.day ?? ""}
+            onChange={(e) => setBs({ day: Number(e.target.value) })}
+            className={small}
+          >
+            {!bs && <option value="">—</option>}
+            {Array.from(
+              { length: bs ? daysInBsMonth(bs.year, bs.month) : 32 },
+              (_, i) => i + 1,
+            ).map((day) => (
+              <option key={day} value={day}>
+                {day}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <input
+          id={id}
+          type="date"
+          value={value}
+          required={required}
+          onChange={(e) => onChange(e.target.value)}
+          className={box}
+        />
+      )}
+      {value && canBs && (
+        <p className="mt-1 text-xs text-slate-600">
+          {inBs ? formatAd(value) : bs ? t("date.bsIs", { date: formatBs(value) }) : ""}
+        </p>
       )}
     </div>
   );

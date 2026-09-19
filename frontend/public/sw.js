@@ -5,7 +5,7 @@
  * Pages: network first, the last copy when offline. Build assets: cache first
  * (their names change with every build). The API is never cached.
  */
-const CACHE = "gymbahi-v1";
+const CACHE = "gymbhai-v1";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {

@@ -1,4 +1,4 @@
-"""Gym slugs: the `fitness-zone` in app.gymbahi.com/fitness-zone (PLAN.md §3).
+"""Gym slugs: the `fitness-zone` in app.gymbhai.com/fitness-zone (PLAN.md §3).
 
 The member app lives at the top level of the web app, so a slug must never
 collide with one of our own routes. Adding a top-level route in the frontend
@@ -38,7 +38,7 @@ RESERVED_SLUGS = frozenset(
         "blog",
         "contact",
         "docs",
-        "gymbahi",
+        "gymbhai",
         "help",
         "legal",
         "pricing",

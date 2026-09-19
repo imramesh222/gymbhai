@@ -56,6 +56,19 @@ describe("request", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not treat a server error during refresh as signed out", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(401, { code: "session_expired" }))
+      .mockResolvedValueOnce(reply(502, {}));
+    const error = (await request("/api/v1/gym").catch((e) => e)) as ApiError;
+    expect(error.code).toBe("network");
+  });
+
+  it("does not treat no signal during refresh as signed out", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(refreshSession()).rejects.toMatchObject({ code: "network" });
+  });
+
   it("shares one refresh between concurrent callers", async () => {
     fetchMock.mockResolvedValue(reply(200, session("t")));
     await Promise.all([refreshSession(), refreshSession(), refreshSession()]);

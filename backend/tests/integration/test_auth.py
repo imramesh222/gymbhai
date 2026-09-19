@@ -142,7 +142,7 @@ def test_expired_session_is_refused(
 def test_platform_admin_has_no_gym(client: TestClient, db: Session) -> None:
     admin = StaffUser(
         name="Us",
-        email="admin@gymbahi.com",
+        email="admin@gymbhai.com",
         password_hash="x",
         is_platform_admin=True,
     )

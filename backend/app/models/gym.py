@@ -16,7 +16,7 @@ GYM_SUSPENDED = "suspended"
 class Gym(IdMixin, TimestampMixin, Base):
     __tablename__ = "gyms"
 
-    # app.gymbahi.com/<slug>; see app/core/slugs.py
+    # app.gymbhai.com/<slug>; see app/core/slugs.py
     slug: Mapped[str] = mapped_column(String(40), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     # A storage key; see app/services/storage.py.
