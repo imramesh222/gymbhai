@@ -624,7 +624,7 @@ All of these can be changed later.
 | Topic | Decision | What the build does now |
 |---|---|---|
 | **Name and domain** | **GymBhai**, `gymbhai.com` | Used in every URL, the member app and the code. Register the domain (and the Facebook / Instagram names) soon — it was free on 2026-09-19 |
-| **SMS gateway** | Later | Built ready: one SMS interface, `console` provider for development, Sparrow and Aakash adapters ready. Choosing one is an environment setting plus the account's API key. The adapters follow the gateways' published APIs but have not been run against a live account: send a test message before going live |
+| **SMS gateway** | Later | Built ready: one SMS interface, `console` provider for development, Sparrow and Aakash adapters ready. Choosing one is an environment setting plus the account's API key. The adapters follow the gateways' published APIs but have not been run against a live account: `python -m scripts.sms_check` reads the account's credit balance before anything is sent (docs/DEPLOY.md §5). Sparrow (checked against docs.sparrowsms.com on 2026-09-20) also whitelists the caller's IP address and queues without giving a message id, so there is no delivery report to record |
 | **Pricing** | Later | Plans with us are rows edited in `/admin`, never hard-coded; the trial works without any price set |
 | **Door hardware** | Later — maybe fingerprint or face | v1 ships QR (kiosk, staff phone, USB scanner, manual). The check-in service accepts other sources, so fingerprint / face readers plug in later (§4.3) |
 | **Language** | English only at launch | All text in translation files so Nepali can be added later without redoing screens |

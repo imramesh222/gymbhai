@@ -26,7 +26,8 @@ make up      # db, api, worker, web in Docker
 
 ```sh
 make test             # pytest (needs `make db`) + Vitest
-make e2e              # Playwright against a production build (switches web back to dev after)
+make e2e              # Playwright against a production build, on its own database
+                      # (gymbhai_e2e); puts the dev containers back afterwards
 make lint
 make migration-check  # migrations apply, match the models, roll back — in a scratch database
 ```

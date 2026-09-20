@@ -7,6 +7,15 @@ SHELL := /usr/bin/env bash
 VENV    := backend/.venv
 PY      := $(VENV)/bin/python
 COMPOSE := docker compose
+PGUSER  := $(or $(POSTGRES_USER),gymbhai)
+
+# End-to-end runs sign up real gyms, so they get a database of their own and
+# their own platform admin (the same account CI makes). Nothing they create
+# lands in the development database.
+E2E_COMPOSE        := $(COMPOSE) -f docker-compose.yml -f docker-compose.e2e.yml
+E2E_DB             := $(or $(POSTGRES_DB),gymbhai)_e2e
+E2E_ADMIN_EMAIL    ?= e2e-admin@gymbhai.com
+E2E_ADMIN_PASSWORD ?= e2e-admin-password-123
 
 -include .env
 export
@@ -76,12 +85,18 @@ test-backend:  ## pytest (needs `make db`)
 test-frontend:  ## Vitest
 	@cd frontend && npm test --silent
 
-e2e:  ## Playwright against a production build of the web app (as in CI)
-	@$(COMPOSE) -f docker-compose.yml -f docker-compose.e2e.yml up -d --wait web
+e2e:  ## Playwright against a production build, on its own database (as in CI)
+	@$(COMPOSE) up -d --wait db
+	@$(COMPOSE) exec -T db psql -U $(PGUSER) -d postgres \
+		-c 'CREATE DATABASE "$(E2E_DB)"' >/dev/null 2>&1 || true
+	@$(E2E_COMPOSE) up -d --wait api worker web
+	@echo "$(E2E_ADMIN_PASSWORD)" | $(E2E_COMPOSE) exec -T api \
+		python -m scripts.create_platform_admin --name "E2E admin" \
+		--email "$(E2E_ADMIN_EMAIL)" --password-stdin >/dev/null
 	@cd frontend && npx playwright test; status=$$?; \
-		cd .. && $(COMPOSE) up -d web >/dev/null; exit $$status
+		cd .. && $(COMPOSE) up -d api worker web >/dev/null; exit $$status
 
-e2e-dev:  ## Playwright against the dev server as it is (slower, can flake)
+e2e-dev:  ## Playwright against `make up` as it stands: writes to the dev database
 	@cd frontend && npx playwright test
 
 lint:  ## ruff, eslint, tsc

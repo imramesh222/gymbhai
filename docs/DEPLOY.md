@@ -86,11 +86,19 @@ The restore prints the number of gyms and members it found.
 The Sparrow and Aakash adapters follow those gateways' published APIs but
 have not been run against a live account. Before switching:
 
-1. Set `SMS_PROVIDER=sparrow` (or `aakash`) and its token in `.env.prod`.
-2. Restart: `$C up -d api worker`.
-3. Sign up a test gym with your own phone, add yourself as a member, and
+1. Give the gateway this server's IP address: Sparrow answers only calls from
+   addresses whitelisted on the account (error 1001 otherwise).
+2. Set `SMS_PROVIDER=sparrow` (or `aakash`) and its token in `.env.prod`.
+   `SPARROW_SENDER` is the identity Sparrow gives the account, not a name you
+   choose: their shared sender until your own sender ID is approved.
+3. Restart: `$C up -d api worker`.
+4. Check the account before spending anything:
+   `$C exec api python -m scripts.sms_check` — it reads the credit balance,
+   which proves the token, the sender and the whitelisting. Add
+   `--to 98XXXXXXXX` to send one real message (costs a credit).
+5. Sign up a test gym with your own phone, add yourself as a member, and
    check the welcome SMS arrives. Then sign in to the member app with the code.
-4. Check the SMS log in the staff dashboard shows it as **Sent**.
+6. Check the SMS log in the staff dashboard shows it as **Sent**.
 
 Do the same for email with `EMAIL_PROVIDER=smtp`, using a member with an email.
 

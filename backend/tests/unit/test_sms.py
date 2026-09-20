@@ -2,7 +2,12 @@ import httpx
 import pytest
 
 from app.core.sms_text import is_gsm, render, segments
-from app.services.sms.providers import AakashProvider, SmsError, SparrowProvider
+from app.services.sms.providers import (
+    AakashProvider,
+    SmsError,
+    SmsRejected,
+    SparrowProvider,
+)
 
 
 def test_gsm_messages_hold_160_characters() -> None:
@@ -48,10 +53,14 @@ def transport(status: int, body: dict) -> httpx.Client:
     return client
 
 
-def test_sparrow_sends_and_reads_the_reference() -> None:
-    client = transport(200, {"response_code": 200, "message_id": 42, "count": 1})
+def test_sparrow_sends_the_documented_fields() -> None:
+    # The documented answer: queued, with nothing identifying the message.
+    client = transport(
+        200, {"count": 1, "response_code": 200, "response": "1 messages queued"}
+    )
     sent = SparrowProvider("tok", "InfoSMS", client).send("9841000001", "Hi")
-    assert sent.provider_ref == "42"
+    assert sent.provider_ref is None
+    assert client.seen["url"] == "https://api.sparrowsms.com/v2/sms/"  # type: ignore[attr-defined]
     assert client.seen["form"] == {  # type: ignore[attr-defined]
         "token": "tok",
         "from": "InfoSMS",
@@ -64,6 +73,30 @@ def test_sparrow_refusal_is_an_error() -> None:
     client = transport(403, {"response_code": 1002, "response": "Invalid token"})
     with pytest.raises(SmsError, match="Invalid token"):
         SparrowProvider("bad", "InfoSMS", client).send("9841000001", "Hi")
+
+
+def test_sparrow_rejects_this_message_for_good() -> None:
+    """A bad number is refused the same way every time: no retries."""
+    client = transport(200, {"response_code": 1007, "response": "Invalid Receiver"})
+    with pytest.raises(SmsRejected):
+        SparrowProvider("tok", "InfoSMS", client).send("9800000000", "Hi")
+
+
+def test_sparrow_out_of_credit_is_worth_retrying() -> None:
+    client = transport(200, {"response_code": 1013, "response": "Insufficient Credits"})
+    with pytest.raises(SmsError) as refused:
+        SparrowProvider("tok", "InfoSMS", client).send("9841000001", "Hi")
+    assert not isinstance(refused.value, SmsRejected)
+
+
+def test_sparrow_reads_the_credit_balance() -> None:
+    client = transport(
+        200, {"credits_available": 250, "credits_consumed": 12, "response_code": 200}
+    )
+    assert SparrowProvider("tok", "InfoSMS", client).credits() == 250
+    assert client.seen["url"] == (  # type: ignore[attr-defined]
+        "https://api.sparrowsms.com/v2/credit/?token=tok"
+    )
 
 
 def test_aakash_sends_and_reads_the_reference() -> None:

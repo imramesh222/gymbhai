@@ -25,7 +25,7 @@ from app.models.messaging import (
     SmsCreditLedger,
     SmsMessage,
 )
-from app.services.sms.providers import SmsError, get_provider
+from app.services.sms.providers import SmsError, SmsRejected, get_provider
 
 JOB_SEND = "sms.send"
 
@@ -141,7 +141,14 @@ def handle_send(db: Session, payload: dict) -> None:
     message = db.get(SmsMessage, uuid.UUID(payload["sms_id"]))
     if message is None:
         return
-    deliver(db, message)
+    try:
+        deliver(db, message)
+    except SmsRejected as exc:
+        # The gateway refused the message itself (bad number, bad sender, bad
+        # token): the same message would be refused again, so it is marked
+        # failed here rather than retried for half an hour first.
+        message.status = SMS_FAILED
+        message.error = str(exc)[:500]
 
 
 def give_up(db: Session, payload: dict, error: str) -> None:

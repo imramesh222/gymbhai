@@ -1,7 +1,21 @@
 # End-to-end tests run against a production build of the web app, as in CI:
 # a dev server compiles pages on demand and can't keep up with parallel tests.
 #   make e2e
+
+# The tests sign up gyms through the real form, so every run leaves real rows
+# behind. They get their own database for that; the development one stays the
+# gyms you made yourself. `make e2e` creates it, and the api migrates it on
+# start.
+x-e2e-database: &e2e-database
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gymbhai}:${POSTGRES_PASSWORD:-gymbhai}@db:5432/${POSTGRES_DB:-gymbhai}_e2e
+
 services:
+  api:
+    environment: *e2e-database
+
+  worker:
+    environment: *e2e-database
+
   web:
     # .next is shared with the dev server; its generated dev types would be
     # type-checked by the build, so they go first.
