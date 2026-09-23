@@ -87,7 +87,7 @@ function Register({ onRegistered }: { onRegistered: (token: string) => void }) {
   if (!me || !can("setup.devices")) {
     return (
       <main className="mx-auto max-w-md p-8 text-center">
-        <h1 className="text-2xl font-bold">{t("kiosk.title")}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("kiosk.title")}</h1>
         <p className="mt-2 text-slate-600">{t("kiosk.needSignIn")}</p>
         <Link
           href="/staff/login"
@@ -101,9 +101,9 @@ function Register({ onRegistered }: { onRegistered: (token: string) => void }) {
   const list = branches.data ?? [];
   const chosen = branchId || list[0]?.id || "";
   return (
-    <main className="mx-auto max-w-md space-y-4 p-8">
-      <h1 className="text-2xl font-bold">{t("kiosk.title")}</h1>
-      <p className="text-slate-600">{t("kiosk.registerHelp")}</p>
+    <main className="mx-auto max-w-md p-6 sm:p-8">
+      <h1 className="text-2xl font-bold tracking-tight">{t("kiosk.title")}</h1>
+      <p className="mt-2 text-slate-600">{t("kiosk.registerHelp")}</p>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -114,7 +114,7 @@ function Register({ onRegistered }: { onRegistered: (token: string) => void }) {
             setError(errorMessage(err));
           }
         }}
-        className="space-y-3"
+        className="mt-6 space-y-4 rounded-2xl bg-surface p-5 shadow-card ring-1 ring-hairline"
       >
         <Select
           label={t("sale.branch")}
@@ -125,7 +125,7 @@ function Register({ onRegistered }: { onRegistered: (token: string) => void }) {
         <Field label={t("kiosk.name")} value={name} onChange={setName} required />
         {error && <Notice tone="error">{error}</Notice>}
         {/* Not before the branches have loaded: an empty branch would be refused. */}
-        <Button type="submit" block disabled={!chosen}>
+        <Button type="submit" size="lg" block disabled={!chosen}>
           {t("kiosk.use", { branch: list.find((b) => b.id === chosen)?.name ?? "" })}
         </Button>
       </form>
@@ -186,39 +186,47 @@ function Door({ token, onRevoked }: { token: string; onRevoked: () => void }) {
 
   const display = info?.gym.date_display ?? "ad";
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-slate-900 p-6 text-white">
+    <main className="relative flex min-h-dvh flex-col items-center justify-center gap-6 bg-slate-950 p-6 text-white">
+      {/* A glow behind the clock so a dark screen across the room still reads
+          as switched on. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_45%_at_50%_35%,rgba(29,95,209,0.35),transparent)]"
+      />
       {!online && (
-        <p className="w-full max-w-lg rounded-xl bg-red-600 p-3 text-center font-semibold">
+        <p className="relative w-full max-w-lg rounded-2xl bg-red-600 p-3 text-center font-semibold shadow-lifted">
           {t("kiosk.offline")}
         </p>
       )}
       {result ? (
-        <div className="w-full max-w-lg">
+        <div className="relative w-full max-w-lg">
           <ScanCard result={result} display={display} />
         </div>
       ) : (
-        <div className="text-center">
+        <div className="relative text-center">
           {info?.gym.logo_url && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={info.gym.logo_url}
               alt=""
-              className="mx-auto mb-4 size-24 rounded-xl bg-white object-contain"
+              className="mx-auto mb-5 size-24 rounded-2xl bg-white object-contain p-2 ring-1 ring-white/20"
             />
           )}
-          <p className="text-3xl font-bold">{info?.gym.name}</p>
-          <p className="text-slate-300">{info?.branch_name}</p>
-          <p className="mt-4 text-6xl font-light tabular-nums">
+          <p className="text-3xl font-bold tracking-tight">{info?.gym.name}</p>
+          <p className="mt-1 text-slate-400">{info?.branch_name}</p>
+          <p className="mt-6 text-7xl font-light tracking-tight tabular-nums">
             {now.toLocaleTimeString("en-GB", {
               hour: "2-digit",
               minute: "2-digit",
               timeZone: "Asia/Kathmandu",
             })}
           </p>
-          <p className="mt-4 text-xl">{t("kiosk.showQr")}</p>
+          <p className="mt-6 text-xl text-slate-300">{t("kiosk.showQr")}</p>
         </div>
       )}
-      <div className={`w-full max-w-xs ${result ? "hidden" : ""}`}>
+      <div
+        className={`relative w-full max-w-xs overflow-hidden rounded-2xl ring-1 ring-white/15 ${result ? "hidden" : ""}`}
+      >
         <Scanner onCode={(code) => void onCode(code)} paused={Boolean(result)} />
       </div>
     </main>

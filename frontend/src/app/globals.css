@@ -1,13 +1,96 @@
 @import "tailwindcss";
 
+/* The design tokens every screen is built from. Components use these names
+   (bg-brand-600, shadow-card, bg-canvas), never raw hex, so the whole product
+   changes from here. */
 @theme {
-  --color-brand-50: #eef6ff;
-  --color-brand-100: #d9ebff;
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Brand blue, anchored at 600 — the colour a gym's app defaults to and the
+     browser theme colour, so those two must not drift. */
+  --color-brand-50: #f0f5ff;
+  --color-brand-100: #dde8ff;
+  --color-brand-200: #c2d5ff;
+  --color-brand-300: #97b6ff;
+  --color-brand-400: #648ffb;
+  --color-brand-500: #3a70ee;
   --color-brand-600: #1d5fd1;
   --color-brand-700: #184eab;
+  --color-brand-800: #163f85;
   --color-brand-900: #102f66;
+  --color-brand-950: #0b1e42;
+
+  /* Surfaces. The page is a shade cooler than the cards on it, which is what
+     makes a white card read as lifted without a heavy border. */
+  --color-canvas: #f4f7fb;
+  --color-surface: #ffffff;
+
+  /* Borders are a hairline of the text colour, not grey: they stay quiet next
+     to any accent. */
+  --color-hairline: color-mix(in oklab, #0f172a 8%, transparent);
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow-raised:
+    0 2px 4px rgba(15, 23, 42, 0.04), 0 8px 20px -10px rgba(15, 23, 42, 0.16);
+  --shadow-lifted: 0 24px 48px -24px rgba(15, 23, 42, 0.28);
+  --shadow-brand: 0 6px 16px -8px rgba(29, 95, 209, 0.55);
 }
 
-html {
-  -webkit-text-size-adjust: 100%;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-feature-settings: "cv11", "ss01";
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Headings set tight; body text stays at its default measure. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: var(--color-brand-100);
+    color: var(--color-brand-900);
+  }
+
+  /* One focus ring for the whole product, on keyboard use only. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Filter and tab strips scroll sideways on a phone; the bar itself is noise. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Home screen apps: keep content clear of the phone's own chrome. */
+  .pb-safe {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+}
+
+/* Receipts and membership cards are printed. Backgrounds waste ink and
+   shadows come out as grey smudges. */
+@media print {
+  body {
+    background: #fff;
+  }
+  * {
+    box-shadow: none !important;
+  }
 }

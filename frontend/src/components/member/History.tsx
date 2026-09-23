@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/Card";
 import { t, isMessageKey } from "@/i18n";
 import type { HistoryEntry } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
@@ -33,8 +34,7 @@ export function History({ entries }: { entries: HistoryEntry[] }) {
     return isMessageKey(k) ? t(k) : key;
   }
 
-  if (entries.length === 0)
-    return <p className="text-sm text-slate-500">{t("history.none")}</p>;
+  if (entries.length === 0) return <EmptyState title={t("history.none")} />;
   return (
     <ol className="space-y-3">
       {entries.map((entry) => {
@@ -43,7 +43,7 @@ export function History({ entries }: { entries: HistoryEntry[] }) {
           ([, v]) => v && typeof v === "object" && "before" in (v as object),
         ) as [string, { before: unknown; after: unknown }][];
         return (
-          <li key={entry.id} className="border-l-2 border-slate-200 pl-3">
+          <li key={entry.id} className="border-l-2 border-hairline pl-3">
             <p className="text-sm font-medium text-slate-900">
               {isMessageKey(action) ? t(action) : entry.action}
             </p>

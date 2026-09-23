@@ -31,9 +31,9 @@ export function Choice<T extends string>({
   const id = useId();
   return (
     <fieldset>
-      <legend className="text-sm font-medium text-slate-800">{legend}</legend>
+      <legend className="text-sm font-medium text-slate-700">{legend}</legend>
       <div
-        className={`mt-2 grid gap-2 ${columns === 3 ? "grid-cols-3" : "sm:grid-cols-2"}`}
+        className={`mt-2 grid gap-2.5 ${columns === 3 ? "grid-cols-3" : "sm:grid-cols-2"}`}
       >
         {options.map((option) => {
           const optionId = `${id}-${option.value}`;
@@ -42,10 +42,10 @@ export function Choice<T extends string>({
             <label
               key={option.value}
               htmlFor={optionId}
-              className={`cursor-pointer rounded-lg border px-3 py-2.5 ${
+              className={`cursor-pointer rounded-xl px-3.5 py-3 ring-1 transition ${
                 checked
-                  ? "border-brand-600 bg-brand-50 ring-2 ring-brand-100"
-                  : "border-slate-300 bg-white hover:border-slate-400"
+                  ? "bg-brand-50 text-brand-900 ring-2 ring-brand-600"
+                  : "bg-white ring-hairline hover:bg-slate-50 hover:ring-slate-300"
               }`}
             >
               <input
@@ -58,13 +58,9 @@ export function Choice<T extends string>({
                 onChange={() => onChange(option.value)}
                 className="sr-only"
               />
-              <span className="block text-sm font-medium text-slate-900">
-                {option.label}
-              </span>
+              <span className="block text-sm font-semibold">{option.label}</span>
               {option.hint && (
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  {option.hint}
-                </span>
+                <span className="mt-0.5 block text-xs opacity-70">{option.hint}</span>
               )}
             </label>
           );

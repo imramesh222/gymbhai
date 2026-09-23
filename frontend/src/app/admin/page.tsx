@@ -50,7 +50,7 @@ export default function AdminGymsPage() {
           title={t("admin.pendingPayments", { count: payments.data.length })}
           className="border-amber-300"
         >
-          <ul className="divide-y divide-slate-100 text-sm">
+          <ul className="divide-y divide-hairline text-sm">
             {payments.data.map((p) => (
               <li
                 key={p.id}
@@ -95,48 +95,56 @@ export default function AdminGymsPage() {
         onChange={(e) => setQ(e.target.value)}
         placeholder={t("admin.search")}
         aria-label={t("admin.search")}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"
+        className="w-full rounded-xl bg-white px-3 py-2.5 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500"
       />
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-2xl bg-surface shadow-card ring-1 ring-hairline">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500 uppercase">
+          <thead className="border-b border-hairline bg-slate-50/80 text-left text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
             <tr>
-              <th className="px-3 py-2">{t("admin.gym")}</th>
-              <th className="px-3 py-2">{t("admin.owner")}</th>
-              <th className="px-3 py-2">{t("admin.plan")}</th>
-              <th className="px-3 py-2">{t("admin.ends")}</th>
-              <th className="px-3 py-2">{t("admin.members")}</th>
-              <th className="px-3 py-2">{t("admin.sms")}</th>
-              <th className="px-3 py-2" />
+              <th className="px-3 py-2.5">{t("admin.gym")}</th>
+              <th className="px-3 py-2.5">{t("admin.owner")}</th>
+              <th className="px-3 py-2.5">{t("admin.plan")}</th>
+              <th className="px-3 py-2.5">{t("admin.ends")}</th>
+              <th className="px-3 py-2.5">{t("admin.members")}</th>
+              <th className="px-3 py-2.5">{t("admin.sms")}</th>
+              <th className="px-3 py-2.5" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-hairline">
             {gyms.data?.map((g) => (
-              <tr key={g.id} className={g.status === "suspended" ? "bg-red-50" : ""}>
-                <td className="px-3 py-2">
-                  <p className="font-medium">{g.name}</p>
+              <tr
+                key={g.id}
+                className={
+                  g.status === "suspended"
+                    ? "bg-red-50"
+                    : "transition hover:bg-slate-50/70"
+                }
+              >
+                <td className="px-3 py-3 align-top">
+                  <p className="font-semibold text-slate-900">{g.name}</p>
                   <p className="text-xs text-slate-500">
                     /{g.slug}
                     {g.status === "suspended" && ` · ${t("admin.suspended")}`}
                   </p>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-3 align-top">
                   {g.owner_name}
                   <p className="text-xs text-slate-500">
                     {g.owner_phone ?? g.owner_email}
                   </p>
                 </td>
-                <td className="px-3 py-2">{g.plan_name ?? "—"}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-3 align-top">{g.plan_name ?? "—"}</td>
+                <td className="px-3 py-3 align-top">
                   {g.ends_on ? formatAd(g.ends_on) : "—"}
                   <p className="text-xs text-slate-500">
                     {t(`subscription.phase.${g.phase}` as MessageKey)}
                   </p>
                 </td>
-                <td className="px-3 py-2">{g.active_members}</td>
-                <td className="px-3 py-2">{g.sms_balance}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-3 align-top">{g.active_members}</td>
+                <td className="px-3 py-3 align-top">{g.sms_balance}</td>
+                <td className="px-3 py-3 align-top">
                   <Select<Action>
+                    compact
                     label={t("admin.actions")}
                     value=""
                     onChange={(action) => setOpen({ gym: g, action })}

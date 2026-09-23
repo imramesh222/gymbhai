@@ -64,7 +64,7 @@ test("the owner pays us, and the admin activates it", async ({ page, browser }) 
   const admin = await (await browser.newContext()).newPage();
   await admin.goto("/staff/login");
   await admin.getByLabel("Email or mobile number").fill(ADMIN_EMAIL);
-  await admin.getByLabel("Password").fill(ADMIN_PASSWORD);
+  await admin.getByLabel("Password", { exact: true }).fill(ADMIN_PASSWORD);
   await admin.getByRole("button", { name: "Sign in" }).click();
   await admin.waitForURL("**/admin");
   await admin.getByRole("link", { name: "Our plans and prices" }).click();

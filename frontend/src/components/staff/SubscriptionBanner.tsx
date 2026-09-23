@@ -46,7 +46,10 @@ export function SubscriptionBanner() {
   }
   if (!text) return null;
   return (
-    <div className={`px-4 py-2 text-center text-sm print:hidden ${tone}`} role="status">
+    <div
+      className={`border-b border-black/5 px-4 py-2 text-center text-sm font-medium print:hidden ${tone}`}
+      role="status"
+    >
       {text}
       {pay}
     </div>

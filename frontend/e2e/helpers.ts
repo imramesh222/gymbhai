@@ -26,7 +26,7 @@ export async function signUpGym(page: Page, planMonths: "AD" | "BS" = "BS") {
   await page.getByText("Both", { exact: true }).click();
   await page.getByLabel("Your name").fill("Sita Sharma");
   await page.getByLabel("Mobile number").fill(gym.phone);
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Create my gym" }).click();
   await page.waitForURL("**/staff");
   return gym;

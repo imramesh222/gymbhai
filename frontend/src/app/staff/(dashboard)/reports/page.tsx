@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { methodLabel } from "@/components/money/PaymentFields";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card, PageHeader, Stat } from "@/components/ui/Card";
 import { Money } from "@/components/ui/Money";
 import { t } from "@/i18n";
 import { reportsApi } from "@/lib/api";
@@ -73,17 +73,14 @@ export default function ReportsPage() {
           [data.new_memberships, t("reports.firstMemberships")],
           [data.visits, t("reports.visits")],
         ].map(([value, label], i) => (
-          <Card key={i}>
-            <p className="text-2xl font-bold">{value}</p>
-            <p className="text-xs text-slate-500">{label}</p>
-          </Card>
+          <Stat key={i} value={value} label={String(label)} />
         ))}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Card title={t("reports.byMethod")}>
-          <dl className="space-y-1 text-sm">
+          <dl className="divide-y divide-hairline text-sm">
             {Object.entries(data.income_by_method).map(([method, amount]) => (
-              <div key={method} className="flex justify-between">
+              <div key={method} className="flex justify-between py-2">
                 <dt>{methodLabel(method)}</dt>
                 <dd className="font-semibold">
                   <Money paisa={amount} />
@@ -93,7 +90,7 @@ export default function ReportsPage() {
           </dl>
         </Card>
         <Card title={t("reports.byPlan")}>
-          <dl className="space-y-1 text-sm">
+          <dl className="divide-y divide-hairline text-sm">
             {Object.entries(data.by_plan).map(([plan, count]) => (
               <div key={plan} className="flex justify-between">
                 <dt>{plan}</dt>

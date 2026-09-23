@@ -123,9 +123,9 @@ export default function DoorPage() {
             id="door-search"
             value={search}
             onChange={(e) => void find(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+            className="mt-1.5 w-full rounded-xl bg-white px-3 py-2.5 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500"
           />
-          <ul className="mt-2 divide-y divide-slate-100 rounded-lg bg-white">
+          <ul className="mt-2 divide-y divide-hairline rounded-lg bg-white">
             {found.map((m) => (
               <li
                 key={m.id}

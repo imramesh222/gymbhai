@@ -168,7 +168,7 @@ export default function SubscriptionPage() {
 
       {data.payments.length > 0 && (
         <Card title={t("subscription.history")}>
-          <ul className="divide-y divide-slate-100 text-sm">
+          <ul className="divide-y divide-hairline text-sm">
             {data.payments.map((p) => (
               <li key={p.id} className="flex justify-between py-2">
                 <span>

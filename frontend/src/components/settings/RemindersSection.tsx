@@ -89,7 +89,7 @@ function RuleEditor({
 }) {
   const [template, setTemplate] = useState(rule.template);
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <div className="rounded-xl p-3 ring-1 ring-hairline">
       <div className="flex items-center justify-between">
         <Checkbox
           label={when(rule.days_from_expiry)}
@@ -139,7 +139,7 @@ function AddRule({ onAdd }: { onAdd: (days: number, template: string) => void })
           type="number"
           value={days}
           onChange={(e) => setDays(e.target.value)}
-          className="ml-2 w-20 rounded border border-slate-300 px-2 py-1"
+          className="ml-2 w-20 rounded-lg bg-white px-2 py-1 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500"
         />
         <span className="ml-2 text-slate-500">{when(Number(days) || 0)}</span>
       </label>

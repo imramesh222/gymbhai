@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { LogoMark } from "@/components/ui/Logo";
 import { t } from "@/i18n";
 import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -39,37 +40,53 @@ export default function StaffLoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="text-2xl font-bold text-brand-900">{t("login.title")}</h1>
-      <form onSubmit={(e) => void submit(e)} className="mt-6 space-y-4">
-        <Field
-          label={t("login.identifier")}
-          value={identifier}
-          onChange={setIdentifier}
-          required
-          autoComplete="username"
-          name="identifier"
-        />
-        <Field
-          label={t("login.password")}
-          value={password}
-          onChange={setPassword}
-          type="password"
-          required
-          autoComplete="current-password"
-          name="password"
-        />
-        {error && <Notice tone="error">{error}</Notice>}
-        <Button type="submit" block disabled={pending}>
-          {pending ? t("login.submitting") : t("login.submit")}
-        </Button>
-      </form>
-      <p className="mt-6 text-sm text-slate-600">
-        {t("login.newGym")}{" "}
-        <Link href="/signup" className="font-medium text-brand-700 hover:underline">
-          {t("home.signUp")}
+    <main className="relative isolate flex min-h-dvh flex-col justify-center px-4 py-10">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(70%_70%_at_50%_0%,var(--color-brand-200),transparent)] opacity-70"
+      />
+      <div className="mx-auto w-full max-w-sm">
+        <Link href="/" className="mx-auto flex w-fit items-center gap-2.5">
+          <LogoMark />
+          <span className="text-lg font-bold tracking-tight text-slate-900">
+            {t("app.name")}
+          </span>
         </Link>
-      </p>
+        <div className="mt-6 rounded-2xl bg-surface p-6 shadow-raised ring-1 ring-hairline">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            {t("login.title")}
+          </h1>
+          <form onSubmit={(e) => void submit(e)} className="mt-5 space-y-4">
+            <Field
+              label={t("login.identifier")}
+              value={identifier}
+              onChange={setIdentifier}
+              required
+              autoComplete="username"
+              name="identifier"
+            />
+            <Field
+              label={t("login.password")}
+              value={password}
+              onChange={setPassword}
+              type="password"
+              required
+              autoComplete="current-password"
+              name="password"
+            />
+            {error && <Notice tone="error">{error}</Notice>}
+            <Button type="submit" size="lg" block disabled={pending}>
+              {pending ? t("login.submitting") : t("login.submit")}
+            </Button>
+          </form>
+        </div>
+        <p className="mt-5 text-center text-sm text-slate-600">
+          {t("login.newGym")}{" "}
+          <Link href="/signup" className="font-semibold text-brand-700 hover:underline">
+            {t("home.signUp")}
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }

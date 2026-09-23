@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice as Alert } from "@/components/Notice";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Checkbox, Select, TextArea } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import { branchesApi, errorMessage, messagesApi, type NoticeInput } from "@/lib/api";
@@ -135,10 +135,8 @@ export default function NoticesPage() {
         </form>
       </Card>
       <Card title={t("notices.recent")}>
-        {notices.data?.length === 0 && (
-          <p className="text-sm text-slate-500">{t("notices.none")}</p>
-        )}
-        <ul className="divide-y divide-slate-100">
+        {notices.data?.length === 0 && <EmptyState title={t("notices.none")} />}
+        <ul className="divide-y divide-hairline">
           {notices.data?.map((n) => (
             <li key={n.id} className="flex items-start justify-between gap-3 py-3">
               <div className="min-w-0">

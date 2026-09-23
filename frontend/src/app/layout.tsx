@@ -1,7 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 
 import { t } from "@/i18n";
 import "./globals.css";
+
+// Self-hosted by next/font at build time: no request to Google from a member's
+// phone, and no layout shift while it loads.
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: { default: t("app.name"), template: `%s · ${t("app.name")}` },
@@ -16,8 +25,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-dvh bg-slate-50 text-slate-900 antialiased">
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-dvh bg-canvas font-sans text-slate-900 antialiased">
         {children}
       </body>
     </html>

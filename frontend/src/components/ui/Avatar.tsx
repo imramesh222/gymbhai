@@ -12,7 +12,11 @@ export function Avatar({
     // them past expiry, so a plain <img> is the right tool here.
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={url} alt="" className={`${size} shrink-0 rounded-full object-cover`} />
+      <img
+        src={url}
+        alt=""
+        className={`${size} shrink-0 rounded-full object-cover ring-1 ring-hairline`}
+      />
     );
   }
   const initials = name
@@ -22,7 +26,7 @@ export function Avatar({
     .join("");
   return (
     <span
-      className={`${size} flex shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700`}
+      className={`${size} flex shrink-0 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-700 text-sm font-semibold text-white ring-1 ring-brand-900/10`}
     >
       {initials}
     </span>

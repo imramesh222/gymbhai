@@ -32,7 +32,7 @@ export default function ReceiptPage() {
         </Button>
         <Button onClick={() => window.print()}>{t("receipt.print")}</Button>
       </div>
-      <article className="rounded-xl border border-slate-200 bg-white p-6 print:border-0 print:p-0">
+      <article className="rounded-2xl bg-surface p-6 shadow-card ring-1 ring-hairline print:p-0 print:ring-0">
         <header className="border-b border-dashed border-slate-300 pb-3 text-center">
           <h1 className="text-xl font-bold">{r.gym_name}</h1>
           {r.branch_name && <p className="text-sm text-slate-600">{r.branch_name}</p>}

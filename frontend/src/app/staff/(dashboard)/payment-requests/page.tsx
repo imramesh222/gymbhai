@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Notice } from "@/components/Notice";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Checkbox, MoneyInput, TextArea } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
@@ -44,9 +44,7 @@ export default function PaymentRequestsPage() {
           </button>
         ))}
       </div>
-      {data?.length === 0 && (
-        <p className="text-sm text-slate-500">{t("requests.none")}</p>
-      )}
+      {data?.length === 0 && <EmptyState title={t("requests.none")} />}
       {data?.map((r) => (
         <Card key={r.id}>
           <div className="flex flex-wrap items-start justify-between gap-3">

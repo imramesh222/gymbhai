@@ -19,9 +19,9 @@ export function tone(result: ScanResult): "green" | "orange" | "red" {
 }
 
 const STYLES = {
-  green: "bg-emerald-600",
-  orange: "bg-amber-500",
-  red: "bg-red-600",
+  green: "bg-linear-to-br from-emerald-500 to-emerald-700",
+  orange: "bg-linear-to-br from-amber-400 to-amber-600",
+  red: "bg-linear-to-br from-red-500 to-red-700",
 };
 
 export function ScanCard({
@@ -46,7 +46,7 @@ export function ScanCard({
 
   return (
     <div
-      className={`rounded-3xl p-6 text-center text-white ${STYLES[colour]}`}
+      className={`rounded-3xl p-6 text-center text-white shadow-lifted ${STYLES[colour]}`}
       role="status"
     >
       {result.photo_url && (
@@ -54,10 +54,10 @@ export function ScanCard({
         <img
           src={result.photo_url}
           alt=""
-          className="mx-auto mb-4 size-40 rounded-full border-4 border-white object-cover"
+          className="mx-auto mb-5 size-40 rounded-full object-cover ring-4 ring-white/80"
         />
       )}
-      <p className="text-3xl font-bold">{headline}</p>
+      <p className="text-3xl font-bold tracking-tight text-balance">{headline}</p>
       {result.member_code && <p className="mt-1 opacity-90">{result.member_code}</p>}
       {result.let_in && result.days_left <= 3 && result.result !== "duplicate" && (
         <p className="mt-3 text-xl font-semibold">{t("door.renewSoon")}</p>

@@ -2,6 +2,7 @@
 
 import { methodLabel } from "@/components/money/PaymentFields";
 import { Money } from "@/components/ui/Money";
+import { EmptyState } from "@/components/ui/Card";
 import { t, type MessageKey } from "@/i18n";
 import { formatDateTime } from "@/lib/dates";
 import { memberApi } from "@/lib/memberApi";
@@ -47,9 +48,7 @@ export default function MemberPayments() {
         <h2 className="mb-2 text-sm font-semibold text-slate-600">
           {t("app.payments.paid")}
         </h2>
-        {data.payments.length === 0 && (
-          <p className="text-sm text-slate-500">{t("payment.none")}</p>
-        )}
+        {data.payments.length === 0 && <EmptyState title={t("payment.none")} />}
         <ul className="space-y-2">
           {data.payments.map((p) => (
             <li

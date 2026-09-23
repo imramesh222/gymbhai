@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Notice } from "@/components/Notice";
 import { methodLabel, METHODS } from "@/components/money/PaymentFields";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { DateInput, Select } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
 import { t } from "@/i18n";
@@ -63,16 +63,18 @@ export default function PaymentsPage() {
           <Card>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-                <p className="text-sm text-slate-600">{t("payments.collected")}</p>
+                <p className="text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
+                  {t("payments.collected")}
+                </p>
                 <Money
                   paisa={data.sum_amount}
-                  className="text-3xl font-bold text-brand-900"
+                  className="text-3xl font-bold tracking-tight text-slate-900"
                 />
               </div>
               <dl className="flex flex-wrap gap-4 text-sm">
                 {Object.entries(data.by_method).map(([m, amount]) => (
                   <div key={m}>
-                    <dt className="text-slate-500">{methodLabel(m)}</dt>
+                    <dt className="text-xs text-slate-500">{methodLabel(m)}</dt>
                     <dd className="font-semibold">
                       <Money paisa={amount} />
                     </dd>
@@ -82,10 +84,8 @@ export default function PaymentsPage() {
             </div>
           </Card>
           <Card title={t("payments.count", { count: data.total })}>
-            {data.items.length === 0 && (
-              <p className="text-sm text-slate-500">{t("payment.none")}</p>
-            )}
-            <ul className="divide-y divide-slate-100">
+            {data.items.length === 0 && <EmptyState title={t("payment.none")} />}
+            <ul className="divide-y divide-hairline">
               {data.items.map((p) => (
                 <li
                   key={p.id}

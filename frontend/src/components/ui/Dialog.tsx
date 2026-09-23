@@ -29,16 +29,18 @@ export function Dialog({
       ref={ref}
       onClose={onClose}
       aria-label={title}
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl p-0 backdrop:bg-slate-900/40"
+      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl p-0 shadow-lifted backdrop:bg-slate-900/50 backdrop:backdrop-blur-[2px]"
     >
       {open && (
-        <div className="p-5">
+        <div className="p-5 sm:p-6">
           <div className="mb-4 flex items-start justify-between gap-4">
-            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+              {title}
+            </h2>
             <button
               type="button"
               onClick={onClose}
-              className="rounded p-1 text-slate-500 hover:bg-slate-100"
+              className="-m-1 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               aria-label={t("common.close")}
             >
               ✕

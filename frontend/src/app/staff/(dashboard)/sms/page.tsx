@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { Notice } from "@/components/Notice";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { t, type MessageKey } from "@/i18n";
 import { messagesApi } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
@@ -27,17 +27,19 @@ export default function SmsPage() {
       {data && (
         <>
           <Card>
-            <p className="text-sm text-slate-600">{t("sms.balance")}</p>
-            <p className="text-3xl font-bold text-brand-900">{data.balance}</p>
+            <p className="text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
+              {t("sms.balance")}
+            </p>
+            <p className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900">
+              {data.balance}
+            </p>
             {data.balance <= 10 && (
               <p className="mt-1 text-sm text-amber-800">{t("sms.low")}</p>
             )}
           </Card>
           <Card title={t("sms.log")}>
-            {data.items.length === 0 && (
-              <p className="text-sm text-slate-500">{t("sms.none")}</p>
-            )}
-            <ul className="divide-y divide-slate-100">
+            {data.items.length === 0 && <EmptyState title={t("sms.none")} />}
+            <ul className="divide-y divide-hairline">
               {data.items.map((m) => (
                 <li key={m.id} className="py-2 text-sm">
                   <div className="flex justify-between gap-3">

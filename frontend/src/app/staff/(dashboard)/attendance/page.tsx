@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card, EmptyState, PageHeader, Stat } from "@/components/ui/Card";
 import { DateInput } from "@/components/ui/inputs";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { t } from "@/i18n";
@@ -52,10 +52,7 @@ export default function AttendancePage() {
               [s.unique_members, t("attendance.members")],
               [s.denied, t("attendance.denied")],
             ].map(([value, label]) => (
-              <Card key={String(label)}>
-                <p className="text-2xl font-bold">{value}</p>
-                <p className="text-xs text-slate-500">{label}</p>
-              </Card>
+              <Stat key={String(label)} value={value} label={String(label)} />
             ))}
           </div>
           <Card title={t("attendance.byDay")}>
@@ -96,10 +93,8 @@ export default function AttendancePage() {
         </>
       )}
       <Card title={t("attendance.deniedScans")}>
-        {denied.data?.items.length === 0 && (
-          <p className="text-sm text-slate-500">{t("expiring.none")}</p>
-        )}
-        <ul className="divide-y divide-slate-100 text-sm">
+        {denied.data?.items.length === 0 && <EmptyState title={t("expiring.none")} />}
+        <ul className="divide-y divide-hairline text-sm">
           {denied.data?.items.map((c) => (
             <li key={c.id} className="flex items-center justify-between py-2">
               <Link href={`/staff/members/${c.member_id}`} className="hover:underline">

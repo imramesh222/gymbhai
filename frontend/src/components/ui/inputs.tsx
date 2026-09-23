@@ -20,11 +20,11 @@ const BS_YEARS = Array.from({ length: 16 }, (_, i) => 2075 + i);
 import { parseRs, toInput } from "@/lib/money";
 
 const box =
-  "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100";
+  "mt-1.5 w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500";
 
 function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
   return (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-slate-800">
+    <label htmlFor={htmlFor} className="block text-sm font-medium text-slate-700">
       {children}
     </label>
   );
@@ -72,7 +72,7 @@ export function MoneyInput({
             setLastValue(paisa);
             onChange(paisa);
           }}
-          className={`${box} pl-9 ${invalid ? "border-red-400" : ""}`}
+          className={`${box} pl-9 ${invalid ? "ring-2 ring-red-400" : ""}`}
         />
       </div>
       {help && <p className="mt-1 text-xs text-slate-500">{help}</p>}
@@ -114,7 +114,8 @@ export function DateInput({
     onChange(fromBs(next));
   }
 
-  const small = "rounded-lg border border-slate-300 bg-white px-2 py-2.5 text-base";
+  const small =
+    "rounded-xl bg-white px-2 py-2.5 text-base ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500";
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
@@ -204,23 +205,36 @@ export function Select<T extends string>({
   onChange,
   options,
   required,
+  compact,
 }: {
   label: string;
   value: T | "";
   onChange: (value: T) => void;
   options: { value: T; label: string }[];
   required?: boolean;
+  /** In a table row, where the column heading already says what it is. */
+  compact?: boolean;
 }) {
   const id = useId();
   return (
     <div>
-      <Label htmlFor={id}>{label}</Label>
+      {compact ? (
+        <label htmlFor={id} className="sr-only">
+          {label}
+        </label>
+      ) : (
+        <Label htmlFor={id}>{label}</Label>
+      )}
       <select
         id={id}
         value={value}
         required={required}
         onChange={(e) => onChange(e.target.value as T)}
-        className={box}
+        className={
+          compact
+            ? "w-full rounded-lg bg-white px-2.5 py-1.5 text-sm text-slate-700 ring-1 ring-hairline outline-none transition hover:bg-slate-50 focus:ring-2 focus:ring-brand-500"
+            : box
+        }
       >
         <option value="" disabled>
           {t("common.choose")}

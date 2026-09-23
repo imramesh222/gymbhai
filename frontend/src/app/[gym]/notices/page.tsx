@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/Card";
 import { t } from "@/i18n";
 import { formatDateTime } from "@/lib/dates";
 import { memberApi } from "@/lib/memberApi";
@@ -13,9 +14,7 @@ export default function MemberNotices() {
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-semibold">{t("app.notices")}</h1>
-      {data?.length === 0 && (
-        <p className="text-sm text-slate-500">{t("notices.none")}</p>
-      )}
+      {data?.length === 0 && <EmptyState title={t("notices.none")} />}
       {data?.map((n) => (
         <article key={n.id} className="rounded-2xl bg-white p-4">
           <h2 className="font-semibold">{n.title}</h2>

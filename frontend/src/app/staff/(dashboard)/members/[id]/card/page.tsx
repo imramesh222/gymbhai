@@ -34,7 +34,7 @@ export default function CardPage() {
       </div>
       {/* 85.6 x 54 mm: a bank card. */}
       <div
-        className="flex overflow-hidden rounded-xl border border-slate-300 bg-white"
+        className="flex overflow-hidden rounded-2xl bg-surface shadow-card ring-1 ring-hairline"
         style={{ width: "85.6mm", height: "54mm" }}
       >
         <div className="flex flex-1 flex-col justify-between p-[3mm]">

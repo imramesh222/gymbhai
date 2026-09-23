@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Notice } from "@/components/Notice";
-import { PageHeader } from "@/components/ui/Card";
+import { EmptyState, ListCard, PageHeader } from "@/components/ui/Card";
 import { Money } from "@/components/ui/Money";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -75,9 +75,9 @@ export default function MembersPage() {
         onChange={(e) => setQ(e.target.value)}
         placeholder={t("members.search")}
         aria-label={t("members.search")}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100"
+        className="w-full rounded-xl bg-white px-4 py-3 text-base shadow-card ring-1 ring-hairline outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500"
       />
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+      <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -86,10 +86,10 @@ export default function MembersPage() {
               setFilter(f.key);
               setPage(0);
             }}
-            className={`shrink-0 rounded-full border px-3 py-1 text-sm ${
+            className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
               filter === f.key
-                ? "border-brand-600 bg-brand-600 text-white"
-                : "border-slate-300 bg-white text-slate-700"
+                ? "bg-brand-600 text-white shadow-brand"
+                : "bg-white text-slate-600 shadow-card ring-1 ring-hairline hover:bg-slate-50"
             }`}
           >
             {t(f.label)}
@@ -106,43 +106,49 @@ export default function MembersPage() {
         <p className="mt-6 text-sm text-slate-500">{t("common.loading")}</p>
       )}
       {data && data.items.length === 0 && (
-        <p className="mt-6 text-center text-sm text-slate-500">{t("members.none")}</p>
+        <div className="mt-4">
+          <ListCard>
+            <EmptyState title={t("members.none")} />
+          </ListCard>
+        </div>
       )}
 
-      <ul className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        {data?.items.map((m) => (
-          <li key={m.id}>
-            <Link
-              href={`/staff/members/${m.id}`}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50"
-            >
-              <Avatar name={m.name} url={m.photo_url} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-slate-900">{m.name}</p>
-                <p className="truncate text-xs text-slate-500">
-                  {m.member_code} · {m.phone}
-                  {m.current && ` · ${m.current.plan_name}`}
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <StatusBadge status={m.status} />
-                <p className="mt-1 text-xs text-slate-500">
-                  {m.status === "active" || m.status === "frozen"
-                    ? t("members.daysLeft", { count: m.days_left })
-                    : m.valid_until
-                      ? date(m.valid_until)
-                      : ""}
-                </p>
-                {m.dues > 0 && (
-                  <p className="text-xs font-medium text-amber-700">
-                    {t("members.owes")} <Money paisa={m.dues} />
+      {data && data.items.length > 0 && (
+        <ul className="mt-4 divide-y divide-hairline overflow-hidden rounded-2xl bg-surface shadow-card ring-1 ring-hairline">
+          {data.items.map((m) => (
+            <li key={m.id}>
+              <Link
+                href={`/staff/members/${m.id}`}
+                className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+              >
+                <Avatar name={m.name} url={m.photo_url} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-slate-900">{m.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                    {m.member_code} · {m.phone}
+                    {m.current && ` · ${m.current.plan_name}`}
                   </p>
-                )}
-              </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
+                </div>
+                <div className="shrink-0 text-right">
+                  <StatusBadge status={m.status} />
+                  <p className="mt-1 text-xs text-slate-500">
+                    {m.status === "active" || m.status === "frozen"
+                      ? t("members.daysLeft", { count: m.days_left })
+                      : m.valid_until
+                        ? date(m.valid_until)
+                        : ""}
+                  </p>
+                  {m.dues > 0 && (
+                    <p className="text-xs font-medium text-amber-700">
+                      {t("members.owes")} <Money paisa={m.dues} />
+                    </p>
+                  )}
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {data && data.total > PAGE && (
         <div className="mt-4 flex items-center justify-between">

@@ -384,6 +384,12 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 
 ## 7. Screens
 
+### How they look
+
+One design system, defined as tokens in `frontend/src/app/globals.css` — brand ramp, canvas and surface colours, the `hairline` border, the card shadows — and built into the shared components (`Button`, `Card`/`ListCard`/`Stat`/`EmptyState`, `Field`, `Choice`, `StatusBadge`, `Dialog`, the inputs). Screens compose those; they don't invent their own colours or borders, so the whole product restyles from one file. Type is Inter, self-hosted by `next/font`.
+
+Staff screens are light and dense — read all day in a bright room, with white cards on a cool canvas. The member app is deliberately bolder: a full-bleed header in the gym's own brand colour, the QR as the largest thing on the screen, big touch targets, an icon tab bar. The kiosk is dark and legible across a room. `/admin` keeps the dark bar so our console is never mistaken for a gym's dashboard.
+
 ### Staff dashboard (`/staff`)
 
 | Screen | What's on it |

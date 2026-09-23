@@ -50,7 +50,7 @@ export default function TeamPage() {
         actions={<Button onClick={() => setEditing("new")}>{t("team.add")}</Button>}
       />
       <Card>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-hairline">
           {staff.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-3 py-3">
               <div className={`min-w-0 ${s.is_active ? "" : "opacity-50"}`}>
@@ -186,7 +186,7 @@ function StaffDialog({
                     catalog.presets[preset].filter((p) => grantable.has(p)),
                   )
                 }
-                className="rounded-full border border-slate-300 px-3 py-0.5 text-xs hover:bg-slate-50"
+                className="rounded-full bg-white px-3 py-0.5 text-xs ring-1 ring-hairline transition hover:bg-slate-50"
               >
                 {t(`team.preset.${preset}` as MessageKey)}
               </button>

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { methodLabel } from "@/components/money/PaymentFields";
 import { Money } from "@/components/ui/Money";
+import { EmptyState } from "@/components/ui/Card";
 import { t } from "@/i18n";
 import type { Payment } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
@@ -12,10 +13,10 @@ import { useGymCalendar } from "@/lib/gym";
 export function PaymentsTable({ payments }: { payments: Payment[] }) {
   const { display } = useGymCalendar();
   if (payments.length === 0) {
-    return <p className="text-sm text-slate-500">{t("payment.none")}</p>;
+    return <EmptyState title={t("payment.none")} />;
   }
   return (
-    <ul className="divide-y divide-slate-100">
+    <ul className="divide-y divide-hairline">
       {payments.map((p) => (
         <li key={p.id} className="flex items-center justify-between gap-3 py-2 text-sm">
           <div

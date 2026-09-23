@@ -138,14 +138,14 @@ export default function MemberPage() {
             )}
           </div>
           {(member.status === "active" || member.status === "frozen") && (
-            <p className="mt-3 text-4xl font-bold text-brand-900">
+            <p className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
               {member.days_left}
               <span className="ml-1 text-base font-medium text-slate-600">
                 {t("member.daysLeftLabel")}
               </span>
             </p>
           )}
-          <dl className="mt-3">
+          <dl className="mt-4 divide-y divide-hairline">
             {member.current && (
               <Row label={t("member.plan")}>{member.current.plan_name}</Row>
             )}
@@ -210,7 +210,7 @@ export default function MemberPage() {
         {member.memberships.length === 0 && (
           <p className="text-sm text-slate-500">{t("member.noMemberships")}</p>
         )}
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-hairline">
           {member.memberships.map((m) => (
             <li key={m.id}>
               <Link

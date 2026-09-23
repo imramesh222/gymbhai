@@ -46,7 +46,7 @@ export function BranchesSection() {
 
   return (
     <Card title={t("settings.branches")}>
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-hairline">
         {branches?.map((b) => (
           <li key={b.id} className="flex items-center justify-between py-2 text-sm">
             <span className={b.is_active ? "" : "text-slate-400"}>{b.name}</span>
@@ -103,7 +103,7 @@ export function PlansSection() {
       actions={<Button onClick={() => setEditing("new")}>{t("plans.add")}</Button>}
     >
       <p className="mb-2 text-sm text-slate-600">{t("plans.help")}</p>
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-hairline">
         {plans.map((p) => (
           <li key={p.id}>
             <button
@@ -308,7 +308,7 @@ export function PaymentMethodsSection() {
         {methods?.map((m) => (
           <li
             key={m.id}
-            className={`flex gap-3 rounded-lg border p-3 ${m.is_active ? "border-slate-200" : "border-dashed border-slate-300 opacity-60"}`}
+            className={`flex gap-3 rounded-xl p-3 ring-1 ${m.is_active ? "ring-hairline" : "border border-dashed border-slate-300 opacity-60 ring-transparent"}`}
           >
             {m.qr_image_url ? (
               // eslint-disable-next-line @next/next/no-img-element

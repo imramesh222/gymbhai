@@ -83,7 +83,7 @@ test("the owner adds front-desk staff who cannot see settings", async ({
   await dialog.getByLabel("Name").fill("Hari Desk");
   const phone = `98${randomDigits(8)}`;
   await dialog.getByLabel("Mobile number").fill(phone);
-  await dialog.getByLabel("Password").fill("front-desk-123");
+  await dialog.getByLabel("Password", { exact: true }).fill("front-desk-123");
   await dialog.getByRole("button", { name: "Front desk" }).click();
   await expect(dialog.getByLabel("Collect payments")).toBeChecked();
   await expect(dialog.getByLabel("Void payments")).not.toBeChecked();
@@ -93,7 +93,7 @@ test("the owner adds front-desk staff who cannot see settings", async ({
   const desk = await (await browser.newContext()).newPage();
   await desk.goto("/staff/login");
   await desk.getByLabel("Email or mobile number").fill(phone);
-  await desk.getByLabel("Password").fill("front-desk-123");
+  await desk.getByLabel("Password", { exact: true }).fill("front-desk-123");
   await desk.getByRole("button", { name: "Sign in" }).click();
   await desk.waitForURL("**/staff");
   await expect(desk.getByRole("link", { name: "Members" })).toBeVisible();

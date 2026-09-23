@@ -50,7 +50,7 @@ export default function ExpiringPage() {
             {members.length === 0 && (
               <p className="text-sm text-slate-500">{t("expiring.none")}</p>
             )}
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-hairline">
               {members.map((m) => (
                 <li
                   key={m.id}
@@ -76,7 +76,7 @@ export default function ExpiringPage() {
                   <div className="flex shrink-0 gap-2">
                     <a
                       href={`tel:${m.phone}`}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                      className="rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-card ring-1 ring-hairline transition hover:bg-slate-50"
                     >
                       {t("expiring.call")}
                     </a>

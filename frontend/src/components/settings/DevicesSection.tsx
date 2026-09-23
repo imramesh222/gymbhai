@@ -28,7 +28,7 @@ export function DevicesSection() {
           </Link>
           <Link
             href="/staff/settings/poster"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold"
+            className="rounded-xl bg-white px-3 py-2 text-sm font-semibold shadow-card ring-1 ring-hairline transition hover:bg-slate-50"
           >
             {t("devices.poster")}
           </Link>
@@ -36,7 +36,7 @@ export function DevicesSection() {
       }
     >
       <p className="mb-2 text-sm text-slate-600">{t("devices.help")}</p>
-      <ul className="divide-y divide-slate-100 text-sm">
+      <ul className="divide-y divide-hairline text-sm">
         {devices.data?.map((d) => (
           <li key={d.id} className="flex items-center justify-between py-2">
             <span className={d.revoked_at ? "text-slate-400 line-through" : ""}>

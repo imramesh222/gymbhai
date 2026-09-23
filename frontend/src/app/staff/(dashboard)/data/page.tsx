@@ -98,7 +98,7 @@ export default function DataPage() {
                             e.target.value === "" ? null : Number(e.target.value),
                         })
                       }
-                      className="mt-1 block w-full rounded border border-slate-300 px-2 py-1.5"
+                      className="mt-1 block w-full rounded-lg bg-white px-2 py-1.5 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500"
                     >
                       <option value="">{t("data.notInFile")}</option>
                       {preview.headers.map((header, i) => (

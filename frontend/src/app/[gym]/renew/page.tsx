@@ -109,7 +109,7 @@ export default function RenewPage() {
             className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 ${
               plan?.id === p.id
                 ? "border-brand-600 bg-brand-50"
-                : "border-slate-200 bg-white"
+                : "border-transparent bg-white ring-1 ring-hairline"
             }`}
           >
             <input

@@ -60,7 +60,7 @@ test("the flow that must never break", async ({ browser }) => {
   const staff = await (await browser.newContext({ storageState: undefined })).newPage();
   await staff.goto("/staff/login");
   await staff.getByLabel("Email or mobile number").fill(gym.phone);
-  await staff.getByLabel("Password").fill("correct-horse-battery");
+  await staff.getByLabel("Password", { exact: true }).fill("correct-horse-battery");
   await staff.getByRole("button", { name: "Sign in" }).click();
   await staff.waitForURL("**/staff");
   await staff.goto(memberUrl);

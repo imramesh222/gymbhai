@@ -19,7 +19,7 @@ test("sign up a gym, sign out, sign back in with the phone number", async ({
   await page.waitForURL("**/staff/login");
 
   await page.getByLabel("Email or mobile number").fill(`+977 ${gym.phone}`);
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL("**/staff");
   await expect(page.getByText(gym.gymName)).toBeVisible();

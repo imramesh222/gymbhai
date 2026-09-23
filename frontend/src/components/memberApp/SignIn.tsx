@@ -46,7 +46,11 @@ export function SignIn() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-10">
+    <main className="relative isolate mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-10">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(75%_45%_at_50%_28%,var(--color-brand-200),transparent)] opacity-80"
+      />
       <GymHeader gym={gym.data} />
       {!sentTo ? (
         <form
@@ -57,7 +61,7 @@ export function SignIn() {
               setSentTo(result.sent_to);
             });
           }}
-          className="mt-8 space-y-4"
+          className="mt-7 space-y-4 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline"
         >
           <Field
             label={t("app.signIn.who")}
@@ -69,12 +73,12 @@ export function SignIn() {
             help={t("app.signIn.whoHelp")}
           />
           {error && <Notice tone="error">{error}</Notice>}
-          <Button type="submit" block disabled={pending}>
+          <Button type="submit" size="lg" block disabled={pending}>
             {t("app.signIn.sendCode")}
           </Button>
         </form>
       ) : choose ? (
-        <div className="mt-8 space-y-3">
+        <div className="mt-7 space-y-3 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline">
           <p className="font-medium">{t("app.signIn.whoAreYou")}</p>
           {choose.map((person) => (
             <Button
@@ -108,7 +112,7 @@ export function SignIn() {
               else signedIn(result);
             });
           }}
-          className="mt-8 space-y-4"
+          className="mt-7 space-y-4 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline"
         >
           <p className="text-sm text-slate-600">
             {t("app.signIn.sent", { to: sentTo })}
@@ -122,7 +126,7 @@ export function SignIn() {
             required
           />
           {error && <Notice tone="error">{error}</Notice>}
-          <Button type="submit" block disabled={pending || code.length !== 6}>
+          <Button type="submit" size="lg" block disabled={pending || code.length !== 6}>
             {t("app.signIn.submit")}
           </Button>
           <button
@@ -131,7 +135,7 @@ export function SignIn() {
               setSentTo(null);
               setCode("");
             }}
-            className="w-full text-sm text-slate-600 underline"
+            className="w-full text-sm font-medium text-slate-500 transition hover:text-slate-800"
           >
             {t("app.signIn.again")}
           </button>
@@ -151,10 +155,10 @@ function GymHeader({ gym }: { gym: PublicGym | null }) {
         <img
           src={gym.logo_url}
           alt=""
-          className="mx-auto mb-3 size-20 rounded-xl object-contain"
+          className="mx-auto mb-4 size-20 rounded-2xl bg-white object-contain p-2 shadow-card ring-1 ring-hairline"
         />
       )}
-      <h1 className="text-2xl font-bold text-slate-900">{gym.name}</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{gym.name}</h1>
       <p className="mt-1 text-slate-600">{t("app.signIn.title")}</p>
     </div>
   );
