@@ -10,6 +10,7 @@ import { t } from "@/i18n";
 import { doorApi } from "@/lib/api";
 import { addDays, formatDate, formatDateTime, todayInNepal } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 /** Check-ins by day and hour, denied scans and busiest hours (§7). */
@@ -22,6 +23,14 @@ export default function AttendancePage() {
     () =>
       doorApi.checkIns({ date_from: from, date_to: to, denied_only: true, limit: 50 }),
     [from, to],
+  );
+  useLive(
+    ["check_in"],
+    () => {
+      summary.reload();
+      denied.reload();
+    },
+    { everyMs: 3000 },
   );
   const s = summary.data;
   const busiest = Math.max(1, ...Object.values(s?.by_hour ?? {}));

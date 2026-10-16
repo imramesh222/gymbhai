@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,7 +33,7 @@ from app.models.member import Member
 from app.models.membership import SOURCE_DESK, Membership, MembershipFreeze
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
 from app.models.plan import Plan, PlanBranch
-from app.services import activity, counters
+from app.services import activity, counters, live
 
 ACTIVE = "active"
 UPCOMING = "upcoming"
@@ -106,6 +106,31 @@ def dues_of(membership: Membership, payments: Iterable[Payment]) -> int:
 
 def snapshot(membership: Membership) -> dict[str, Any]:
     return {field: getattr(membership, field) for field in TRACKED}
+
+
+# --- locking ------------------------------------------------------------------
+
+
+def lock_member(db: Session, member: Member) -> None:
+    """Serialise sales and renewals for one member until the transaction ends.
+
+    Two desks (or the desk and an app approval) renewing at once would both
+    read the same "renewal starts on" and "first membership?", and sell two
+    overlapping memberships, each with the admission fee.
+    """
+    db.execute(select(Member.id).where(Member.id == member.id).with_for_update())
+
+
+def lock_transaction_ref(db: Session, gym_id: uuid.UUID, ref: str) -> None:
+    """Serialise uses of one transaction ID in a gym until the transaction ends.
+
+    The unique index only covers payments; this also covers a desk payment
+    racing a member's pending app request with the same ID.
+    """
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"txref:{gym_id}:{ref}"},
+    )
 
 
 # --- loading ------------------------------------------------------------------
@@ -248,6 +273,8 @@ def record_payment(
     if payment.amount <= 0:
         raise AppError(422, "bad_amount", "The amount must be more than zero.")
 
+    # Locked and re-read: two payments at once must not both fit in the dues.
+    db.refresh(membership, with_for_update=True)
     existing = payments_for(db, [membership.id])
     if kind == KIND_PAYMENT:
         if membership.cancelled_at is not None:
@@ -264,6 +291,8 @@ def record_payment(
         raise AppError(422, "refund_too_large", "You can't refund more than was paid.")
 
     ref = (payment.transaction_ref or "").strip() or None
+    if ref:
+        lock_transaction_ref(db, ctx.gym_id, ref)
     if ref and db.scalar(
         select(Payment.id).where(
             Payment.gym_id == ctx.gym_id, Payment.transaction_ref == ref
@@ -295,6 +324,7 @@ def record_payment(
             409, "transaction_ref_used", "That transaction ID has already been used."
         ) from exc
 
+    live.member_changed(db, ctx.gym_id, membership.member_id, membership.branch_id)
     activity.staff_action(
         db,
         ctx.staff,
@@ -345,6 +375,7 @@ def sell(
     plan = db.get(Plan, sale.plan_id)
     if plan is None or plan.gym_id != ctx.gym_id:
         raise AppError(422, "bad_plan", "That plan does not exist.")
+    lock_member(db, member)
     if not plan.is_active:
         raise AppError(422, "plan_hidden", "That plan is no longer offered.")
 
@@ -396,6 +427,7 @@ def sell(
     )
     db.add(membership)
     db.flush()
+    live.member_changed(db, ctx.gym_id, member.id, branch.id)
     activity.staff_action(
         db,
         ctx.staff,
@@ -436,6 +468,7 @@ def _log_edit(
     changes = activity.diff(before, snapshot(membership))
     if extra:
         changes.update(extra)
+    live.member_changed(db, ctx.gym_id, membership.member_id, membership.branch_id)
     activity.staff_action(
         db,
         ctx.staff,
@@ -571,7 +604,8 @@ def extend_all(
 
     batch = uuid.uuid4()
     count = 0
-    for membership in db.scalars(stmt.with_for_update()):
+    # Locked in id order, so two runs at once queue up instead of deadlocking.
+    for membership in db.scalars(stmt.order_by(Membership.id).with_for_update()):
         before = snapshot(membership)
         membership.end_date += dt.timedelta(days=days)
         _log_edit(
@@ -741,6 +775,7 @@ def delete(
             "membership_has_check_ins",
             "Someone has trained on this membership. Cancel it instead.",
         )
+    live.member_changed(db, ctx.gym_id, membership.member_id, membership.branch_id)
     activity.staff_action(
         db,
         ctx.staff,

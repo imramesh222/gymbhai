@@ -4,13 +4,15 @@ import { t } from "@/i18n";
 import { formatDate, todayInNepal } from "@/lib/dates";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 /** This month's visits as a calendar (§7). */
 export default function MemberVisits() {
   const { me } = useMember();
   const month = todayInNepal().slice(0, 7);
-  const { data } = useLoad(() => memberApi.visits(month), [month]);
+  const { data, reload } = useLoad(() => memberApi.visits(month), [month]);
+  useLive(["check_in"], reload);
   if (!me) return null;
   const [year, number] = month.split("-").map(Number);
   const days = new Date(Date.UTC(year, number, 0)).getUTCDate();

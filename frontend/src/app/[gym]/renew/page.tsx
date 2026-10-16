@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/dates";
 import { shrinkImage } from "@/lib/image";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 /**
@@ -22,6 +23,11 @@ export default function RenewPage() {
   const { me } = useMember();
   const options = useLoad(() => memberApi.renewOptions(), []);
   const mine = useLoad(() => memberApi.payments(), []);
+  // Approved or rejected while they wait on this screen.
+  useLive(["payment_request", "member"], () => {
+    mine.reload();
+    options.reload();
+  });
   const [plan, setPlan] = useState<Plan | null>(null);
   const [methodId, setMethodId] = useState<string | null>(null);
   const [ref, setRef] = useState("");

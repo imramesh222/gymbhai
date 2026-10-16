@@ -33,7 +33,7 @@ from app.models.membership import SOURCE_APP
 from app.models.messaging import SMS_PAYMENT
 from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
-from app.services import activity, reminders
+from app.services import activity, live, reminders
 from app.services import memberships as ms
 from app.services.sms import service as sms
 
@@ -86,6 +86,10 @@ def create(
         if method is None or method.gym_id != member.gym_id or not method.is_active:
             raise AppError(422, "bad_method", "That payment account isn't available.")
     ref = (transaction_ref or "").strip() or None
+    # Locked: a double tap on "I've paid" must not leave two requests waiting.
+    ms.lock_member(db, member)
+    if ref:
+        ms.lock_transaction_ref(db, member.gym_id, ref)
     if ref and ref_in_use(db, member.gym_id, ref):
         raise REF_USED
     pending = db.scalar(
@@ -109,6 +113,7 @@ def create(
     )
     db.add(row)
     db.flush()
+    _changed(db, row)
     return row
 
 
@@ -119,9 +124,17 @@ def _pending(row: PaymentRequest) -> None:
         )
 
 
+def _changed(db: Session, row: PaymentRequest) -> None:
+    """The approvers' list and badge, and the member's own app."""
+    live.publish(
+        db, gym_id=row.gym_id, kind=live.PAYMENT_REQUEST, member_id=row.member_id
+    )
+
+
 def withdraw(db: Session, row: PaymentRequest) -> None:
     _pending(row)
     row.status = REQUEST_WITHDRAWN
+    _changed(db, row)
 
 
 def approve(
@@ -134,11 +147,15 @@ def approve(
     accept_part_payment: bool = False,
     request: Request | None = None,
 ) -> PaymentRequest:
+    """`row` must be loaded FOR UPDATE: two staff approving at once would
+    otherwise both see it pending and sell the membership twice."""
     _pending(row)
     member = db.get(Member, row.member_id)
     gym = db.get(Gym, ctx.gym_id)
     plan = db.get(Plan, row.plan_id)
     assert member is not None and gym is not None and plan is not None
+    if row.transaction_ref:
+        ms.lock_transaction_ref(db, ctx.gym_id, row.transaction_ref)
     if row.transaction_ref and ref_in_use(
         db, ctx.gym_id, row.transaction_ref, exclude=row.id
     ):
@@ -195,6 +212,7 @@ def approve(
     row.reviewed_at = utcnow()
     row.membership_id = membership.id
     row.payment_id = payment.id if payment else None
+    _changed(db, row)
     activity.staff_action(
         db,
         ctx.staff,
@@ -226,6 +244,7 @@ def reject(
     row.reject_reason = reason
     row.reviewed_by = ctx.staff.id
     row.reviewed_at = utcnow()
+    _changed(db, row)
     activity.staff_action(
         db,
         ctx.staff,

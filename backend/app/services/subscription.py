@@ -12,6 +12,7 @@
 
 import datetime as dt
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
@@ -100,6 +101,26 @@ def phase_of(ends_on: dt.date | None, today: dt.date) -> str:
     return READ_ONLY
 
 
+def _state(
+    row: GymSubscription | None,
+    plan: PlatformPlan | None,
+    today: dt.date,
+    active_members: int,
+) -> SubscriptionState:
+    ends_on = row.ends_on if row else None
+    return SubscriptionState(
+        status=row.status if row else "none",
+        plan_name=plan.name if plan else ("Free trial" if row else None),
+        starts_on=row.starts_on if row else None,
+        ends_on=ends_on,
+        days_left=max((ends_on - today).days + 1, 0) if ends_on else 0,
+        phase=phase_of(ends_on, today),
+        grace_ends_on=ends_on + dt.timedelta(days=GRACE_DAYS) if ends_on else None,
+        active_members=active_members,
+        max_active_members=plan.max_active_members if plan else None,
+    )
+
+
 def state(
     db: Session, gym_id: uuid.UUID, today: dt.date | None = None, *, count_members=True
 ) -> SubscriptionState:
@@ -110,18 +131,60 @@ def state(
         if row and row.platform_plan_id
         else None
     )
-    ends_on = row.ends_on if row else None
-    return SubscriptionState(
-        status=row.status if row else "none",
-        plan_name=plan.name if plan else ("Free trial" if row else None),
-        starts_on=row.starts_on if row else None,
-        ends_on=ends_on,
-        days_left=max((ends_on - today).days + 1, 0) if ends_on else 0,
-        phase=phase_of(ends_on, today),
-        grace_ends_on=ends_on + dt.timedelta(days=GRACE_DAYS) if ends_on else None,
-        active_members=active_member_count(db, gym_id, today) if count_members else 0,
-        max_active_members=plan.max_active_members if plan else None,
+    active = active_member_count(db, gym_id, today) if count_members else 0
+    return _state(row, plan, today, active)
+
+
+def states_for(
+    db: Session, gym_ids: Sequence[uuid.UUID], today: dt.date | None = None
+) -> dict[uuid.UUID, SubscriptionState]:
+    """`state` for many gyms in three queries (the /admin gym list)."""
+    today = today or today_in_nepal()
+    if not gym_ids:
+        return {}
+    rows = {
+        r.gym_id: r
+        for r in db.scalars(
+            select(GymSubscription)
+            .where(
+                GymSubscription.gym_id.in_(gym_ids),
+                GymSubscription.status.in_((SUBSCRIPTION_TRIAL, SUBSCRIPTION_ACTIVE)),
+            )
+            .order_by(GymSubscription.gym_id, GymSubscription.ends_on.desc())
+            .distinct(GymSubscription.gym_id)
+        )
+    }
+    plan_ids = {r.platform_plan_id for r in rows.values() if r.platform_plan_id}
+    plans = (
+        {
+            p.id: p
+            for p in db.scalars(
+                select(PlatformPlan).where(PlatformPlan.id.in_(plan_ids))
+            )
+        }
+        if plan_ids
+        else {}
     )
+    active = dict(
+        db.execute(
+            select(Membership.gym_id, func.count(func.distinct(Membership.member_id)))
+            .join(Member, Member.id == Membership.member_id)
+            .where(
+                Membership.gym_id.in_(gym_ids),
+                Membership.cancelled_at.is_(None),
+                Membership.start_date <= today,
+                Membership.end_date >= today,
+                Member.is_archived.is_(False),
+            )
+            .group_by(Membership.gym_id)
+        ).all()
+    )
+    states = {}
+    for gym_id in gym_ids:
+        row = rows.get(gym_id)
+        plan = plans.get(row.platform_plan_id) if row and row.platform_plan_id else None
+        states[gym_id] = _state(row, plan, today, active.get(gym_id, 0))
+    return states
 
 
 def is_read_only(db: Session, gym_id: uuid.UUID) -> bool:
@@ -139,7 +202,10 @@ def extend(
 ) -> GymSubscription:
     """A paid period, starting when the current one ends (or today if lapsed)."""
     from app.core.calendar import add_months
+    from app.models.gym import Gym
 
+    # Two periods granted at once must queue one after the other, not overlap.
+    db.execute(select(Gym.id).where(Gym.id == gym_id).with_for_update())
     today = today_in_nepal()
     current = latest(db, gym_id)
     start = today

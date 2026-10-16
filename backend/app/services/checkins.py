@@ -45,6 +45,7 @@ from app.models.member_app import (
     CheckIn,
 )
 from app.models.plan import Plan
+from app.services import live
 from app.services import members as members_service
 from app.services import memberships as ms
 
@@ -129,6 +130,9 @@ def check_in(
     override: bool = False,
     note: str | None = None,
 ) -> Outcome:
+    # A camera often reads the same QR twice in a second: locked, the second
+    # scan sees the first and is marked a duplicate instead of a second visit.
+    ms.lock_member(db, member)
     now = utcnow()
     today = today_in_nepal(now)
     result, reason, state = _decide(db, gym, member, branch_id, today)
@@ -160,4 +164,7 @@ def check_in(
     )
     db.add(row)
     db.flush()
+    live.publish(
+        db, gym_id=gym.id, kind=live.CHECK_IN, member_id=member.id, branch_id=branch_id
+    )
     return Outcome(check_in=row, member=member, state=state, reason=reason)

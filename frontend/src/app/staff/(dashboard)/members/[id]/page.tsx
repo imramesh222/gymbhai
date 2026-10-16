@@ -20,6 +20,7 @@ import { branchesApi, errorMessage, membersApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useGymCalendar } from "@/lib/gym";
 import { shrinkImage } from "@/lib/image";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 export default function MemberPage() {
@@ -33,6 +34,8 @@ export default function MemberPage() {
     reload,
     setData,
   } = useLoad(() => membersApi.get(id), [id]);
+  // Another desk took a payment, or the member renewed from their app.
+  useLive(["member"], reload, { match: (event) => event.member === id });
   const branches = useLoad(() => branchesApi.list(), []).data ?? [];
   const [dialog, setDialog] = useState<"pay" | "edit" | "sms" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

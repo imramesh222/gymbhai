@@ -12,16 +12,19 @@ import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { memberAppUrl } from "@/lib/slug";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 /** Today (PLAN.md §7): who's in, who's due, who was turned away, what came in. */
 export default function TodayPage() {
   const { me, can } = useAuth();
   const { display } = useGymCalendar();
-  const { data, error } = useLoad(
+  const { data, error, reload } = useLoad(
     () => (me?.gym && can("members.view") ? reportsApi.today() : Promise.resolve(null)),
     [me?.gym?.id],
   );
+  // Who's inside, what came in, who's waiting: as it happens.
+  useLive(["check_in", "member", "payment_request"], reload, { everyMs: 3000 });
   if (!me) return null;
   if (!me.gym) return <Notice>{t("staff.platformAdmin")}</Notice>;
 

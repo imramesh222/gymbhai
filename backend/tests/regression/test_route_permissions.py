@@ -48,6 +48,8 @@ ANY_STAFF = {
     # Staff pick a branch for check-in and sales; the list is branch-filtered.
     ("GET", "/api/v1/branches"),
     ("GET", "/api/v1/branches/{branch_id}"),
+    # Live updates: each event is filtered by permission (app/services/live.py).
+    ("GET", "/api/v1/live"),
 }
 
 

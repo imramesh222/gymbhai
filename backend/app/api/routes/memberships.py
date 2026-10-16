@@ -34,8 +34,14 @@ router = APIRouter(prefix="/memberships", tags=["memberships"])
 
 
 def load_membership(
-    db: Session, ctx: StaffContext, membership_id: uuid.UUID
+    db: Session,
+    ctx: StaffContext,
+    membership_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Membership:
+    """`for_update` for every change: two edits at once (say, a freeze and an
+    extension) would otherwise each save their own end date, losing one."""
     return get_in_gym(
         db,
         Membership,
@@ -43,6 +49,7 @@ def load_membership(
         ctx,
         branch_column=Membership.branch_id,
         message="No such membership.",
+        for_update=for_update,
     )
 
 
@@ -83,7 +90,7 @@ def update_membership(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_EDIT)),
 ) -> MembershipRead:
-    membership = load_membership(db, ctx, membership_id)
+    membership = load_membership(db, ctx, membership_id, for_update=True)
     gym = db.get(Gym, ctx.gym_id)
     assert gym is not None
     changes = payload.model_dump(exclude_unset=True, exclude={"reason"})
@@ -102,7 +109,7 @@ def extend(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_EXTEND)),
 ) -> MembershipRead:
-    membership = load_membership(db, ctx, membership_id)
+    membership = load_membership(db, ctx, membership_id, for_update=True)
     ms.extend(db, ctx, membership, payload.days, payload.reason, request=request)
     db.commit()
     return membership_read_one(db, membership)
@@ -116,7 +123,7 @@ def freeze(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_FREEZE)),
 ) -> MembershipRead:
-    membership = load_membership(db, ctx, membership_id)
+    membership = load_membership(db, ctx, membership_id, for_update=True)
     ms.freeze(
         db,
         ctx,
@@ -138,7 +145,7 @@ def unfreeze(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_FREEZE)),
 ) -> MembershipRead:
-    membership = load_membership(db, ctx, membership_id)
+    membership = load_membership(db, ctx, membership_id, for_update=True)
     row = db.scalar(
         select(MembershipFreeze).where(
             MembershipFreeze.id == freeze_id,
@@ -162,7 +169,7 @@ def cancel(
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_CANCEL)),
 ) -> SaleResult:
     """Reason required; a refund, if any, is recorded as a refund payment."""
-    membership = load_membership(db, ctx, membership_id)
+    membership = load_membership(db, ctx, membership_id, for_update=True)
     refund = ms.PaymentIn(**payload.refund.model_dump()) if payload.refund else None
     refund_row = ms.cancel(db, ctx, membership, payload.reason, refund, request=request)
     db.commit()
@@ -181,7 +188,7 @@ def delete(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_DELETE)),
 ) -> Response:
-    membership = load_membership(db, ctx, membership_id)
+    membership = load_membership(db, ctx, membership_id, for_update=True)
     ms.delete(db, ctx, membership, request=request)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

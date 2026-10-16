@@ -1,6 +1,8 @@
 """The gym's plans (PLAN.md §5.1). Hidden, never deleted: memberships point at them."""
 
 import uuid
+from collections import defaultdict
+from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import delete, select
@@ -36,10 +38,34 @@ def _branch_ids(db: Session, plan_id: uuid.UUID) -> list[uuid.UUID]:
     )
 
 
+def branch_ids_for(
+    db: Session, plans: Sequence[Plan]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """Each plan's branches in one query; plans sold everywhere get []."""
+    wanted = [p.id for p in plans if not p.all_branches]
+    found: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+    if wanted:
+        for plan_id, branch_id in db.execute(
+            select(PlanBranch.plan_id, PlanBranch.branch_id).where(
+                PlanBranch.plan_id.in_(wanted)
+            )
+        ):
+            found[plan_id].append(branch_id)
+    return {p.id: sorted(found[p.id]) for p in plans}
+
+
+def plans_read(db: Session, plans: Sequence[Plan]) -> list[PlanRead]:
+    branches = branch_ids_for(db, plans)
+    reads = []
+    for plan in plans:
+        read = PlanRead.model_validate(plan)
+        read.branch_ids = branches[plan.id]
+        reads.append(read)
+    return reads
+
+
 def _read(db: Session, plan: Plan) -> PlanRead:
-    read = PlanRead.model_validate(plan)
-    read.branch_ids = [] if plan.all_branches else _branch_ids(db, plan.id)
-    return read
+    return plans_read(db, [plan])[0]
 
 
 def _set_branches(
@@ -67,8 +93,8 @@ def list_plans(
     stmt = for_gym(select(Plan), Plan, ctx)
     if not include_hidden:
         stmt = stmt.where(Plan.is_active)
-    rows = db.scalars(stmt.order_by(Plan.sort_order, Plan.created_at))
-    return [_read(db, p) for p in rows]
+    rows = db.scalars(stmt.order_by(Plan.sort_order, Plan.created_at)).all()
+    return plans_read(db, rows)
 
 
 @router.post("", response_model=PlanRead, status_code=status.HTTP_201_CREATED)

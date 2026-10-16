@@ -7,6 +7,7 @@ their own records (§11).
 
 import datetime as dt
 import uuid
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import (
@@ -21,14 +22,14 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_member
 from app.api.presenters import payments_read
 from app.api.routes.payment_methods import read as method_read
-from app.api.routes.plans import _read as plan_read
+from app.api.routes.plans import branch_ids_for, plans_read
 from app.core import qr
 from app.core.config import settings
 from app.core.errors import AppError, not_found
@@ -58,7 +59,7 @@ from app.schemas.member_app import (
     Visit,
 )
 from app.schemas.messaging import NoticeRead
-from app.services import member_auth, storage
+from app.services import live, member_auth, storage
 from app.services import members as members_service
 from app.services import memberships as ms
 from app.services import payment_requests as requests_service
@@ -305,6 +306,20 @@ def me(
     return build_me(db, member)
 
 
+@router.get("/live")
+def my_live(
+    member: Member = Depends(current_member), db: Session = Depends(get_db)
+) -> StreamingResponse:
+    """Updates to this member's own membership, payments and visits."""
+    accepts = live.member_filter(member.id)
+    db.close()  # see app/api/routes/live.py
+    return StreamingResponse(
+        live.stream(accepts, seconds=settings.access_token_minutes * 60),
+        media_type="text/event-stream",
+        headers=live.STREAM_HEADERS,
+    )
+
+
 @router.get("/me/payments", response_model=MemberPayments)
 def my_payments(
     member: Member = Depends(current_member), db: Session = Depends(get_db)
@@ -319,11 +334,11 @@ def my_payments(
         .where(PaymentRequest.member_id == member.id)
         .order_by(PaymentRequest.created_at.desc())
         .limit(20)
-    )
+    ).all()
     return MemberPayments(
         dues=ms.member_dues(db, member),
         payments=payments_read(db, list(payments)),
-        requests=[request_read(db, r) for r in requests],
+        requests=requests_read(db, requests),
     )
 
 
@@ -374,34 +389,65 @@ def renew_options(
         select(Plan)
         .where(Plan.gym_id == member.gym_id, Plan.is_active, Plan.price.is_not(None))
         .order_by(Plan.sort_order, Plan.created_at)
-    )
-    visible = [p for p in plans if ms.plan_covers_branch(db, p, member.home_branch_id)]
+    ).all()
+    branches = branch_ids_for(db, plans)
+    visible = [
+        p for p in plans if p.all_branches or member.home_branch_id in branches[p.id]
+    ]
     methods = db.scalars(
         select(GymPaymentMethod)
         .where(GymPaymentMethod.gym_id == member.gym_id, GymPaymentMethod.is_active)
         .order_by(GymPaymentMethod.sort_order)
     )
     return RenewOptions(
-        plans=[plan_read(db, p) for p in visible],
+        plans=plans_read(db, visible),
         payment_methods=[method_read(m) for m in methods],
         renewal_starts_on=ms.renewal_start(db, member),
         first_membership=ms.is_first_membership(db, member),
     )
 
 
+def requests_read(
+    db: Session, rows: Sequence[PaymentRequest]
+) -> list[PaymentRequestRead]:
+    """Plan names and account labels in two queries, however many rows."""
+    plan_names = dict(
+        db.execute(
+            select(Plan.id, Plan.name).where(Plan.id.in_({r.plan_id for r in rows}))
+        ).all()
+    )
+    method_ids = {r.payment_method_id for r in rows if r.payment_method_id}
+    labels = (
+        dict(
+            db.execute(
+                select(GymPaymentMethod.id, GymPaymentMethod.label).where(
+                    GymPaymentMethod.id.in_(method_ids)
+                )
+            ).all()
+        )
+        if method_ids
+        else {}
+    )
+    reads = []
+    for row in rows:
+        read = PaymentRequestRead.model_validate(row)
+        read.screenshot_url = storage.signed_url(row.screenshot_key)
+        read.plan_name = plan_names.get(row.plan_id)
+        if row.payment_method_id:
+            read.method_label = labels.get(row.payment_method_id)
+        reads.append(read)
+    return reads
+
+
 def request_read(db: Session, row: PaymentRequest) -> PaymentRequestRead:
-    read = PaymentRequestRead.model_validate(row)
-    read.screenshot_url = storage.signed_url(row.screenshot_key)
-    plan = db.get(Plan, row.plan_id)
-    read.plan_name = plan.name if plan else None
-    if row.payment_method_id:
-        method = db.get(GymPaymentMethod, row.payment_method_id)
-        read.method_label = method.label if method else None
-    return read
+    return requests_read(db, [row])[0]
 
 
 def _own_request(db: Session, member: Member, request_id: uuid.UUID) -> PaymentRequest:
-    row = db.get(PaymentRequest, request_id)
+    """Locked, like the staff side: withdrawing races approving."""
+    row = db.get(
+        PaymentRequest, request_id, with_for_update=True, populate_existing=True
+    )
     if row is None or row.member_id != member.id:
         raise not_found("No such request.")
     return row

@@ -2,11 +2,12 @@
 
 import datetime as dt
 import uuid
+from collections import defaultdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Path, Query, Request, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require
@@ -19,7 +20,7 @@ from app.db.session import get_db
 from app.models.gym import Branch, Gym
 from app.models.member import Member
 from app.models.member_app import REQUEST_PENDING, CheckIn, PaymentRequest
-from app.models.membership import SOURCE_IMPORT, Membership
+from app.models.membership import SOURCE_IMPORT, Membership, MembershipFreeze
 from app.models.payment import Payment
 from app.models.platform import MemberImport
 from app.models.staff import StaffUser
@@ -49,13 +50,11 @@ def today(
     data = reports.today(db, ctx, with_money=ctx.can(Permission.REPORTS_MONEY))
     pending = None
     if ctx.can(Permission.PAYMENTS_APPROVE_APP):
-        pending = len(
-            db.scalars(
-                select(PaymentRequest.id).where(
-                    PaymentRequest.gym_id == ctx.gym_id,
-                    PaymentRequest.status == REQUEST_PENDING,
-                )
-            ).all()
+        pending = db.scalar(
+            select(func.count()).where(
+                PaymentRequest.gym_id == ctx.gym_id,
+                PaymentRequest.status == REQUEST_PENDING,
+            )
         )
     return TodayRead(
         date=data.date,
@@ -94,6 +93,14 @@ def monthly(
 # --- export ------------------------------------------------------------------------
 
 EXPORTS = ("members", "memberships", "payments", "check-ins")
+
+
+def _staff_names(db: Session, gym_id: uuid.UUID) -> dict[uuid.UUID, str]:
+    return dict(
+        db.execute(
+            select(StaffUser.id, StaffUser.name).where(StaffUser.gym_id == gym_id)
+        ).all()
+    )
 
 
 def _local(at: dt.datetime | None) -> str:
@@ -177,8 +184,13 @@ def export(
                 .order_by(Membership.start_date)
             )
         )
-        payments = ms.payments_for(db, [m.id for m in rows_m])
-        freezes = ms.freezes_for(db, [m.id for m in rows_m])
+        # Grouped once: filtering the full lists for every row is quadratic.
+        payments: dict[uuid.UUID, list[Payment]] = defaultdict(list)
+        for p in ms.payments_for(db, [m.id for m in rows_m]):
+            payments[p.membership_id].append(p)  # type: ignore[index]
+        freezes: dict[uuid.UUID, list[MembershipFreeze]] = defaultdict(list)
+        for f in ms.freezes_for(db, [m.id for m in rows_m]):
+            freezes[f.membership_id].append(f)
         headers = [
             "Member code", "Member", "Plan", "Branch", *day_headers("Start"),
             *day_headers("End"), "Price (Rs)", "Discount (Rs)", "Admission (Rs)",
@@ -186,10 +198,8 @@ def export(
         ]  # fmt: skip
         rows = []
         for m in rows_m:
-            mine = [p for p in payments if p.membership_id == m.id]
-            status_now = ms.status_of(
-                m, [f for f in freezes if f.membership_id == m.id]
-            )
+            mine = payments[m.id]
+            status_now = ms.status_of(m, freezes[m.id])
             rows.append(
                 [
                     by_id[m.member_id].member_code,
@@ -210,7 +220,7 @@ def export(
                 ]  # fmt: skip
             )
     elif kind == "payments":
-        staff = dict(db.execute(select(StaffUser.id, StaffUser.name)).all())
+        staff = _staff_names(db, gym.id)
         rows_p = db.scalars(
             select(Payment)
             .where(Payment.gym_id == gym.id, Payment.member_id.in_(by_id))
@@ -239,7 +249,7 @@ def export(
             for p in rows_p
         ]
     else:
-        staff = dict(db.execute(select(StaffUser.id, StaffUser.name)).all())
+        staff = _staff_names(db, gym.id)
         rows_c = db.scalars(
             select(CheckIn)
             .where(CheckIn.gym_id == gym.id, CheckIn.member_id.in_(by_id))
@@ -360,7 +370,10 @@ def commit_register(
     not income in GymBhai, and they owe nothing. No SMS is sent; use "Resend
     welcome" when the gym is ready to tell them about the app.
     """
-    row = get_in_gym(db, MemberImport, import_id, ctx, message="No such import.")
+    # Locked: a double click on Import must not create everyone twice.
+    row = get_in_gym(
+        db, MemberImport, import_id, ctx, message="No such import.", for_update=True
+    )
     if row.status != "preview":
         raise AppError(409, "import_done", "This register has already been imported.")
     mapping = payload.mapping or row.mapping or {}

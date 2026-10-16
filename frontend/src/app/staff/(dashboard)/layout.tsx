@@ -8,8 +8,9 @@ import { RequireStaff } from "@/components/staff/RequireStaff";
 import { SubscriptionBanner } from "@/components/staff/SubscriptionBanner";
 import { LogoMark } from "@/components/ui/Logo";
 import { t, type MessageKey } from "@/i18n";
-import { paymentRequestsApi } from "@/lib/api";
+import { openStaffLive, paymentRequestsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { LiveProvider, useLive } from "@/lib/live";
 
 interface NavItem {
   href: string;
@@ -51,9 +52,14 @@ const NAV: NavItem[] = [
   },
 ];
 
-/** The red count on Payment requests (§5.4), checked every minute. */
+/**
+ * The red count on Payment requests (§5.4): updated live when a member sends
+ * one, and every few minutes in case the live stream can't get through.
+ */
 function usePendingRequests(enabled: boolean): number {
   const [count, setCount] = useState(0);
+  const [version, setVersion] = useState(0);
+  useLive(["payment_request"], () => setVersion((v) => v + 1));
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -63,12 +69,12 @@ function usePendingRequests(enabled: boolean): number {
         .then((r) => !cancelled && setCount(r.pending))
         .catch(() => undefined);
     void check();
-    const timer = setInterval(check, 60_000);
+    const timer = setInterval(check, 5 * 60_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [enabled]);
+  }, [enabled, version]);
   return count;
 }
 
@@ -145,14 +151,21 @@ function Header() {
   );
 }
 
+function Live({ children }: { children: React.ReactNode }) {
+  const { me } = useAuth();
+  return <LiveProvider open={me?.gym ? openStaffLive : null}>{children}</LiveProvider>;
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireStaff>
-      <Header />
-      <SubscriptionBanner />
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8 print:max-w-none print:p-0">
-        {children}
-      </main>
+      <Live>
+        <Header />
+        <SubscriptionBanner />
+        <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8 print:max-w-none print:p-0">
+          {children}
+        </main>
+      </Live>
     </RequireStaff>
   );
 }

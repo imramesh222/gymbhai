@@ -1,6 +1,7 @@
 """Turning rows plus their computed state into API responses."""
 
 import uuid
+from collections import defaultdict
 from collections.abc import Sequence
 
 from sqlalchemy import select
@@ -94,9 +95,14 @@ def member_read(member: Member, state: MemberState) -> MemberRead:
 def member_detail(db: Session, member: Member) -> MemberDetail:
     memberships = ms.memberships_of(db, member)
     ids = [m.id for m in memberships]
-    freezes = ms.freezes_for(db, ids)
-    membership_payments = ms.payments_for(db, ids)
-    state = members_service.state(db, member)
+    freezes: dict[uuid.UUID, list[MembershipFreeze]] = defaultdict(list)
+    for f in ms.freezes_for(db, ids):
+        freezes[f.membership_id].append(f)
+    membership_payments: dict[uuid.UUID, list[Payment]] = defaultdict(list)
+    for p in ms.payments_for(db, ids):
+        membership_payments[p.membership_id].append(p)  # type: ignore[index]
+    # From the rows already loaded, not a second round of the same queries.
+    state = members_service.state_of(memberships, freezes, membership_payments)
 
     all_payments = list(
         db.scalars(
@@ -109,11 +115,7 @@ def member_detail(db: Session, member: Member) -> MemberDetail:
     return MemberDetail(
         **base.model_dump(),
         memberships=[
-            membership_read(
-                m,
-                [f for f in freezes if f.membership_id == m.id],
-                [p for p in membership_payments if p.membership_id == m.id],
-            )
+            membership_read(m, freezes[m.id], membership_payments[m.id])
             for m in memberships
         ],
         payments=payments_read(db, all_payments),

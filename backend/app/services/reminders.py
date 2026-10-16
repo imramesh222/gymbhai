@@ -185,10 +185,13 @@ def _run_gym(db: Session, gym: Gym, today: dt.date) -> int:
         )
     )
     states = members_service.states_for(db, candidates, today)
+    # Only the candidates' memberships: the whole log grows every day.
+    candidate_memberships = [m.id for s in states.values() for m in s.memberships]
     already: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
     for rule_id, membership_id in db.execute(
         select(ReminderLog.rule_id, ReminderLog.membership_id).where(
-            ReminderLog.gym_id == gym.id
+            ReminderLog.gym_id == gym.id,
+            ReminderLog.membership_id.in_(candidate_memberships),
         )
     ):
         already[rule_id].add(membership_id)

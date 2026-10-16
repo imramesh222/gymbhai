@@ -9,6 +9,7 @@
 """
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -45,6 +46,17 @@ def balance(db: Session, gym_id: uuid.UUID) -> int:
     )
 
 
+def balances(db: Session, gym_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """`balance` for many gyms in one query; a gym with no ledger rows is 0."""
+    return dict(
+        db.execute(
+            select(SmsCreditLedger.gym_id, func.sum(SmsCreditLedger.change))
+            .where(SmsCreditLedger.gym_id.in_(gym_ids))
+            .group_by(SmsCreditLedger.gym_id)
+        ).all()
+    )
+
+
 def _lock_gym(db: Session, gym_id: uuid.UUID) -> None:
     """Serialise credit changes for one gym: two sends can't spend one credit."""
     db.execute(select(Gym.id).where(Gym.id == gym_id).with_for_update())
@@ -74,11 +86,17 @@ def queue(
     kind: str,
     member_id: uuid.UUID | None = None,
     created_by: uuid.UUID | None = None,
+    flush: bool = True,
 ) -> SmsMessage:
-    """Add an SMS to send once the caller's transaction commits."""
+    """Add an SMS to send once the caller's transaction commits.
+
+    `flush=False` for a bulk send (a notice to every member): the caller
+    flushes once at the end instead of one round trip per message.
+    """
     from app.worker import enqueue
 
     message = SmsMessage(
+        id=uuid.uuid4(),
         gym_id=gym_id,
         member_id=member_id,
         to=to,
@@ -89,7 +107,8 @@ def queue(
         created_by=created_by,
     )
     db.add(message)
-    db.flush()
+    if flush:
+        db.flush()
     enqueue(db, JOB_SEND, {"sms_id": str(message.id)})
     return message
 

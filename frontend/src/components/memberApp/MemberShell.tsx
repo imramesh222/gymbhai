@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 import { t, type MessageKey } from "@/i18n";
+import { LiveProvider, useLive } from "@/lib/live";
+import { openMemberLive } from "@/lib/memberApi";
 import { MemberProvider, useMember } from "@/lib/memberSession";
 
 import { SignIn } from "./SignIn";
@@ -131,6 +133,23 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Days left, dues and visits change as soon as the desk or the door acts. */
+function RefreshOnChange() {
+  const { refresh } = useMember();
+  useLive(["member", "check_in", "payment_request"], () => void refresh());
+  return null;
+}
+
+function Live({ children }: { children: React.ReactNode }) {
+  const { me, offline } = useMember();
+  return (
+    <LiveProvider open={me && !offline ? openMemberLive : null}>
+      <RefreshOnChange />
+      {children}
+    </LiveProvider>
+  );
+}
+
 export function MemberShell({
   slug,
   children,
@@ -140,7 +159,9 @@ export function MemberShell({
 }) {
   return (
     <MemberProvider slug={slug}>
-      <Frame>{children}</Frame>
+      <Live>
+        <Frame>{children}</Frame>
+      </Live>
     </MemberProvider>
   );
 }

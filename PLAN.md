@@ -104,6 +104,7 @@ Staff sign in with email or phone and a password. Members sign in with a one-tim
 | Frontend | Next.js (App Router), TypeScript, React, Tailwind CSS | Same; one app serves staff, members and kiosk |
 | Worker | Same Python image, a separate container running a loop every minute | Reminders and SMS sending without adding Redis or Celery |
 | Job queue | A `jobs` table in Postgres, claimed with `FOR UPDATE SKIP LOCKED` | Enough for thousands of SMS a day; one less service |
+| Live updates | Server-Sent Events (`GET /live`, `GET /m/live`) fed by Postgres `NOTIFY`; each API process `LISTEN`s once and fans out | Screens change when the door, the app or another desk acts — no Redis, works across API workers and through the Next.js proxy and Caddy; events carry ids only and screens reload through the normal API (`backend/app/services/live.py`) |
 | SMS | Provider interface: `sparrow`, `aakash`, `console` (dev, prints to log) | Switch providers without touching the rest |
 | Files | Local volume in development; S3-compatible storage (e.g. Cloudflare R2) in production | Member photos and gym logos |
 | QR generate | `qrcode` (npm) in the browser, `segno` (Python) for printed cards | |
@@ -505,6 +506,12 @@ Member access (staff)
   PATCH /members/{id}/access          app access on/off
   POST  /members/{id}/resend-welcome
   POST  /members/{id}/sign-out-all
+
+Live updates (Server-Sent Events; ids only, the screen reloads)
+  GET   /live                         staff: check-ins, members, payment requests
+                                      — filtered by permission and branch
+  GET   /m/live                       a member: their own check-ins, membership,
+                                      payments and requests
 
 Platform admin
   GET   /admin/gyms

@@ -33,7 +33,7 @@ from app.models.gym import Branch
 from app.models.member import Member
 from app.models.membership import Membership, MembershipFreeze
 from app.models.payment import KIND_PAYMENT, Payment
-from app.services import activity, counters
+from app.services import activity, counters, live
 from app.services import memberships as ms
 
 NONE = "none"
@@ -146,6 +146,7 @@ def update(
         sign_out_everywhere(db, member.id)
     diff = activity.diff(before, snapshot(member))
     if diff:
+        live.member_changed(db, ctx.gym_id, member.id, member.home_branch_id)
         activity.staff_action(
             db,
             ctx.staff,

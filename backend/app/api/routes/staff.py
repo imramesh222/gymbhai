@@ -13,6 +13,8 @@ The rules the system enforces:
 """
 
 import uuid
+from collections import defaultdict
+from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import delete, select
@@ -62,15 +64,30 @@ def _branch_ids(db: Session, staff_id: uuid.UUID) -> list[uuid.UUID]:
     )
 
 
+def _reads(db: Session, staff: Sequence[StaffUser]) -> list[StaffMember]:
+    """Everyone's branches in one query."""
+    branches: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+    for staff_id, branch_id in db.execute(
+        select(StaffBranchAccess.staff_user_id, StaffBranchAccess.branch_id).where(
+            StaffBranchAccess.staff_user_id.in_([s.id for s in staff])
+        )
+    ):
+        branches[staff_id].append(branch_id)
+    reads = []
+    for member in staff:
+        read = StaffMember.model_validate(member)
+        read.permissions = (
+            sorted(member.permissions)
+            if not member.is_owner
+            else sorted(p.value for p in ALL_PERMISSIONS)
+        )
+        read.branch_ids = [] if member.is_owner else sorted(branches[member.id])
+        reads.append(read)
+    return reads
+
+
 def _read(db: Session, staff: StaffUser) -> StaffMember:
-    read = StaffMember.model_validate(staff)
-    read.permissions = (
-        sorted(staff.permissions)
-        if not staff.is_owner
-        else sorted(p.value for p in ALL_PERMISSIONS)
-    )
-    read.branch_ids = [] if staff.is_owner else _branch_ids(db, staff.id)
-    return read
+    return _reads(db, [staff])[0]
 
 
 def _check_grant(
@@ -186,8 +203,8 @@ def list_staff(
         for_gym(select(StaffUser), StaffUser, ctx).order_by(
             StaffUser.is_owner.desc(), StaffUser.name
         )
-    )
-    return [_read(db, s) for s in rows]
+    ).all()
+    return _reads(db, rows)
 
 
 @router.post("", response_model=StaffMember, status_code=status.HTTP_201_CREATED)

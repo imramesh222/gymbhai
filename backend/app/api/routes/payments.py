@@ -32,7 +32,7 @@ from app.schemas.money import (
     RefundCollect,
     VoidIn,
 )
-from app.services import activity
+from app.services import activity, live
 from app.services import memberships as ms
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -51,8 +51,29 @@ def _membership(db: Session, ctx: StaffContext, membership_id: uuid.UUID) -> Mem
     )
 
 
-def _payment(db: Session, ctx: StaffContext, payment_id: uuid.UUID) -> Payment:
-    return get_in_gym(db, Payment, payment_id, ctx, message="No such payment.")
+def _payment(
+    db: Session, ctx: StaffContext, payment_id: uuid.UUID, *, for_update: bool = False
+) -> Payment:
+    return get_in_gym(
+        db, Payment, payment_id, ctx, message="No such payment.", for_update=for_update
+    )
+
+
+def _member_changed(db: Session, payment: Payment) -> None:
+    branch_id = (
+        db.scalar(
+            select(Membership.branch_id).where(Membership.id == payment.membership_id)
+        )
+        if payment.membership_id
+        else None
+    )
+    live.publish(
+        db,
+        gym_id=payment.gym_id,
+        kind=live.MEMBER,
+        member_id=payment.member_id,
+        branch_id=branch_id,
+    )
 
 
 @router.post("", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
@@ -178,7 +199,7 @@ def update_payment(
     ctx: StaffContext = Depends(require(Permission.PAYMENTS_EDIT)),
 ) -> PaymentRead:
     """Correct the amount, method, date or transaction ID (§5.6)."""
-    payment = _payment(db, ctx, payment_id)
+    payment = _payment(db, ctx, payment_id, for_update=True)
     if payment.voided_at is not None:
         raise AppError(409, "payment_voided", "This payment has been voided.")
     before = {name: getattr(payment, name) for name in FIELDS}
@@ -188,6 +209,8 @@ def update_payment(
             continue
         if name == "transaction_ref":
             value = (value or "").strip() or None
+            if value:
+                ms.lock_transaction_ref(db, ctx.gym_id, value)
             if value and db.scalar(
                 select(Payment.id).where(
                     Payment.gym_id == ctx.gym_id,
@@ -203,6 +226,7 @@ def update_payment(
         setattr(payment, name, value)
     diff = activity.diff(before, {name: getattr(payment, name) for name in FIELDS})
     if diff:
+        _member_changed(db, payment)
         activity.staff_action(
             db,
             ctx.staff,
@@ -225,12 +249,13 @@ def void_payment(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.PAYMENTS_VOID)),
 ) -> PaymentRead:
-    payment = _payment(db, ctx, payment_id)
+    payment = _payment(db, ctx, payment_id, for_update=True)
     if payment.voided_at is not None:
         raise AppError(409, "payment_voided", "This payment has already been voided.")
     payment.voided_at = utcnow()
     payment.voided_by = ctx.staff.id
     payment.void_reason = payload.reason
+    _member_changed(db, payment)
     activity.staff_action(
         db,
         ctx.staff,

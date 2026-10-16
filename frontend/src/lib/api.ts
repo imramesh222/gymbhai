@@ -181,9 +181,34 @@ export function createClient<S extends { access_token: string | null }>(options:
     return (await response.json()) as T;
   }
 
+  /**
+   * An open event stream (lib/live.ts), signed in like `request`: a 401
+   * refreshes the access token once and tries again.
+   */
+  async function open(path: string, signal: AbortSignal): Promise<Response> {
+    const send = () =>
+      fetch(path, {
+        headers: {
+          Accept: "text/event-stream",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        credentials: "same-origin",
+        cache: "no-store",
+        signal,
+      });
+    let response = await send();
+    if (response.status === 401 && accessToken) {
+      if (await refreshSession()) response = await send();
+      else onSessionLost?.();
+    }
+    if (!response.ok || !response.body) throw await toError(response);
+    return response;
+  }
+
   return {
     request,
     refreshSession,
+    open,
     authHeader: (): Record<string, string> =>
       accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     setAccessToken: (token: string | null) => {
@@ -213,6 +238,9 @@ export const request = staff.request;
 export const refreshSession = staff.refreshSession;
 export const setAccessToken = staff.setAccessToken;
 export const setSessionLostHandler = staff.setSessionLostHandler;
+/** The dashboard's live updates (backend/app/services/live.py). */
+export const openStaffLive = (signal: AbortSignal) =>
+  staff.open("/api/v1/live", signal);
 const staffAuthHeader = staff.authHeader;
 
 /** A message for the person at the screen, in their language. */

@@ -6,6 +6,7 @@ Every action is in the activity log under the gym it touched.
 """
 
 import uuid
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -74,47 +75,95 @@ def _tell_owner(db: Session, gym: Gym, text: str) -> None:
         sms.queue(db, gym_id=gym.id, to=owner.phone, body=text, kind=SMS_PLATFORM)
 
 
+def _payments_read(
+    db: Session, rows: Sequence[SubscriptionPayment]
+) -> list[SubscriptionPaymentRead]:
+    gym_names = dict(
+        db.execute(
+            select(Gym.id, Gym.name).where(Gym.id.in_({r.gym_id for r in rows}))
+        ).all()
+    )
+    plan_ids = {r.platform_plan_id for r in rows if r.platform_plan_id}
+    plan_names = (
+        dict(
+            db.execute(
+                select(PlatformPlan.id, PlatformPlan.name).where(
+                    PlatformPlan.id.in_(plan_ids)
+                )
+            ).all()
+        )
+        if plan_ids
+        else {}
+    )
+    reads = []
+    for row in rows:
+        read = SubscriptionPaymentRead.model_validate(row)
+        read.gym_name = gym_names.get(row.gym_id)
+        if row.platform_plan_id:
+            read.plan_name = plan_names.get(row.platform_plan_id)
+        reads.append(read)
+    return reads
+
+
 def _payment_read(db: Session, row: SubscriptionPayment) -> SubscriptionPaymentRead:
-    read = SubscriptionPaymentRead.model_validate(row)
-    gym = db.get(Gym, row.gym_id)
-    read.gym_name = gym.name if gym else None
-    if row.platform_plan_id:
-        plan = db.get(PlatformPlan, row.platform_plan_id)
-        read.plan_name = plan.name if plan else None
-    return read
+    return _payments_read(db, [row])[0]
 
 
 # --- gyms ---------------------------------------------------------------------------
 
 
-def _admin_gym(db: Session, gym: Gym) -> AdminGym:
-    owner = _owner(db, gym.id)
-    state = subscription.state(db, gym.id)
-    pending = db.scalar(
-        select(func.count())
-        .select_from(SubscriptionPayment)
-        .where(
-            SubscriptionPayment.gym_id == gym.id,
-            SubscriptionPayment.status == "pending",
+def _admin_gyms(db: Session, gyms: Sequence[Gym]) -> list[AdminGym]:
+    """The gym list: a fixed number of queries, not a handful per gym."""
+    ids = [g.id for g in gyms]
+    if not ids:
+        return []
+    owners: dict[uuid.UUID, StaffUser] = {}
+    for owner in db.scalars(
+        select(StaffUser)
+        .where(StaffUser.gym_id.in_(ids), StaffUser.is_owner)
+        .order_by(StaffUser.created_at)
+    ):
+        owners.setdefault(owner.gym_id, owner)  # type: ignore[arg-type]
+    states = subscription.states_for(db, ids)
+    pending = dict(
+        db.execute(
+            select(SubscriptionPayment.gym_id, func.count())
+            .where(
+                SubscriptionPayment.gym_id.in_(ids),
+                SubscriptionPayment.status == "pending",
+            )
+            .group_by(SubscriptionPayment.gym_id)
+        ).all()
+    )
+    balances = sms.balances(db, ids)
+    reads = []
+    for gym in gyms:
+        owner = owners.get(gym.id)
+        state = states[gym.id]
+        reads.append(
+            AdminGym(
+                id=gym.id,
+                slug=gym.slug,
+                name=gym.name,
+                status=gym.status,
+                owner_name=owner.name if owner else None,
+                owner_phone=owner.phone if owner else None,
+                owner_email=owner.email if owner else None,
+                created_at=gym.created_at,
+                subscription_status=state.status,
+                plan_name=state.plan_name,
+                ends_on=state.ends_on,
+                phase=state.phase,
+                active_members=state.active_members,
+                sms_balance=balances.get(gym.id, 0),
+                pending_payments=pending.get(gym.id, 0),
+            )
         )
-    )
-    return AdminGym(
-        id=gym.id,
-        slug=gym.slug,
-        name=gym.name,
-        status=gym.status,
-        owner_name=owner.name if owner else None,
-        owner_phone=owner.phone if owner else None,
-        owner_email=owner.email if owner else None,
-        created_at=gym.created_at,
-        subscription_status=state.status,
-        plan_name=state.plan_name,
-        ends_on=state.ends_on,
-        phase=state.phase,
-        active_members=state.active_members,
-        sms_balance=sms.balance(db, gym.id),
-        pending_payments=pending or 0,
-    )
+    return reads
+
+
+def _admin_gym(db: Session, gym: Gym) -> AdminGym:
+    return _admin_gyms(db, [gym])[0]
 
 
 @router.get("/gyms", response_model=list[AdminGym])
@@ -126,7 +175,7 @@ def list_gyms(
     stmt = select(Gym).order_by(Gym.created_at.desc())
     if q:
         stmt = stmt.where(Gym.name.ilike(f"%{q}%") | Gym.slug.ilike(f"%{q}%"))
-    return [_admin_gym(db, g) for g in db.scalars(stmt.limit(500))]
+    return _admin_gyms(db, db.scalars(stmt.limit(500)).all())
 
 
 @router.get("/gyms/{gym_id}", response_model=AdminGym)
@@ -287,11 +336,14 @@ def list_payments(
         .order_by(SubscriptionPayment.created_at)
         .limit(500)
     )
-    return [_payment_read(db, r) for r in rows]
+    return _payments_read(db, rows.all())
 
 
 def _pending(db: Session, payment_id: uuid.UUID) -> SubscriptionPayment:
-    row = db.get(SubscriptionPayment, payment_id)
+    """Locked: approving twice at once would extend the subscription twice."""
+    row = db.get(
+        SubscriptionPayment, payment_id, with_for_update=True, populate_existing=True
+    )
     if row is None:
         raise not_found("No such payment.")
     if row.status != "pending":

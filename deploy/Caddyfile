@@ -4,17 +4,25 @@
 }
 
 {$APP_DOMAIN} {
-	encode zstd gzip
-
+	# Live updates (backend/app/services/live.py) are a stream: never
+	# compressed, which would hold small events back, and flushed at once.
+	@live path /api/v1/live /api/v1/m/live
+	handle @live {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
 	# The API directly, skipping the Next.js proxy: one hop fewer.
 	# TRUSTED_PROXY_COUNT=1 in .env.prod matches this single hop.
 	handle /api/* {
+		encode zstd gzip
 		reverse_proxy api:8000
 	}
 	handle /health* {
 		reverse_proxy api:8000
 	}
 	handle {
+		encode zstd gzip
 		reverse_proxy web:3000
 	}
 

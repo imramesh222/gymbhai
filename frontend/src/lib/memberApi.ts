@@ -127,3 +127,7 @@ export const memberApi = {
   withdraw: (id: string) =>
     request<PaymentRequest>(`/api/v1/m/payment-requests/${id}/withdraw`, post()),
 };
+
+/** This member's live updates (backend/app/services/live.py). */
+export const openMemberLive = (signal: AbortSignal) =>
+  client.open("/api/v1/m/live", signal);

@@ -63,11 +63,19 @@ def get_in_gym[T](
     *,
     branch_column: InstrumentedAttribute[Any] | None = None,
     message: str = "Not found.",
+    for_update: bool = False,
 ) -> T:
-    """One row of the caller's gym (and branches, if given), or 404."""
+    """One row of the caller's gym (and branches, if given), or 404.
+
+    `for_update` locks the row until the transaction ends, re-reading it, so
+    a check like "still pending?" or "dues left?" can't be passed by two
+    requests at once.
+    """
     stmt = for_gym(select(model), model, ctx).where(model.id == record_id)  # type: ignore[attr-defined]
     if branch_column is not None:
         stmt = in_branches(stmt, branch_column, ctx)
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     row = db.scalars(stmt).first()
     if row is None:
         raise not_found(message)

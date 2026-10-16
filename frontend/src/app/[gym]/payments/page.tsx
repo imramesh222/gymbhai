@@ -7,11 +7,14 @@ import { t, type MessageKey } from "@/i18n";
 import { formatDateTime } from "@/lib/dates";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 export default function MemberPayments() {
   const { me } = useMember();
-  const { data } = useLoad(() => memberApi.payments(), []);
+  const { data, reload } = useLoad(() => memberApi.payments(), []);
+  // A payment taken at the desk, or an app payment approved.
+  useLive(["member", "payment_request"], reload);
   if (!me || !data)
     return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
   const display = me.gym.date_display;

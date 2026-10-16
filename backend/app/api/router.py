@@ -16,6 +16,7 @@ from app.api.routes import (
     files,
     gym,
     health,
+    live,
     member_app,
     members,
     memberships,
@@ -49,6 +50,7 @@ ROUTERS: list[tuple[str, APIRouter]] = [
     (settings.api_v1_prefix, subscription.router),
     (settings.api_v1_prefix, admin.router),
     (settings.api_v1_prefix, files.router),
+    (settings.api_v1_prefix, live.router),
 ]
 
 

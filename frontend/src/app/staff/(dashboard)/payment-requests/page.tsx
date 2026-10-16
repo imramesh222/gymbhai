@@ -14,6 +14,7 @@ import { ApiError, errorMessage, paymentRequestsApi } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import type { PaymentRequest } from "@/lib/memberApi";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 /**
@@ -24,6 +25,8 @@ export default function PaymentRequestsPage() {
   const { display } = useGymCalendar();
   const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
   const { data, reload } = useLoad(() => paymentRequestsApi.list(status), [status]);
+  // A new one from the app, or another approver got there first.
+  useLive(["payment_request"], reload);
   const [open, setOpen] = useState<{
     request: PaymentRequest;
     action: "approve" | "reject";

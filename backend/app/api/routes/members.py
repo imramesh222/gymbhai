@@ -40,7 +40,7 @@ from app.schemas.members import (
     SaleFields,
     SaleResult,
 )
-from app.services import activity, member_auth, reminders, storage
+from app.services import activity, live, member_auth, reminders, storage
 from app.services import members as members_service
 from app.services import memberships as ms
 from app.services.history import history_for
@@ -352,6 +352,8 @@ def sign_out_all(
     """Lost phone."""
     member = load_member(db, ctx, member_id)
     count = member_auth.sign_out_everywhere(db, member.id)
+    # Their open app hears it, reloads, and finds itself signed out.
+    live.member_changed(db, ctx.gym_id, member.id, member.home_branch_id)
     activity.staff_action(
         db,
         ctx.staff,

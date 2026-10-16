@@ -402,8 +402,10 @@ def create_notice(
                 kind=SMS_NOTICE,
                 member_id=member.id,
                 created_by=ctx.staff.id,
+                flush=False,
             )
             notice.sms_count += 1
+        db.flush()
     activity.staff_action(
         db,
         ctx.staff,
