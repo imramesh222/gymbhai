@@ -149,3 +149,24 @@ def test_admin_gyms(engine, client: TestClient, db: Session, platform_admin) -> 
         "/api/v1/admin/subscription-payments",
         lambda n: add(n + 10),
     )
+
+
+def test_importing_a_register(engine, client: TestClient, db: Session, gym_a) -> None:
+    """Committing a register of thousands must not mean thousands of trips."""
+    sign_in(db, client, gym_a.owner)
+
+    def commit(rows: int) -> int:
+        register = "Name,Mobile,Expiry\n" + "".join(
+            f"Member {n},98{rows:02d}{n:06d},2026-12-01\n" for n in range(rows)
+        )
+        preview = client.post(
+            "/api/v1/members/import",
+            files={"file": ("register.csv", register.encode(), "text/csv")},
+        ).json()
+        url = f"/api/v1/members/import/{preview['id']}/commit"
+        with counting(engine) as statements:
+            done = client.post(url, json={}).json()
+        assert done["result"]["created"] == rows, done
+        return len(statements)
+
+    assert commit(1) == commit(1 + MORE * 10)

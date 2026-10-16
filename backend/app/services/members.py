@@ -98,30 +98,63 @@ def create(
     *,
     request: Request | None = None,
 ) -> Member:
-    branch_id = data.pop("home_branch_id", None) or default_branch_id(db, ctx)
-    _branch(db, ctx, branch_id)
-    number = counters.next_value(db, ctx.gym_id, counters.MEMBER_CODE)
-    member = Member(
-        gym_id=ctx.gym_id,
-        home_branch_id=branch_id,
-        member_code=f"{config.member_code_prefix}-{number:04d}",
-        joined_on=data.pop("joined_on", None) or today_in_nepal(),
-        qr_secret=new_qr_secret(),
-        card_token=new_card_token(),
-        **data,
-    )
-    db.add(member)
+    return create_many(db, ctx, [data], config, request=request)[0]
+
+
+def create_many(
+    db: Session,
+    ctx: StaffContext,
+    rows: Sequence[dict[str, Any]],
+    config: GymSettings,
+    *,
+    request: Request | None = None,
+) -> list[Member]:
+    """Members added together, each logged as if added at the desk.
+
+    One counter update and one batched insert however many there are: an
+    imported register of thousands would otherwise make several round trips
+    to the database per member.
+    """
+    if not rows:
+        return []
+    rows = [dict(data) for data in rows]
+    default: uuid.UUID | None = None
+    checked: set[uuid.UUID] = set()
+    for data in rows:
+        if data.get("home_branch_id") is None:
+            default = default or default_branch_id(db, ctx)
+            data["home_branch_id"] = default
+        if data["home_branch_id"] not in checked:
+            _branch(db, ctx, data["home_branch_id"])
+            checked.add(data["home_branch_id"])
+
+    today = today_in_nepal()
+    numbers = counters.next_values(db, ctx.gym_id, counters.MEMBER_CODE, len(rows))
+    members = [
+        Member(
+            id=uuid.uuid4(),
+            gym_id=ctx.gym_id,
+            member_code=f"{config.member_code_prefix}-{number:04d}",
+            joined_on=data.pop("joined_on", None) or today,
+            qr_secret=new_qr_secret(),
+            card_token=new_card_token(),
+            **data,
+        )
+        for data, number in zip(rows, numbers, strict=True)
+    ]
+    db.add_all(members)
     db.flush()
-    activity.staff_action(
-        db,
-        ctx.staff,
-        "member.created",
-        entity="member",
-        entity_id=member.id,
-        changes={"member_code": member.member_code, **snapshot(member)},
-        request=request,
-    )
-    return member
+    for member in members:
+        activity.staff_action(
+            db,
+            ctx.staff,
+            "member.created",
+            entity="member",
+            entity_id=member.id,
+            changes={"member_code": member.member_code, **snapshot(member)},
+            request=request,
+        )
+    return members
 
 
 def update(

@@ -31,7 +31,7 @@ from app.schemas.reports import (
     Person,
     TodayRead,
 )
-from app.services import activity, excel, reports
+from app.services import activity, excel, live, reports
 from app.services import members as members_service
 from app.services import memberships as ms
 
@@ -387,54 +387,55 @@ def commit_register(
             select(Member.phone, Member.name).where(Member.gym_id == ctx.gym_id)
         )
     }
-    created = skipped = 0
+    skipped = 0
     problems: list[tuple[int, str]] = []
     today = today_in_nepal()
+    # Every row checked first, then everyone added in one batch.
+    wanted: list[tuple[dict, dict]] = []
     for number, values in enumerate(row.rows, start=1):
         try:
             data = excel.row_to_member(values, mapping)
         except ValueError as exc:
             problems.append((number, str(exc)))
             continue
-        if payload.skip_existing and (data["phone"], data["name"].lower()) in existing:
+        key = (data["phone"], data["name"].lower())
+        if payload.skip_existing and key in existing:
             skipped += 1
             continue
         membership_fields = {
             k: data.pop(k) for k in ("plan_name", "start_date", "end_date")
         }
-        member = members_service.create(
-            db,
-            ctx,
-            {
-                **data,
-                "home_branch_id": branch_id,
-                "joined_on": data["joined_on"] or today,
-            },
-            config,
-        )
+        data["home_branch_id"] = branch_id
+        data["joined_on"] = data["joined_on"] or today
+        wanted.append((data, membership_fields))
+        existing.add(key)
+
+    members = members_service.create_many(db, ctx, [d for d, _ in wanted], config)
+    for member, (_, membership_fields) in zip(members, wanted, strict=True):
         end = membership_fields["end_date"]
-        if end is not None:
-            start = membership_fields["start_date"] or min(
-                end, member.joined_on or today
+        if end is None:
+            continue
+        start = membership_fields["start_date"] or min(end, member.joined_on or today)
+        db.add(
+            Membership(
+                gym_id=ctx.gym_id,
+                member_id=member.id,
+                plan_id=None,
+                plan_name=membership_fields["plan_name"] or "Imported",
+                branch_id=branch_id,
+                start_date=min(start, end),
+                end_date=end,
+                price=0,
+                discount=0,
+                admission_fee=0,
+                created_by=ctx.staff.id,
+                source=SOURCE_IMPORT,
             )
-            db.add(
-                Membership(
-                    gym_id=ctx.gym_id,
-                    member_id=member.id,
-                    plan_id=None,
-                    plan_name=membership_fields["plan_name"] or "Imported",
-                    branch_id=branch_id,
-                    start_date=min(start, end),
-                    end_date=end,
-                    price=0,
-                    discount=0,
-                    admission_fee=0,
-                    created_by=ctx.staff.id,
-                    source=SOURCE_IMPORT,
-                )
-            )
-        existing.add((data["phone"], data["name"].lower()))
-        created += 1
+        )
+    created = len(members)
+    if members:
+        # One event for the lot: open dashboards reload their counts once.
+        live.publish(db, gym_id=ctx.gym_id, kind=live.MEMBER, branch_id=branch_id)
 
     row.status = "committed"
     row.mapping = mapping

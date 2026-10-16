@@ -242,3 +242,18 @@ def test_payment_requests_are_published(db: Session, gym_a, published) -> None:
     requests_service.reject(db, context_for(db, gym_a.owner), row, "Not received")
     assert [c["kind"] for c in published] == [live.PAYMENT_REQUEST]
     assert published[0]["member_id"] == member.id
+
+
+def test_an_import_is_published_once(
+    client: TestClient, db: Session, gym_a, published
+) -> None:
+    sign_in(db, client, gym_a.owner)
+    register = "Name,Mobile\nHari Thapa,9841111111\nGita Rai,9812222222\n"
+    preview = client.post(
+        "/api/v1/members/import",
+        files={"file": ("register.csv", register.encode(), "text/csv")},
+    ).json()
+    client.post(f"/api/v1/members/import/{preview['id']}/commit", json={})
+    assert published == [
+        {"gym_id": gym_a.gym.id, "kind": live.MEMBER, "branch_id": gym_a.branch.id}
+    ]

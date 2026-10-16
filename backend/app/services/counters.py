@@ -15,18 +15,24 @@ RECEIPT_NO = "receipt_no"
 
 
 def next_value(db: Session, gym_id: uuid.UUID, name: str) -> int:
-    return db.execute(
+    return next_values(db, gym_id, name, 1)[0]
+
+
+def next_values(db: Session, gym_id: uuid.UUID, name: str, count: int) -> range:
+    """`count` consecutive numbers in one statement (an imported register)."""
+    last = db.execute(
         text(
             """
             INSERT INTO gym_counters (id, gym_id, name, value)
-            VALUES (:id, :gym_id, :name, 1)
+            VALUES (:id, :gym_id, :name, :count)
             ON CONFLICT (gym_id, name)
-            DO UPDATE SET value = gym_counters.value + 1, updated_at = now()
+            DO UPDATE SET value = gym_counters.value + :count, updated_at = now()
             RETURNING value
             """
         ),
-        {"id": uuid.uuid4(), "gym_id": gym_id, "name": name},
+        {"id": uuid.uuid4(), "gym_id": gym_id, "name": name, "count": count},
     ).scalar_one()
+    return range(last - count + 1, last + 1)
 
 
 def peek(db: Session, gym_id: uuid.UUID, name: str) -> int:

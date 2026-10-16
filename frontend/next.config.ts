@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // A self-contained server for the production image (Dockerfile.prod).
   output: "standalone",
+  // `next dev` otherwise writes AGENTS.md and CLAUDE.md here whenever an AI
+  // agent runs it; the project's instructions live in the root CLAUDE.md.
+  agentRules: false,
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
   },
