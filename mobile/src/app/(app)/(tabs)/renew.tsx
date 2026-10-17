@@ -187,6 +187,7 @@ export default function Renew() {
             args={[waiting.id]}
             variant="secondary"
             label={t("app.renew.withdraw")}
+            testID="withdraw"
             style={{ alignSelf: "stretch" }}
           />
         </Card>

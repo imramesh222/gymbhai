@@ -43,6 +43,7 @@ export function Screen({
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         // Below iOS's see-through navigation bar, not under it; screens
         // without one pad for the status bar themselves (topInset).
         contentInsetAdjustmentBehavior={topInset ? "never" : "automatic"}
@@ -70,6 +71,20 @@ export function Screen({
       >
         {children}
       </ScrollView>
+      {topInset ? (
+        // The status bar over scrolled content: canvas, not text under the clock.
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: insets.top,
+            backgroundColor: colors.canvas,
+          }}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

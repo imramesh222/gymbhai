@@ -21,7 +21,8 @@ E2E_ADMIN_PASSWORD ?= e2e-admin-password-123
 export
 
 .PHONY: help setup env deps db migrate migration migration-check up down logs ps vapid \
-        test test-backend test-frontend e2e e2e-dev lint fmt admin shell psql
+        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app apk \
+        lint fmt admin shell psql
 
 help:  ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -77,13 +78,16 @@ logs:  ## Follow logs
 ps:  ## What is running
 	@$(COMPOSE) ps
 
-test: test-backend test-frontend  ## Backend and frontend tests
+test: test-backend test-frontend test-mobile  ## Backend, frontend and phone app tests
 
 test-backend:  ## pytest (needs `make db`)
 	@cd backend && ../$(PY) -m pytest -q
 
 test-frontend:  ## Vitest
 	@cd frontend && npm test --silent
+
+test-mobile:  ## Jest for the phone app (mobile/)
+	@cd mobile && npm test --silent
 
 e2e:  ## Playwright against a production build, on its own database (as in CI)
 	@$(COMPOSE) up -d --wait db
@@ -103,11 +107,26 @@ lint:  ## ruff, eslint, tsc
 	@cd backend && ../$(PY) -m ruff check app tests scripts alembic \
 		&& ../$(PY) -m ruff format --check app tests scripts alembic
 	@cd frontend && npm run -s lint && npm run -s typecheck
+	@cd mobile && npm run -s lint && npm run -s typecheck
 
 fmt:  ## Format both sides
 	@cd backend && ../$(PY) -m ruff check --fix app tests scripts alembic \
 		&& ../$(PY) -m ruff format app tests scripts alembic
 	@cd frontend && npm run -s format
+
+seed-app:  ## A fresh test gym for the phone app (/e2e-app; signs in with MASTER_OTP)
+	@$(COMPOSE) exec -T api python -m scripts.seed_app_test
+
+# The phone app's Maestro flows (mobile/e2e/README.md). On Expo Go by default;
+# app=com.gymbhai.member for an installed .apk or development build.
+app ?= host.exp.Exponent
+e2e-mobile: seed-app  ## Maestro flows on the running simulator or emulator
+	@cd mobile && maestro test e2e/ -e APP_ID=$(app) -e CODE=$(MASTER_OTP) \
+		$(if $(expo_url),-e EXPO_URL=$(expo_url)) \
+		$(if $(filter com.gymbhai.member,$(app)),,--exclude-tags installed-app)
+
+apk:  ## A test .apk of the phone app for Android testers (mobile/README.md)
+	@cd mobile && npm run -s build:apk
 
 vapid:  ## Print a new VAPID key for push notifications (paste into .env)
 	@cd backend && ../$(PY) -m scripts.vapid_keys

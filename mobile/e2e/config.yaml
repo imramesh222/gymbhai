@@ -1,0 +1,5 @@
+# Maestro flows for the phone app (PLAN.md §17.7, 12.9). How to run: README.md.
+flows:
+  - "*"
+executionOrder:
+  continueOnFailure: true

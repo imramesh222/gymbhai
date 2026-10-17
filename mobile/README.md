@@ -35,10 +35,16 @@ development build has them all: `npx expo run:android` / `npx expo run:ios`.
 
 ```sh
 npm run typecheck
-npm run lint
+npm run lint        # includes the rule: API calls from a button go through useAction
 npm test            # Jest: double taps, the socket, the API client, links
 npx expo-doctor     # dependency versions match the SDK
+make e2e-mobile     # (repo root) Maestro flows on a simulator: e2e/README.md
 ```
+
+## Testers
+
+`make apk` builds a test `.apk` for Android testers; iPhone testers use Expo
+Go. How to build, send and install, step by step: `docs/MOBILE.md`.
 
 ## Notifications
 

@@ -176,6 +176,7 @@ export default function Home() {
         accessibilityLabel={t("app.home.qrLabel")}
         accessibilityHint={t("mobile.qr.bigger")}
         onPress={() => router.push("/qr")}
+        testID="qr-card"
         style={{
           backgroundColor: colors.surface,
           borderRadius: radius.xl,

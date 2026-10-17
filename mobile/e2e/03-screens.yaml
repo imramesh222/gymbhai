@@ -1,0 +1,34 @@
+# Every screen opens: payments with a receipt, visits, Me, notices, freeze.
+appId: ${APP_ID}
+name: Every screen opens
+---
+- runFlow: subflows/open.yaml
+- runFlow:
+    file: subflows/sign-in.yaml
+    env:
+      PHONE: "9800000104"
+- extendedWaitUntil:
+    visible: "Hi Maya!"
+    timeout: 30000
+- tapOn:
+    id: tab-payments
+- assertVisible: "Download receipt #.*"
+- tapOn:
+    id: tab-visits
+- assertVisible: "visits this month"
+- tapOn:
+    id: tab-me
+- assertVisible: "9800000104"
+- scrollUntilVisible:
+    element: "Notices"
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn: "Notices"
+- assertVisible: "No notices yet."
+- runFlow: subflows/back.yaml
+- tapOn:
+    id: tab-home
+- tapOn: "Going away? Ask to freeze your membership"
+- assertVisible: "Ask the gym"
+- runFlow: subflows/back.yaml
+- assertVisible: "Hi Maya!"

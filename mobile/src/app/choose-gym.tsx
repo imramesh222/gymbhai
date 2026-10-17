@@ -12,11 +12,11 @@ import { GymLogo, LanguageSwitch } from "@/components/GymParts";
 import { Icon } from "@/components/Icon";
 import { Screen } from "@/components/Screen";
 import { ActionStatus, Button, Card, Field, Label, Title, Txt } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { ApiError, NetworkError } from "@/lib/api";
 import { DEFAULT_BRAND } from "@/lib/config";
 import { parseGymLink } from "@/lib/gymLink";
 import { memberApi } from "@/lib/memberApi";
-import { useSession } from "@/lib/session";
+import { useSession, type SavedGym } from "@/lib/session";
 import { colors, radius, space } from "@/lib/theme";
 import { useAction } from "@/lib/useAction";
 
@@ -36,6 +36,20 @@ export default function ChooseGym() {
       onError: (error) =>
         setNotFound(error instanceof ApiError && error.status === 404),
     },
+  );
+
+  // A gym this phone has opened: fresh details if there's signal, else as
+  // saved (signing in needs signal anyway, but a signed-in member's QR not).
+  const reopen = useAction(
+    async (_key: string, gym: SavedGym) => {
+      try {
+        return await memberApi.gym(gym.slug);
+      } catch (error) {
+        if (error instanceof NetworkError) return gym;
+        throw error;
+      }
+    },
+    { onSuccess: (gym) => void openGym(gym), offline: "run" },
   );
 
   return (
@@ -69,13 +83,7 @@ export default function ChooseGym() {
               key={gym.slug}
               accessibilityRole="button"
               accessibilityLabel={gym.name}
-              onPress={() =>
-                void memberApi
-                  .gym(gym.slug)
-                  .then(openGym)
-                  // Offline: open it as it was saved; sign-in needs signal anyway.
-                  .catch(() => openGym(gym))
-              }
+              onPress={() => reopen.run(gym)}
               style={{
                 minHeight: 56,
                 flexDirection: "row",
@@ -131,6 +139,7 @@ export default function ChooseGym() {
           returnKeyType="go"
           onSubmitEditing={() => find.run(address)}
           placeholder="fitness-zone"
+          testID="gym-address"
         />
         {notFound ? (
           <ActionStatus action={{ waiting: false, error: t("app.noSuchGym") }} />
@@ -142,6 +151,7 @@ export default function ChooseGym() {
           busy={find.busy}
           disabled={!address.trim()}
           onPress={() => find.run(address)}
+          testID="open-gym"
         />
       </Card>
 

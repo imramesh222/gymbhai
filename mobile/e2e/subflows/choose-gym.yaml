@@ -1,0 +1,15 @@
+# Type the test gym's address (scripts/seed_app_test.py) and open it.
+appId: ${APP_ID}
+env:
+  GYM: e2e-app
+---
+- tapOn:
+    id: gym-address
+- inputText: ${GYM}
+- runFlow: dismiss-keyboard.yaml
+- tapOn:
+    id: open-gym
+- extendedWaitUntil:
+    visible:
+      id: who
+    timeout: 20000

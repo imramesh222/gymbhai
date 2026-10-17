@@ -1,0 +1,34 @@
+# Sign out (after a confirmation); the phone still knows the gym.
+appId: ${APP_ID}
+name: Sign out and switch gym
+---
+- runFlow: subflows/open.yaml
+- runFlow:
+    file: subflows/sign-in.yaml
+    env:
+      PHONE: "9800000105"
+- extendedWaitUntil:
+    visible: "Hi Bina!"
+    timeout: 30000
+- tapOn:
+    id: tab-me
+- scrollUntilVisible:
+    element:
+      id: sign-out
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: sign-out
+- scrollUntilVisible:
+    element:
+      id: confirm-sign-out
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: confirm-sign-out
+- extendedWaitUntil:
+    visible:
+      id: who
+    timeout: 20000
+- tapOn: "Switch gym"
+- assertVisible: "App Test Gym"

@@ -1,0 +1,22 @@
+# Sign in with a code; Home shows the QR, which opens big (PLAN.md §17.5).
+appId: ${APP_ID}
+name: Sign in and show the QR
+---
+- runFlow: subflows/open.yaml
+- runFlow:
+    file: subflows/sign-in.yaml
+    env:
+      PHONE: "9800000101"
+- extendedWaitUntil:
+    visible: "Hi Ram!"
+    timeout: 30000
+- assertVisible:
+    id: qr-card
+- tapOn:
+    id: qr-card
+- assertVisible:
+    id: member-qr
+- assertVisible: "Ram Test"
+- tapOn:
+    id: close-qr
+- assertVisible: "Hi Ram!"

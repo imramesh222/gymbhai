@@ -1,0 +1,29 @@
+# No signal at the door: the app opens on the saved membership and the QR
+# still works (§4.2, §17.5). Android with an installed app only: Maestro
+# switches airplane mode on Android, and Expo Go needs the dev server.
+appId: ${APP_ID}
+name: The QR works offline
+tags:
+  - installed-app
+  - android-only
+---
+- runFlow: subflows/open.yaml
+- runFlow:
+    file: subflows/sign-in.yaml
+    env:
+      PHONE: "9800000106"
+- extendedWaitUntil:
+    visible: "Hi Kiran!"
+    timeout: 30000
+- setAirplaneMode: enabled
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Hi Kiran!"
+    timeout: 30000
+- assertVisible: "No connection — showing what's saved on this phone. Your QR still works."
+- tapOn:
+    id: qr-card
+- assertVisible:
+    id: member-qr
+- setAirplaneMode: disabled

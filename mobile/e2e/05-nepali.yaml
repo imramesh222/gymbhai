@@ -1,0 +1,10 @@
+# English / नेपाली before signing in (§16.6).
+appId: ${APP_ID}
+name: Nepali before signing in
+---
+- runFlow: subflows/open.yaml
+- runFlow: subflows/choose-gym.yaml
+- tapOn: "नेपाली"
+- assertVisible: "मलाई कोड पठाउनुहोस्"
+- tapOn: "English"
+- assertVisible: "Send me a code"

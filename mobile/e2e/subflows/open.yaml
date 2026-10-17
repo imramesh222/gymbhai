@@ -1,0 +1,30 @@
+# The app from nothing: no gym chosen, nobody signed in.
+# An installed app (.apk, development build) is launched with its data
+# cleared; in Expo Go the project is opened from the dev server.
+appId: ${APP_ID}
+env:
+  EXPO_URL: exp://127.0.0.1:8081
+---
+# iOS keeps the keychain (the refresh tokens) when app data is cleared.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - clearKeychain
+- runFlow:
+    when:
+      true: ${APP_ID == 'com.gymbhai.member'}
+    commands:
+      - launchApp:
+          clearState: true
+- runFlow:
+    when:
+      true: ${APP_ID != 'com.gymbhai.member'}
+    commands:
+      - stopApp
+      - clearState
+      - openLink: ${EXPO_URL + '?__expo_disable_fab=1&__expo_disable_onboarding=1'}
+- extendedWaitUntil:
+    visible:
+      id: gym-address
+    timeout: 90000

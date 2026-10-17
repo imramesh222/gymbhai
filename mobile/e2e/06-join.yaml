@@ -1,0 +1,24 @@
+# Not a member yet: ask to join, and the gym gets an enquiry (§16.4, 9.5).
+appId: ${APP_ID}
+name: Ask to join
+---
+- runFlow: subflows/open.yaml
+- runFlow: subflows/choose-gym.yaml
+- tapOn: "Ask to join"
+- tapOn:
+    id: join-name
+- inputText: "Maestro Visitor"
+- tapOn:
+    id: join-phone
+- inputText: "9800000199"
+- runFlow: subflows/dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: join-send
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: join-send
+- extendedWaitUntil:
+    visible: "Thanks! The gym will call you soon."
+    timeout: 20000

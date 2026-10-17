@@ -55,6 +55,7 @@ export default function TabsLayout() {
           options={{
             title: t(tab.label),
             tabBarAccessibilityLabel: t(tab.label),
+            tabBarButtonTestID: `tab-${tab.name}`,
             tabBarIcon: ({ color }) => <Icon name={tab.icon} color={color} />,
           }}
         />

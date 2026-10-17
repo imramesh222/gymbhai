@@ -68,6 +68,7 @@ export default function FullQr() {
         accessibilityRole="button"
         accessibilityLabel={t("common.close")}
         onPress={() => router.back()}
+        testID="close-qr"
         style={{
           position: "absolute",
           top: insets.top + space(2),

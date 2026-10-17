@@ -111,3 +111,23 @@ test("with no internet it waits, then sends by itself", async () => {
   expect(send).toHaveBeenCalledTimes(1);
   expect(screen.queryByText("waiting")).toBeNull();
 });
+
+test('offline: "run" sends at once and never resends', async () => {
+  reportNetwork(false);
+  const send = jest.fn(async () => {
+    throw new NetworkError();
+  });
+  function Reopen() {
+    const action = useAction(send, { offline: "run" });
+    return (
+      <Pressable testID="go" onPress={() => action.run()}>
+        <Text>{action.error ?? "fine"}</Text>
+      </Pressable>
+    );
+  }
+  await render(<Reopen />);
+  await fireEvent.press(screen.getByTestId("go"));
+  await flush();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("fine")).toBeNull();
+});

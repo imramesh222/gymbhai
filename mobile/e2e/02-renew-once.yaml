@@ -1,0 +1,52 @@
+# Renew and pay: three fast taps on "I've paid" make one request (§17.4).
+appId: ${APP_ID}
+name: Three taps on I've paid are one request
+---
+- runFlow: subflows/open.yaml
+- runFlow:
+    file: subflows/sign-in.yaml
+    env:
+      PHONE: "9800000103"
+- extendedWaitUntil:
+    visible: "Hi Sita!"
+    timeout: 30000
+- tapOn:
+    id: tab-renew
+- tapOn: "1 month, Rs 2,500"
+- tapOn: "eSewa"
+- scrollUntilVisible:
+    element:
+      id: transaction-ref
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: transaction-ref
+- inputText: "ESW-MAESTRO-1"
+- runFlow: subflows/dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: ive-paid
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: ive-paid
+    repeat: 3
+    delay: 0
+- extendedWaitUntil:
+    visible: "Sent — waiting for the gym to confirm"
+    timeout: 20000
+# Exactly one request, as the gym will see it.
+- tapOn:
+    id: tab-payments
+- assertVisible: "Waiting for the gym"
+- assertNotVisible:
+    text: "Waiting for the gym"
+    index: 1
+# Leave it as it was.
+- tapOn:
+    id: tab-renew
+- tapOn:
+    id: withdraw
+- extendedWaitUntil:
+    visible: "1 month, Rs 2,500"
+    timeout: 20000

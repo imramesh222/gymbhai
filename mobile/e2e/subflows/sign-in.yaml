@@ -1,0 +1,20 @@
+# Choose the gym, then sign in as PHONE with the code (MASTER_OTP in dev).
+appId: ${APP_ID}
+---
+- runFlow: choose-gym.yaml
+- tapOn:
+    id: who
+- inputText: ${PHONE}
+- runFlow: dismiss-keyboard.yaml
+- tapOn:
+    id: send-code
+- extendedWaitUntil:
+    visible:
+      id: code
+    timeout: 20000
+- tapOn:
+    id: code
+- inputText: ${CODE}
+- runFlow: dismiss-keyboard.yaml
+- tapOn:
+    id: sign-in

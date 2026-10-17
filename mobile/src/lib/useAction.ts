@@ -37,7 +37,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function useAction<A extends unknown[], R>(
   action: (key: string, ...args: A) => Promise<R>,
-  options: { onSuccess?: (result: R) => void; onError?: (error: unknown) => void } = {},
+  options: {
+    onSuccess?: (result: R) => void;
+    onError?: (error: unknown) => void;
+    /** "run": no waiting for signal or resending; the action copes offline. */
+    offline?: "wait" | "run";
+  } = {},
 ): Action<A> {
   const locked = useRef(false);
   const key = useRef<{ value: string; args: string } | null>(null);
@@ -73,7 +78,8 @@ export function useAction<A extends unknown[], R>(
     void (async () => {
       try {
         for (let attempt = 1; ; attempt++) {
-          if (!isOnline()) {
+          const waits = latest.current.options.offline !== "run";
+          if (waits && !isOnline()) {
             if (mounted.current) setWaiting(true);
             // Until the phone says the internet is back; but try now and
             // then anyway, in case it was the server and not the phone.
@@ -90,7 +96,7 @@ export function useAction<A extends unknown[], R>(
             latest.current.options.onSuccess?.(result);
             return;
           } catch (caught) {
-            if (caught instanceof NetworkError && attempt < MAX_ATTEMPTS) {
+            if (waits && caught instanceof NetworkError && attempt < MAX_ATTEMPTS) {
               reportNetwork(false);
               if (mounted.current) setWaiting(true);
               continue;

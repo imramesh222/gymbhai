@@ -106,6 +106,7 @@ export default function Join() {
             label={t("member.name")}
             value={name}
             onChangeText={setName}
+            testID="join-name"
             autoComplete="name"
             textContentType="name"
           />
@@ -113,6 +114,7 @@ export default function Join() {
             label={t("member.phone")}
             value={phone}
             onChangeText={setPhone}
+            testID="join-phone"
             keyboardType="phone-pad"
             autoComplete="tel"
             textContentType="telephoneNumber"
@@ -166,6 +168,7 @@ export default function Join() {
             args={[]}
             label={t("app.join.send")}
             disabled={!name.trim() || !phone.trim()}
+            testID="join-send"
           />
         </Card>
       )}

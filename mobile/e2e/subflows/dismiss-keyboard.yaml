@@ -1,0 +1,17 @@
+# Put the keyboard away as a member would. iOS number pads have no key for
+# it: a small drag of the screen does it (Screen: keyboardDismissMode).
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          start: 50%, 45%
+          end: 50%, 40%
+          duration: 300

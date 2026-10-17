@@ -8,6 +8,7 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * default, the Mac's LAN address in development (see README.md).
  */
 const DOMAIN = "app.gymbhai.com";
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? `https://${DOMAIN}`;
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -82,7 +83,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         isAccessMediaLocationEnabled: false,
       },
     ],
-    ["expo-notifications", { color: "#1d5fd1" }],
+    [
+      "expo-notifications",
+      { color: "#1d5fd1", icon: "./assets/android-icon-foreground.png" },
+    ],
+    // A test build that talks to a Mac over plain HTTP on the LAN; a build
+    // against the HTTPS domain doesn't allow it.
+    [
+      "expo-build-properties",
+      { android: { usesCleartextTraffic: API_URL.startsWith("http://") } },
+    ],
   ],
   experiments: { typedRoutes: true },
   // Push needs the Expo project's id (`npx eas-cli init`; README.md).

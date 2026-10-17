@@ -255,6 +255,7 @@ export default function Me() {
   const me = useMe();
   const { signOut, closeGym, gyms } = useSession();
   const [editingEmail, setEditingEmail] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const out = useAction(() => signOut());
   if (!me.data) return <Spinner />;
 
@@ -315,21 +316,34 @@ export default function Me() {
         />
       </Card>
 
-      <Button
-        variant="secondary"
-        label={t("common.signOut")}
-        busy={out.busy}
-        onPress={() =>
-          Alert.alert(t("mobile.signOut.confirm"), t("mobile.signOut.help"), [
-            { text: t("common.cancel"), style: "cancel" },
-            {
-              text: t("common.signOut"),
-              style: "destructive",
-              onPress: () => out.run(),
-            },
-          ])
-        }
-      />
+      {confirming ? (
+        <Card style={{ gap: space(3) }}>
+          <Txt weight="semibold" color={colors.ink} accessibilityRole="header">
+            {t("mobile.signOut.confirm")}
+          </Txt>
+          <Txt size={14} color={colors.muted}>
+            {t("mobile.signOut.help")}
+          </Txt>
+          <ActionButton
+            action={out}
+            args={[]}
+            label={t("common.signOut")}
+            testID="confirm-sign-out"
+          />
+          <LinkButton
+            label={t("common.cancel")}
+            color={colors.faint}
+            onPress={() => setConfirming(false)}
+          />
+        </Card>
+      ) : (
+        <Button
+          variant="secondary"
+          label={t("common.signOut")}
+          onPress={() => setConfirming(true)}
+          testID="sign-out"
+        />
+      )}
     </Screen>
   );
 }

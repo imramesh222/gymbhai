@@ -136,6 +136,18 @@ in Chrome, tap **Turn on**, then publish a notice with *Also send to their
 phones* — it should arrive as a notification, and the notice should say
 *Notification to 1*. On an iPhone, add the app to the Home Screen first.
 
+**The phone app** (`mobile/`, PLAN.md §17) needs nothing extra on the server:
+it uses the same API, and its live updates go through Caddy at
+`/api/v1/m/ws` (already in `deploy/Caddyfile`). Its notifications use the
+same `PUSH_PROVIDER=webpush` switch; they go through Expo's push service, so
+the server must reach `exp.host` (it does, unless outbound traffic is
+blocked). `EXPO_ACCESS_TOKEN` is needed only if Expo's "enhanced push
+security" is turned on for the project. A test `.apk` for the pilot gyms'
+members is built against this server with
+`EXPO_PUBLIC_API_URL=https://app.gymbhai.com make apk` (`docs/MOBILE.md` §4).
+`MASTER_OTP` must be gone before members install it: with a real SMS gateway,
+the app signs in like the web.
+
 ## 6. Updating
 
 ```sh

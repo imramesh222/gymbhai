@@ -1,0 +1,16 @@
+# Two members share one number: "Who are you?" picks one (§7).
+appId: ${APP_ID}
+name: Who are you on a shared phone
+---
+- runFlow: subflows/open.yaml
+- runFlow:
+    file: subflows/sign-in.yaml
+    env:
+      PHONE: "9800000102"
+- extendedWaitUntil:
+    visible: "Who are you?"
+    timeout: 30000
+- tapOn: "Gita Test"
+- extendedWaitUntil:
+    visible: "Hi Gita!"
+    timeout: 30000
