@@ -73,7 +73,7 @@ export default function KioskPage() {
 }
 
 function Register({ onRegistered }: { onRegistered: (token: string) => void }) {
-  const { me, loading, can } = useAuth();
+  const { me, loading, can, signOut } = useAuth();
   const branches = useLoad(
     () => (me ? branchesApi.list() : Promise.resolve([])),
     [me?.staff.id],
@@ -85,16 +85,32 @@ function Register({ onRegistered }: { onRegistered: (token: string) => void }) {
   if (loading)
     return <p className="p-10 text-center text-slate-500">{t("common.loading")}</p>;
   if (!me || !can("setup.devices")) {
+    // Signed in, but not as someone who can set up this gym's door: say why.
+    const why = !me
+      ? t("kiosk.needSignIn")
+      : me.staff.is_platform_admin
+        ? t("kiosk.adminHasNoGym")
+        : t("kiosk.noPermission");
     return (
       <main className="mx-auto max-w-md p-8 text-center">
         <h1 className="text-2xl font-bold tracking-tight">{t("kiosk.title")}</h1>
-        <p className="mt-2 text-slate-600">{t("kiosk.needSignIn")}</p>
-        <Link
-          href="/staff/login"
-          className="mt-6 inline-block font-semibold text-brand-700 underline"
-        >
-          {t("home.signIn")}
-        </Link>
+        <p className="mt-2 text-slate-600">{why}</p>
+        {me ? (
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="mt-6 inline-block font-semibold text-brand-700 underline"
+          >
+            {t("kiosk.signInAsOwner")}
+          </button>
+        ) : (
+          <Link
+            href="/staff/login?next=/kiosk"
+            className="mt-6 inline-block font-semibold text-brand-700 underline"
+          >
+            {t("home.signIn")}
+          </Link>
+        )}
       </main>
     );
   }

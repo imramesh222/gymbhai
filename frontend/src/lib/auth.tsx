@@ -34,9 +34,23 @@ export function needsTwoStepSetup(me: Me): boolean {
 }
 
 /** Where a signed-in account belongs. */
-export function homeFor(me: Me): string {
+/**
+ * Where to land after signing in. `next` is where they were going (the door
+ * scanner sends them to sign in and back): only a path on this site, and
+ * only for gym staff; a platform admin has no gym screens.
+ */
+export function homeFor(me: Me, next?: string | null): string {
   if (needsTwoStepSetup(me)) return "/staff/two-step";
-  return me.staff.is_platform_admin ? "/admin" : "/staff";
+  if (me.staff.is_platform_admin) return "/admin";
+  if (
+    next &&
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.startsWith("/\\")
+  ) {
+    return next;
+  }
+  return "/staff";
 }
 
 interface AuthState {

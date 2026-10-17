@@ -1319,5 +1319,8 @@
   "settings.digits.western": "0 1 2 3 (Western)",
   "settings.digits.nepali": "० १ २ ३ (Nepali)",
   "signup.language": "Language",
-  "signup.languageHelp": "The language your staff, members and SMS start in. Anyone can change it later."
+  "signup.languageHelp": "The language your staff, members and SMS start in. Anyone can change it later.",
+  "kiosk.adminHasNoGym": "You're signed in as the GymBhai admin, which belongs to no gym. Sign in as the gym's owner to make this the door scanner.",
+  "kiosk.noPermission": "This account can't set up door scanners. Sign in as the owner, or ask them to tick Devices for you.",
+  "kiosk.signInAsOwner": "Sign out, and sign in as the owner"
 }

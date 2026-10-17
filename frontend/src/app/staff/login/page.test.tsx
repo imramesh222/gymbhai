@@ -12,7 +12,10 @@ const { signIn, completeTwoStep, push } = vi.hoisted(() => ({
   push: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: push }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, replace: push }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("@/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth")>()),
   useAuth: () => ({ me: null, loading: false, signIn, completeTwoStep }),
@@ -105,5 +108,15 @@ describe("staff sign-in", () => {
     signIn.mockResolvedValue({ me: me({}, true) });
     await typePassword();
     expect(push).toHaveBeenCalledWith("/staff/two-step");
+  });
+});
+
+describe("where sign-in lands", () => {
+  it("goes back where they were going, on this site only", async () => {
+    const { homeFor } = await import("@/lib/auth");
+    expect(homeFor(me(), "/kiosk")).toBe("/kiosk");
+    expect(homeFor(me(), "//evil.example")).toBe("/staff");
+    expect(homeFor(me(), "https://evil.example")).toBe("/staff");
+    expect(homeFor(me({ is_platform_admin: true }), "/kiosk")).toBe("/admin");
   });
 });

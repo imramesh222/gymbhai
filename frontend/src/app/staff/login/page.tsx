@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/Button";
@@ -24,10 +24,13 @@ export default function StaffLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  // Where they were going before being asked to sign in (?next=/kiosk).
+  const next = useSearchParams().get("next");
+
   // Already signed in (a returning tab): go straight in.
   useEffect(() => {
-    if (!loading && me) router.replace(homeFor(me));
-  }, [loading, me, router]);
+    if (!loading && me) router.replace(homeFor(me, next));
+  }, [loading, me, router, next]);
 
   async function run(action: () => Promise<void>) {
     setPending(true);
@@ -52,13 +55,13 @@ export default function StaffLoginPage() {
         setTwoStepToken(result.twoStepToken);
         setPending(false);
       } else {
-        router.push(homeFor(result.me));
+        router.push(homeFor(result.me, next));
       }
     });
 
   const submitCode = (token: string) =>
     run(async () => {
-      router.push(homeFor(await completeTwoStep(token, code)));
+      router.push(homeFor(await completeTwoStep(token, code), next));
     });
 
   if (twoStepToken) {
