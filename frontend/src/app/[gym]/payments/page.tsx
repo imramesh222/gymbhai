@@ -1,5 +1,8 @@
 "use client";
 
+import { FileDown } from "lucide-react";
+import { useState } from "react";
+
 import { methodLabel } from "@/components/money/PaymentFields";
 import { Money } from "@/components/ui/Money";
 import { EmptyState } from "@/components/ui/Card";
@@ -8,7 +11,39 @@ import { formatDateTime } from "@/lib/dates";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
 import { useLive } from "@/lib/live";
+import { download, receiptFile } from "@/lib/receiptShare";
 import { useLoad } from "@/lib/useLoad";
+
+/** Payments → Download receipt, as a PDF (PLAN.md §16.3, 8.4). */
+function ReceiptButton({
+  paymentId,
+  receiptNo,
+}: {
+  paymentId: string;
+  receiptNo: number;
+}) {
+  const [state, setState] = useState<"idle" | "busy" | "failed">("idle");
+  return (
+    <button
+      type="button"
+      disabled={state === "busy"}
+      onClick={async () => {
+        setState("busy");
+        try {
+          download(await receiptFile(await memberApi.receiptLink(paymentId)));
+          setState("idle");
+        } catch {
+          setState("failed");
+        }
+      }}
+      className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-brand-700"
+      aria-label={t("app.payments.receiptFor", { number: receiptNo })}
+    >
+      <FileDown className="size-3.5" aria-hidden />
+      {state === "failed" ? t("app.payments.receiptFailed") : t("app.payments.receipt")}
+    </button>
+  );
+}
 
 export default function MemberPayments() {
   const { me } = useMember();
@@ -65,6 +100,7 @@ export default function MemberPayments() {
                 <p className="text-xs text-slate-500">
                   #{p.receipt_no} · {formatDateTime(p.paid_at, display)}
                 </p>
+                <ReceiptButton paymentId={p.id} receiptNo={p.receipt_no} />
               </div>
               <Money
                 paisa={p.kind === "refund" ? -p.amount : p.amount}

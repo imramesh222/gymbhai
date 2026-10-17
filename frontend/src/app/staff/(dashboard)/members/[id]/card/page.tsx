@@ -7,6 +7,8 @@ import { QrCode } from "@/components/QrCode";
 import { t } from "@/i18n";
 import { accessApi } from "@/lib/api";
 import { useLoad } from "@/lib/useLoad";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { PageSkeleton } from "@/components/ui/Skeleton";
 
 /**
  * The printed card for members without a smartphone (§4.2): credit-card size,
@@ -14,9 +16,10 @@ import { useLoad } from "@/lib/useLoad";
  * check the face on a shared card.
  */
 export default function CardPage() {
+  const confirm = useConfirm();
   const { id } = useParams<{ id: string }>();
   const { data: card, reload } = useLoad(() => accessApi.card(id), [id]);
-  if (!card) return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
+  if (!card) return <PageSkeleton label={t("common.loading")} />;
   return (
     <div>
       <div className="mb-4 flex gap-2 print:hidden">
@@ -24,7 +27,13 @@ export default function CardPage() {
         <Button
           variant="secondary"
           onClick={async () => {
-            if (!window.confirm(t("card.reissueConfirm"))) return;
+            const yes = await confirm({
+              title: t("card.reissue"),
+              message: t("card.reissueConfirm"),
+              confirmLabel: t("card.reissue"),
+              danger: true,
+            });
+            if (!yes) return;
             await accessApi.reissueCard(id);
             reload();
           }}

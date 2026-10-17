@@ -21,6 +21,8 @@ class MemberFields(Strict):
     notes: str | None = Field(default=None, max_length=2000)
     home_branch_id: uuid.UUID | None = None
     joined_on: dt.date | None = None
+    # The member who sent them (§16.4, 9.6).
+    referred_by_id: uuid.UUID | None = None
 
 
 class SaleFields(Strict):
@@ -38,6 +40,8 @@ class MemberCreate(MemberFields):
     """Add a member, and optionally sell their first membership in one step."""
 
     membership: SaleFields | None = None
+    # Convert: the enquiry this member came from (§16.4, 9.1).
+    lead_id: uuid.UUID | None = None
 
 
 class MemberUpdate(Strict):
@@ -51,6 +55,7 @@ class MemberUpdate(Strict):
     notes: str | None = Field(default=None, max_length=2000)
     home_branch_id: uuid.UUID | None = None
     joined_on: dt.date | None = None
+    referred_by_id: uuid.UUID | None = None
 
     @field_validator("name", "phone", "joined_on", "home_branch_id")
     @classmethod
@@ -86,7 +91,10 @@ class MembershipRead(BaseModel):
     cancel_reason: str | None
     source: str
     created_at: dt.datetime
+    visit_limit: int | None = None
+    access_hours: list[dict] | None = None
     # Computed, never stored.
+    visits_used: int | None = None
     status: str = ""
     days_left: int = 0
     total: int = 0
@@ -100,6 +108,10 @@ class CurrentMembership(BaseModel):
     plan_name: str
     start_date: dt.date
     end_date: dt.date
+    # A visit pack (§16.4, 9.3): "7 of 10 visits left".
+    visit_limit: int | None = None
+    visits_left: int | None = None
+    access_hours: list[dict] | None = None
 
 
 class MemberRead(BaseModel):
@@ -119,6 +131,8 @@ class MemberRead(BaseModel):
     joined_on: dt.date
     app_access: bool
     is_archived: bool
+    # Erased at their request: no details left, and nothing more to change.
+    erased_at: dt.datetime | None = None
     created_at: dt.datetime
     photo_url: str | None = None
     # Where they stand today (app/services/members.py).
@@ -127,6 +141,9 @@ class MemberRead(BaseModel):
     valid_until: dt.date | None = None
     days_left: int = 0
     dues: int = 0
+    # The last time they were let in at the door; lists only.
+    last_visit_at: dt.datetime | None = None
+    referred_by_id: uuid.UUID | None = None
 
 
 class MemberList(BaseModel):
@@ -134,7 +151,21 @@ class MemberList(BaseModel):
     total: int
 
 
+class MemberCounts(BaseModel):
+    """How many members each filter on the Members list shows."""
+
+    all: int
+    active: int
+    expiring: int
+    expired: int
+    dues: int
+    frozen: int
+    not_visiting: int
+    archived: int
+
+
 class MemberDetail(MemberRead):
+    referred_by_name: str | None = None
     memberships: list[MembershipRead]
     payments: list[PaymentRead]
     renewal_starts_on: dt.date

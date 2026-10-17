@@ -15,7 +15,7 @@ from app.core.permissions import Permission
 from app.db.session import get_db
 from app.models.gym import Branch
 from app.models.plan import Plan, PlanBranch
-from app.schemas.plans import PlanCreate, PlanRead, PlanUpdate
+from app.schemas.plans import PlanCreate, PlanRead, PlanUpdate, stored_hours
 from app.services import activity
 
 router = APIRouter(prefix="/plans", tags=["plans"])
@@ -29,6 +29,8 @@ FIELDS = (
     "all_branches",
     "is_active",
     "sort_order",
+    "visit_limit",
+    "access_hours",
 )
 
 
@@ -104,7 +106,11 @@ def create_plan(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.SETUP_PLANS)),
 ) -> PlanRead:
-    plan = Plan(gym_id=ctx.gym_id, **payload.model_dump(exclude={"branch_ids"}))
+    plan = Plan(
+        gym_id=ctx.gym_id,
+        **payload.model_dump(exclude={"branch_ids", "access_hours"}),
+        access_hours=stored_hours(payload.access_hours),
+    )
     db.add(plan)
     db.flush()
     if not plan.all_branches:
@@ -115,7 +121,7 @@ def create_plan(
         "plan.created",
         entity="plan",
         entity_id=plan.id,
-        changes=payload.model_dump(),
+        changes=payload.model_dump(by_alias=True),
         request=request,
     )
     db.commit()
@@ -131,7 +137,9 @@ def update_plan(
     ctx: StaffContext = Depends(require(Permission.SETUP_PLANS)),
 ) -> PlanRead:
     plan = get_in_gym(db, Plan, plan_id, ctx, message="No such plan.")
-    changes = payload.model_dump(exclude_unset=True)
+    changes = payload.model_dump(exclude_unset=True, exclude={"access_hours"})
+    if "access_hours" in payload.model_fields_set:
+        changes["access_hours"] = stored_hours(payload.access_hours)
     before = {name: getattr(plan, name) for name in FIELDS}
     before["branch_ids"] = _branch_ids(db, plan.id)
 
@@ -146,6 +154,8 @@ def update_plan(
                 "price",
                 "duration_months",
                 "duration_days",
+                "visit_limit",
+                "access_hours",
             ):
                 continue
             setattr(plan, name, changes[name])

@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require
@@ -51,6 +51,18 @@ def load_membership(
         message="No such membership.",
         for_update=for_update,
     )
+
+
+@router.get("/extend-all/preview", response_model=ExtendAllResult)
+def extend_all_preview(
+    branch_id: uuid.UUID | None = None,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_EXTEND_ALL)),
+) -> ExtendAllResult:
+    """How many memberships Extend everyone would change, changing nothing."""
+    stmt = ms.extend_all_selection(db, ctx, branch_id)
+    count = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    return ExtendAllResult(extended=count)
 
 
 @router.post("/extend-all", response_model=ExtendAllResult)

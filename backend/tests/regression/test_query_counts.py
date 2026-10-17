@@ -170,3 +170,156 @@ def test_importing_a_register(engine, client: TestClient, db: Session, gym_a) ->
         return len(statements)
 
     assert commit(1) == commit(1 + MORE * 10)
+
+
+def test_today(engine, client: TestClient, db: Session, gym_a: GymFixture) -> None:
+    """Today's to-do lists and charts cost the same however many are on them."""
+    import datetime as dt
+
+    from app.core.time import today_in_nepal
+    from app.services import checkins
+
+    today = today_in_nepal()
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Due {n}", phone=f"98100002{n:02d}")
+        sell(
+            db,
+            gym_a,
+            member,
+            paid=100_00,
+            start_date=today - dt.timedelta(days=29),
+            end_date=today,
+        )
+        checkins.check_in(
+            db, gym=gym_a.gym, member=member, branch_id=gym_a.branch.id, method="manual"
+        )
+        db.commit()
+
+    sign_in(db, client, gym_a.owner)
+    add(99)
+
+    def get() -> dict:
+        response = client.get("/api/v1/dashboard/today")
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    one = queries(engine, get)
+    for n in range(MORE):
+        add(n)
+    body = get()
+    assert len(body["ending_today"]) == MORE + 1
+    assert body["check_ins"] == MORE + 1
+    assert queries(engine, get) == one
+
+
+def test_members_list(
+    engine, client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    """The table's states, dues and last visits come batched, not per row."""
+    from app.services import checkins
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98100003{n:02d}")
+        sell(db, gym_a, member, paid=100_00)
+        checkins.check_in(
+            db, gym=gym_a.gym, member=member, branch_id=gym_a.branch.id, method="manual"
+        )
+        db.commit()
+
+    sign_in(db, client, gym_a.owner)
+    add(99)
+
+    def get() -> list:
+        response = client.get("/api/v1/members?sort=last_visit&direction=desc")
+        assert response.status_code == 200, response.text
+        return response.json()["items"]
+
+    one = queries(engine, get)
+    for n in range(MORE):
+        add(n)
+    assert len(get()) == MORE + 1
+    assert queries(engine, get) == one
+
+
+def test_follow_up(engine, client: TestClient, db: Session, gym_a: GymFixture) -> None:
+    import datetime as dt
+
+    from app.core.time import today_in_nepal, utcnow
+
+    sign_in(db, client, gym_a.owner)
+    today = today_in_nepal()
+
+    def add(n: int) -> None:
+        # Owing, not visiting, and (every other one) ending this week.
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98123500{n:02d}")
+        member.created_at = utcnow() - dt.timedelta(days=60)
+        end = today + dt.timedelta(days=3 if n % 2 else 20)
+        sell(db, gym_a, member, start_date=today - dt.timedelta(days=5), end_date=end)
+
+    def get() -> dict:
+        response = client.get("/api/v1/lists/follow-up")
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    add(90)
+    one = queries(engine, get)
+    for n in range(MORE):
+        add(n)
+    lists = get()
+    assert len(lists["owing"]) == len(lists["not_visiting"]) == MORE + 1
+    many = queries(engine, get)
+    assert many == one, f"follow up: {one} queries for one member, {many} for more"
+
+
+def test_freeze_requests(engine, client: TestClient, db: Session, gym_a) -> None:
+    import datetime as dt
+
+    from app.core.time import today_in_nepal
+    from app.services import freeze_requests
+
+    sign_in(db, client, gym_a.owner)
+    today = today_in_nepal()
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98123600{n:02d}")
+        sell(
+            db, gym_a, member, start_date=today, end_date=today + dt.timedelta(days=29)
+        )
+        freeze_requests.create(
+            db,
+            member,
+            from_date=today + dt.timedelta(days=2),
+            to_date=today + dt.timedelta(days=5),
+            reason="Away",
+        )
+        db.commit()
+
+    add(90)
+    same_cost(engine, client, "/api/v1/freeze-requests", add)
+
+
+def test_leads(engine, client: TestClient, db: Session, gym_a) -> None:
+    from app.models.lead import Lead
+
+    sign_in(db, client, gym_a.owner)
+    plan = priced_plan(db, gym_a.gym)
+    referrer = make_member(db, gym_a, name="Referrer", phone="9812370000")
+
+    def add(n: int) -> None:
+        db.add(
+            Lead(
+                gym_id=gym_a.gym.id,
+                branch_id=gym_a.branch.id,
+                name=f"Lead {n}",
+                phone=f"98123700{n:02d}",
+                source="referral",
+                plan_id=plan.id,
+                assigned_to=gym_a.owner.id,
+                referred_by_id=referrer.id,
+            )
+        )
+        db.commit()
+
+    add(90)
+    same_cost(engine, client, "/api/v1/leads", add)

@@ -3,17 +3,42 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { BarChart } from "@/components/charts/BarChart";
+import { Heatmap } from "@/components/charts/Heatmap";
 import { Card, EmptyState, PageHeader, Stat } from "@/components/ui/Card";
 import { DateInput } from "@/components/ui/inputs";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { t } from "@/i18n";
 import { doorApi } from "@/lib/api";
-import { addDays, formatDate, formatDateTime, todayInNepal } from "@/lib/dates";
+import {
+  addDays,
+  daysBetween,
+  formatDate,
+  formatDateTime,
+  todayInNepal,
+} from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
-/** Check-ins by day and hour, denied scans and busiest hours (§7). */
+const WEEKDAYS = [
+  "attendance.sun",
+  "attendance.mon",
+  "attendance.tue",
+  "attendance.wed",
+  "attendance.thu",
+  "attendance.fri",
+  "attendance.sat",
+] as const;
+// The heatmap's hours: when gyms are open; a visit outside them is rare.
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 5);
+
+function hourLabel(hour: number): string {
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelve}${hour < 12 ? "am" : "pm"}`;
+}
+
+/** Check-ins by day, when the gym is busy, and turned-away scans (§7, 7.9). */
 export default function AttendancePage() {
   const { display } = useGymCalendar();
   const [from, setFrom] = useState(addDays(todayInNepal(), -6));
@@ -33,12 +58,41 @@ export default function AttendancePage() {
     { everyMs: 3000 },
   );
   const s = summary.data;
-  const busiest = Math.max(1, ...Object.values(s?.by_hour ?? {}));
-  const busiestDay = Math.max(1, ...Object.values(s?.by_day ?? {}));
+  const days = Array.from({ length: Math.max(1, daysBetween(from, to) + 1) }, (_, i) =>
+    addDays(from, i),
+  );
 
   return (
     <div className="space-y-4">
       <PageHeader title={t("attendance.title")} />
+      <div
+        role="group"
+        aria-label={t("attendance.range")}
+        className="flex flex-wrap gap-2"
+      >
+        {[7, 30, 90].map((n) => {
+          const active =
+            from === addDays(todayInNepal(), -(n - 1)) && to === todayInNepal();
+          return (
+            <button
+              key={n}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                setFrom(addDays(todayInNepal(), -(n - 1)));
+                setTo(todayInNepal());
+              }}
+              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
+                active
+                  ? "bg-brand-600 text-white shadow-brand"
+                  : "bg-white text-slate-600 shadow-card ring-1 ring-hairline hover:bg-slate-50"
+              }`}
+            >
+              {t("attendance.lastDays", { count: n })}
+            </button>
+          );
+        })}
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <DateInput
           label={t("payments.from")}
@@ -64,45 +118,35 @@ export default function AttendancePage() {
               <Stat key={String(label)} value={value} label={String(label)} />
             ))}
           </div>
-          <Card title={t("attendance.byDay")}>
-            <ul className="space-y-1 text-sm">
-              {Object.entries(s.by_day).map(([day, count]) => (
-                <li key={day} className="flex items-center gap-2">
-                  <span className="w-44 shrink-0 text-slate-600">
-                    {formatDate(day, display)}
-                  </span>
-                  <span
-                    className="h-3 rounded bg-brand-600"
-                    style={{ width: `${(count / busiestDay) * 100}%` }}
-                  />
-                  <span className="tabular-nums">{count}</span>
-                </li>
-              ))}
-            </ul>
+          <Card title={t("attendance.byDay")} className="min-w-0">
+            <BarChart
+              title={t("attendance.byDay")}
+              labels={days.map((day) =>
+                formatDate(day, display === "ad" ? "ad" : "bs").replace(/ \d{4}$/, ""),
+              )}
+              series={[
+                {
+                  key: "visits",
+                  label: t("attendance.visits"),
+                  values: days.map((day) => s.by_day[day] ?? 0),
+                },
+              ]}
+            />
           </Card>
-          <Card title={t("attendance.byHour")}>
-            <div className="flex h-32 items-end gap-1">
-              {Array.from({ length: 24 }, (_, hour) => {
-                const count = s.by_hour[String(hour)] ?? 0;
-                return (
-                  <div key={hour} className="flex flex-1 flex-col items-center gap-1">
-                    <div
-                      className="w-full rounded-t bg-brand-600"
-                      style={{ height: `${(count / busiest) * 100}%` }}
-                      title={`${hour}:00 — ${count}`}
-                    />
-                    {hour % 3 === 0 && (
-                      <span className="text-[10px] text-slate-500">{hour}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          <Card title={t("attendance.whenBusy")} className="min-w-0">
+            <Heatmap
+              title={t("attendance.whenBusy")}
+              rows={WEEKDAYS.map((day) => t(day))}
+              columns={HOURS.map(hourLabel)}
+              values={s.by_weekday_hour.map((row) => HOURS.map((hour) => row[hour]))}
+              format={(count) => t("attendance.visitsCount", { count })}
+              everyNthColumn={3}
+            />
           </Card>
         </>
       )}
       <Card title={t("attendance.deniedScans")}>
-        {denied.data?.items.length === 0 && <EmptyState title={t("expiring.none")} />}
+        {denied.data?.items.length === 0 && <EmptyState title={t("followUp.none")} />}
         <ul className="divide-y divide-hairline text-sm">
           {denied.data?.items.map((c) => (
             <li key={c.id} className="flex items-center justify-between py-2">

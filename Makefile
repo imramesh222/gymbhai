@@ -20,7 +20,7 @@ E2E_ADMIN_PASSWORD ?= e2e-admin-password-123
 -include .env
 export
 
-.PHONY: help setup env deps db migrate migration migration-check up down logs ps \
+.PHONY: help setup env deps db migrate migration migration-check up down logs ps vapid \
         test test-backend test-frontend e2e e2e-dev lint fmt admin shell psql
 
 help:  ## Show this help
@@ -108,6 +108,9 @@ fmt:  ## Format both sides
 	@cd backend && ../$(PY) -m ruff check --fix app tests scripts alembic \
 		&& ../$(PY) -m ruff format app tests scripts alembic
 	@cd frontend && npm run -s format
+
+vapid:  ## Print a new VAPID key for push notifications (paste into .env)
+	@cd backend && ../$(PY) -m scripts.vapid_keys
 
 admin:  ## Create a platform admin: make admin name="Ramesh" email=you@example.com
 	@$(COMPOSE) exec api python -m scripts.create_platform_admin \

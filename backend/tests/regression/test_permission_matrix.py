@@ -32,6 +32,11 @@ ACTIONS: dict[Permission, tuple] = {
     ),
     Permission.MEMBERS_EDIT: ("PATCH", "/api/v1/members/{member}", {"notes": "hi"}),
     Permission.MEMBERS_ARCHIVE: ("POST", "/api/v1/members/{member}/archive", {}),
+    Permission.LEADS_MANAGE: (
+        "POST",
+        "/api/v1/leads",
+        {"name": "Asked", "phone": "9800000019"},
+    ),
     Permission.MEMBERSHIPS_SELL: (
         "POST",
         "/api/v1/members/{member}/memberships",

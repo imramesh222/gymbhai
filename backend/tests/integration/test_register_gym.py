@@ -20,6 +20,7 @@ SIGNUP = {
     "owner_phone": "+977 984-1234567",
     "owner_email": "Sita@Example.com",
     "password": "correct-horse-battery",
+    "accept_terms": True,
 }
 
 
@@ -99,3 +100,21 @@ def test_invalid_phone(client: TestClient) -> None:
     )
     assert response.status_code == 422
     assert response.json()["fields"][0]["field"] == "owner_phone"
+
+
+def test_the_terms_must_be_accepted(client: TestClient, db: Session) -> None:
+    response = client.post(
+        "/api/v1/auth/register-gym", json={**SIGNUP, "accept_terms": False}
+    )
+    assert response.status_code == 422
+    assert response.json()["fields"][0]["field"] == "accept_terms"
+    assert db.scalars(select(Gym)).first() is None
+
+
+def test_the_terms_accepted_are_recorded(client: TestClient, db: Session) -> None:
+    from app.core.legal import TERMS_VERSION
+
+    client.post("/api/v1/auth/register-gym", json=SIGNUP)
+    gym = db.scalars(select(Gym).where(Gym.slug == "fitness-zone")).one()
+    assert gym.terms_version == TERMS_VERSION
+    assert gym.terms_accepted_at is not None

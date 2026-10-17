@@ -14,12 +14,20 @@ NOT_GYM_OWNED = {
     # Belong to a staff user, which carries the gym.
     "staff_branch_access",
     "staff_sessions",
+    "staff_recovery_codes",
+    # Staff sign-in tries: written before anyone is known, often for no account.
+    "login_attempts",
+    # Belong to a staff user, or to no account at all when the email or phone
+    # typed is unknown.
+    "staff_password_resets",
     # Belongs to a member, who carries the gym.
     "member_sessions",
     # Belongs to a plan, which carries the gym.
     "plan_branches",
     # gym_id is null for platform-level actions.
     "activity_log",
+    # What's new in GymBhai: ours, the same for every gym (§16.5, 10.4).
+    "changelog_entries",
     # Our own price list, shared by every gym.
     "platform_plans",
     # The worker queue; a job's payload names the gym it is for.

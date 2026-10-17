@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
@@ -33,16 +33,25 @@ import { useAuth } from "@/lib/auth";
 import { todayInNepal } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { useLoad } from "@/lib/useLoad";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
+import { PageSkeleton } from "@/components/ui/Skeleton";
 
 type DialogName = "edit" | "extend" | "freeze" | "cancel" | "void" | null;
 
 export default function MembershipPage() {
+  const confirm = useConfirm();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const toast = useToast();
   const { can } = useAuth();
   const { date, display } = useGymCalendar();
   const [tab, setTab] = useState<"details" | "history">("details");
-  const [dialog, setDialog] = useState<DialogName>(null);
+  // The member's More menu opens this page with ?do=freeze.
+  const wanted = useSearchParams().get("do");
+  const [dialog, setDialog] = useState<DialogName>(
+    wanted === "freeze" ? "freeze" : null,
+  );
   const [voidId, setVoidId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +71,7 @@ export default function MembershipPage() {
   }, [id]);
 
   if (loadError) return <Notice tone="error">{loadError}</Notice>;
-  if (!data) return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
+  if (!data) return <PageSkeleton label={t("common.loading")} />;
   const { membership: m, member, history, plans, branches } = data;
   const payments = member.payments.filter((p) => p.membership_id === m.id);
   const live = m.status !== "cancelled";
@@ -72,6 +81,7 @@ export default function MembershipPage() {
     try {
       await action();
       setDialog(null);
+      toast.success(t("common.saved"));
       reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -215,10 +225,16 @@ export default function MembershipPage() {
               <div className="mt-4 text-right">
                 <Button
                   variant="ghost"
-                  onClick={() =>
-                    window.confirm(t("membership.deleteConfirm")) &&
+                  onClick={async () =>
+                    (await confirm({
+                      title: t("membership.delete"),
+                      message: t("membership.deleteConfirm"),
+                      confirmLabel: t("membership.delete"),
+                      danger: true,
+                    })) &&
                     run(async () => {
                       await membershipsApi.remove(m.id);
+                      toast.success(t("membership.deleted"));
                       router.replace(`/staff/members/${member.id}`);
                     })
                   }

@@ -52,6 +52,9 @@ def _branch(db: Session, ctx: StaffContext, branch_id: uuid.UUID) -> Branch:
 
 def scan_result(outcome: checkins.Outcome, *, can_override: bool = False) -> ScanResult:
     state = outcome.state
+    left = state.visits_left
+    if left is not None and outcome.check_in.result in LET_IN:
+        left = max(left - 1, 0)  # this visit is one of them
     return ScanResult(
         result=outcome.check_in.result,
         let_in=outcome.let_in,
@@ -65,6 +68,7 @@ def scan_result(outcome: checkins.Outcome, *, can_override: bool = False) -> Sca
         days_left=state.days_left,
         valid_until=state.valid_until,
         dues=state.dues,
+        visits_left=left,
         can_override=can_override and not outcome.let_in,
     )
 
@@ -345,6 +349,7 @@ def attendance_summary(
     )
     by_day: Counter[str] = Counter()
     by_hour: Counter[int] = Counter()
+    grid = [[0] * 24 for _ in range(7)]
     denied = let_in = 0
     members = set()
     for at, result, member_id in rows:
@@ -352,6 +357,8 @@ def attendance_summary(
             local = at.astimezone(NEPAL)
             by_day[local.date().isoformat()] += 1
             by_hour[local.hour] += 1
+            # Python's Monday is 0; Sunday leads Nepal's week.
+            grid[(local.weekday() + 1) % 7][local.hour] += 1
             let_in += 1
             members.add(member_id)
         elif result.startswith("denied"):
@@ -359,6 +366,7 @@ def attendance_summary(
     return AttendanceSummary(
         by_day=dict(sorted(by_day.items())),
         by_hour=dict(sorted(by_hour.items())),
+        by_weekday_hour=grid,
         denied=denied,
         let_in=let_in,
         unique_members=len(members),

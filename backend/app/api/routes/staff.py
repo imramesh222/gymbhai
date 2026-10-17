@@ -36,6 +36,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.gym import Branch
 from app.models.staff import StaffBranchAccess, StaffUser
+from app.schemas.auth import SignedOut
 from app.schemas.staff import (
     PasswordSet,
     PermissionCatalog,
@@ -44,7 +45,7 @@ from app.schemas.staff import (
     StaffMember,
     StaffUpdate,
 )
-from app.services import activity, sessions
+from app.services import activity, live, sessions, two_step
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
@@ -249,6 +250,7 @@ def create_staff(
         },
         request=request,
     )
+    live.staff_changed(db, ctx.gym_id)
     db.commit()
     return _read(db, staff)
 
@@ -322,8 +324,70 @@ def update_staff(
             changes=diff,
             request=request,
         )
+    live.staff_changed(db, ctx.gym_id)
     db.commit()
     return _read(db, staff)
+
+
+@router.post("/{staff_id}/two-step/reset", response_model=StaffMember)
+def reset_two_step(
+    staff_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(MANAGE),
+) -> StaffMember:
+    """A colleague lost their phone: two-step sign-in off, so they can sign in
+    with their password and set it up again."""
+    if staff_id == ctx.staff.id:
+        raise AppError(
+            409,
+            "use_own_two_step",
+            "Use a recovery code, or ask the owner or GymBhai to reset yours.",
+        )
+    staff = _target(db, ctx, staff_id)
+    two_step.disable(db, staff)
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "staff.two_step_reset",
+        entity="staff",
+        entity_id=staff.id,
+        request=request,
+    )
+    live.staff_changed(db, ctx.gym_id)
+    db.commit()
+    return _read(db, staff)
+
+
+@router.post("/{staff_id}/sign-out", response_model=SignedOut)
+def sign_out_everywhere(
+    staff_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(MANAGE),
+) -> SignedOut:
+    """A colleague's lost phone, or someone who has left: every device of theirs
+    signed out. Their password still works; disable the account to stop that."""
+    if staff_id == ctx.staff.id:
+        raise AppError(
+            409,
+            "use_own_devices",
+            "Sign out your own devices from My account.",
+        )
+    staff = _target(db, ctx, staff_id)
+    count = sessions.revoke_all(db, staff)
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "staff.signed_out_everywhere",
+        entity="staff",
+        entity_id=staff.id,
+        changes={"devices": count},
+        request=request,
+    )
+    live.staff_changed(db, ctx.gym_id)
+    db.commit()
+    return SignedOut(signed_out=count)
 
 
 @router.post("/{staff_id}/password", status_code=status.HTTP_204_NO_CONTENT)
@@ -352,4 +416,5 @@ def set_password(
         entity_id=staff.id,
         request=request,
     )
+    live.staff_changed(db, ctx.gym_id)
     db.commit()

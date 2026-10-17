@@ -13,17 +13,19 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import sms_defaults
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.gym_settings import GymSettings
+from app.core.legal import TERMS_VERSION
 from app.core.security import hash_password
-from app.core.time import today_in_nepal
+from app.core.time import today_in_nepal, utcnow
 from app.models.billing import SUBSCRIPTION_TRIAL, GymSubscription
 from app.models.gym import Branch, Gym
 from app.models.plan import DEFAULT_PLANS, Plan
 from app.models.staff import StaffUser
 from app.schemas.auth import GymSignup
-from app.services import activity, reminders
+from app.services import activity, gym_referrals, reminders
 from app.services.sms import service as sms
 
 
@@ -74,6 +76,9 @@ def register_gym(
     config = GymSettings(
         plan_months=payload.plan_months,
         date_display=payload.date_display,
+        language=payload.language,
+        welcome_sms=sms_defaults.WELCOME[payload.language],
+        membership_sms=sms_defaults.MEMBERSHIP[payload.language],
         member_code_prefix=code_prefix(payload.gym_name),
     )
     gym = Gym(
@@ -81,6 +86,8 @@ def register_gym(
         name=payload.gym_name,
         phone=payload.owner_phone,
         settings=config.model_dump(),
+        terms_accepted_at=utcnow(),
+        terms_version=TERMS_VERSION,
     )
     db.add(gym)
     try:
@@ -119,7 +126,8 @@ def register_gym(
         db.rollback()
         raise ACCOUNT_EXISTS from exc
 
-    reminders.seed_rules(db, gym.id)
+    reminders.seed_rules(db, gym.id, payload.language)
+    gym_referrals.on_signup(db, gym, payload.ref)
     if settings.trial_sms_credits:
         sms.add_credits(db, gym.id, settings.trial_sms_credits, "trial")
 

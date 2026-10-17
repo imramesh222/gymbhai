@@ -1,23 +1,30 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { MemberPicker, type Picked } from "@/components/member/MemberPicker";
+import { PhotoCapture } from "@/components/member/PhotoCapture";
 import {
   emptySale,
   SaleForm,
+  saleTotal,
   toSaleInput,
   type SaleDraft,
 } from "@/components/money/SaleForm";
+import { ActionBar } from "@/components/ui/ActionBar";
 import { Card, PageHeader } from "@/components/ui/Card";
+import { Money } from "@/components/ui/Money";
+import { useToast } from "@/components/ui/Toast";
 import { Checkbox, Select } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import {
   branchesApi,
   errorMessage,
+  leadsApi,
   membersApi,
   plansApi,
   type Member,
@@ -27,6 +34,8 @@ import { useAuth } from "@/lib/auth";
 import { todayInNepal } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { useLoad } from "@/lib/useLoad";
+import { enterMovesOn } from "@/lib/forms";
+import { useIdempotencyKey } from "@/lib/idempotency";
 
 /** Add a member and, in the same save, sell their first membership (§5.3). */
 export default function NewMemberPage() {
@@ -44,8 +53,31 @@ export default function NewMemberPage() {
   const [matches, setMatches] = useState<PhoneMatch[]>([]);
   const [selling, setSelling] = useState(can("memberships.sell"));
   const [sale, setSale] = useState<SaleDraft>(() => emptySale(todayInNepal(), ""));
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const [referrer, setReferrer] = useState<Picked | null>(null);
+  // Convert (§16.4, 9.1): Add member opened from an enquiry, filled in.
+  const leadId = useSearchParams().get("lead");
+  const lead = useLoad(
+    () =>
+      leadId && can("leads.manage") ? leadsApi.get(leadId) : Promise.resolve(null),
+    [leadId],
+  );
+  const [filledFrom, setFilledFrom] = useState<string | null>(null);
+  if (lead.data && filledFrom !== lead.data.id) {
+    // Once, as the enquiry arrives: what was typed after that stays.
+    const from = lead.data;
+    setFilledFrom(from.id);
+    setName(from.name);
+    setPhone(from.phone ?? "");
+    setEmail(from.email ?? "");
+    setBranchId(from.branch_id);
+    if (from.referred_by_id && from.referred_by_name) {
+      setReferrer({ id: from.referred_by_id, name: from.referred_by_name });
+    }
+  }
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const toast = useToast();
 
   const home = branchId || branches[0]?.id || "";
 
@@ -60,6 +92,7 @@ export default function NewMemberPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [phone]);
+  const saving = useIdempotencyKey();
   const shown = phone.replace(/\D/g, "").length >= 10 ? matches : [];
 
   async function submit(event: React.FormEvent) {
@@ -68,16 +101,27 @@ export default function NewMemberPage() {
     setPending(true);
     setError(null);
     try {
-      const result = await membersApi.create({
+      const body = {
         name,
         phone,
         email: email || null,
         gender: (gender || null) as Member["gender"],
         home_branch_id: home || null,
+        referred_by_id: referrer?.id ?? null,
+        lead_id: leadId,
         membership: selling
           ? toSaleInput({ ...sale, branchId: sale.branchId || home })
           : null,
-      });
+      };
+      // Saved once even if Save is tapped again after a lost answer.
+      const result = await membersApi.create(body, saving.keyFor(body));
+      saving.succeeded();
+      if (photo) {
+        // The member is saved either way; a photo can be added again later.
+        await membersApi
+          .uploadPhoto(result.member.id, photo)
+          .catch(() => toast.error(t("photo.uploadFailed")));
+      }
       const payment = result.payment_id;
       router.push(
         `/staff/members/${result.member.id}${payment ? `?receipt=${payment}` : ""}`,
@@ -89,9 +133,26 @@ export default function NewMemberPage() {
   }
 
   return (
-    <form onSubmit={(e) => void submit(e)} className="space-y-4">
-      <PageHeader title={t("members.add")} />
+    <form
+      onSubmit={(e) => void submit(e)}
+      onKeyDown={enterMovesOn}
+      className="space-y-4"
+    >
+      <PageHeader
+        title={t("members.add")}
+        subtitle={
+          lead.data
+            ? t("leads.converting", {
+                name: lead.data.name,
+                plan: lead.data.plan_name ?? "—",
+              })
+            : undefined
+        }
+      />
       <Card title={t("member.details")}>
+        <div className="mb-4">
+          <PhotoCapture photo={photo} onChange={setPhoto} />
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t("member.name")} value={name} onChange={setName} required />
           <div>
@@ -130,6 +191,11 @@ export default function NewMemberPage() {
               { value: "other", label: t("member.gender.other") },
             ]}
           />
+          <MemberPicker
+            label={t("leads.referredBy")}
+            value={referrer}
+            onChange={setReferrer}
+          />
           {branches.length > 1 && (
             <Select
               label={t("member.homeBranch")}
@@ -167,9 +233,22 @@ export default function NewMemberPage() {
       )}
 
       {error && <Notice tone="error">{error}</Notice>}
-      <Button type="submit" block disabled={pending}>
-        {pending ? t("common.saving") : t("members.save")}
-      </Button>
+      <ActionBar>
+        {selling && sale.planId ? (
+          <span className="text-sm text-slate-600">
+            {t("sale.total")}{" "}
+            <Money
+              paisa={saleTotal(sale)}
+              className="text-lg font-semibold text-slate-900"
+            />
+          </span>
+        ) : (
+          <span />
+        )}
+        <Button type="submit" disabled={pending}>
+          {pending ? t("common.saving") : t("members.save")}
+        </Button>
+      </ActionBar>
     </form>
   );
 }

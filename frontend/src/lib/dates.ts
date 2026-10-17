@@ -5,6 +5,7 @@
  *
  * Dates travel as ISO "YYYY-MM-DD" strings in AD. "Today" is today in Nepal.
  */
+import { getLocale, localDigits } from "@/i18n";
 import table from "./bs-calendar.json";
 
 export type DateDisplay = "ad" | "bs" | "both";
@@ -20,8 +21,46 @@ const [EPOCH_YEAR] = table.epoch.bs;
 const EPOCH_AD = parseIso(table.epoch.ad);
 const DAY = 86_400_000;
 
-export const BS_MONTHS: string[] = table.months;
-const AD_MONTHS = [
+const BS_MONTHS_EN: string[] = table.months;
+const BS_MONTHS_NE = [
+  "बैशाख",
+  "जेठ",
+  "असार",
+  "साउन",
+  "भदौ",
+  "असोज",
+  "कात्तिक",
+  "मंसिर",
+  "पुस",
+  "माघ",
+  "फागुन",
+  "चैत",
+];
+const AD_MONTHS_NE = [
+  "जनवरी",
+  "फेब्रुअरी",
+  "मार्च",
+  "अप्रिल",
+  "मे",
+  "जुन",
+  "जुलाई",
+  "अगस्ट",
+  "सेप्टेम्बर",
+  "अक्टोबर",
+  "नोभेम्बर",
+  "डिसेम्बर",
+];
+
+/** Month names in the language on screen (PLAN.md §16.6). */
+export function bsMonths(): string[] {
+  return getLocale() === "ne" ? BS_MONTHS_NE : BS_MONTHS_EN;
+}
+
+export function adMonths(): string[] {
+  return getLocale() === "ne" ? AD_MONTHS_NE : AD_MONTHS_EN;
+}
+
+const AD_MONTHS_EN = [
   "Jan",
   "Feb",
   "Mar",
@@ -123,12 +162,12 @@ export function planEnd(
 
 export function formatBs(iso: string): string {
   const { year, month, day } = toBs(iso);
-  return `${day} ${BS_MONTHS[month - 1]} ${year}`;
+  return localDigits(`${day} ${bsMonths()[month - 1]} ${year}`);
 }
 
 export function formatAd(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${AD_MONTHS[m - 1]} ${y}`;
+  return localDigits(`${d} ${adMonths()[m - 1]} ${y}`);
 }
 
 /** A date the way the gym has chosen to show dates. */
@@ -145,7 +184,7 @@ export function formatDate(
 
 export function formatDateTime(iso: string, display: DateDisplay): string {
   const local = nepalParts(new Date(iso));
-  return `${formatDate(local.date, display)}, ${local.time}`;
+  return `${formatDate(local.date, display)}, ${localDigits(local.time)}`;
 }
 
 function nepalParts(date: Date): { date: string; time: string } {

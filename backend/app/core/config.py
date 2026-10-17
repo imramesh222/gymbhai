@@ -23,8 +23,19 @@ class Settings(BaseSettings):
 
     # --- Sessions (PLAN.md §11) ---
     secret_key: str = INSECURE_SECRET
+    # Two-step sign-in secrets are derived from this (app/core/totp.py). Kept
+    # apart from SECRET_KEY so rotating that never breaks people's
+    # authenticator apps. Required outside local development and tests.
+    totp_key: str | None = None
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+
+    # --- Staff sign-in limits (PLAN.md §16.1) ---
+    login_max_failures: int = 5  # per email or phone, per LOGIN_WINDOW_MINUTES
+    login_max_failures_per_ip: int = 20
+    login_window_minutes: int = 15
+    # "Forgot password" codes; asking for them shares the OTP limits below.
+    password_reset_minutes: int = 10
 
     # --- Gyms ---
     trial_days: int = 14
@@ -64,6 +75,10 @@ class Settings(BaseSettings):
     # SMS credits a new gym starts its trial with.
     trial_sms_credits: int = 50
 
+    # Our WhatsApp and Viber number for Help (§16.5, 10.3): country code and
+    # number, digits only, e.g. 9779800000000. No number: Help shows the guides.
+    support_whatsapp: str | None = None
+
     # Where members open their gym's app; goes into SMS links.
     public_app_url: str = "http://localhost:3000"
 
@@ -75,6 +90,15 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     email_from: str = "GymBhai <no-reply@gymbhai.com>"
 
+    # --- Web Push to the member app (PLAN.md §16.3, 8.3) ---
+    # `console` logs what would be sent; `webpush` sends it. Push works only
+    # with a key: make one with `python -m scripts.vapid_keys`.
+    push_provider: Literal["console", "webpush"] = "console"
+    # The VAPID private key: base64url of the raw 32-byte P-256 key.
+    vapid_private_key: str | None = None
+    # Who push services contact about our messages.
+    vapid_subject: str = "mailto:support@gymbhai.com"
+
     # --- Member sign-in (§11) ---
     otp_minutes: int = 5
     otp_max_attempts: int = 5
@@ -85,6 +109,11 @@ class Settings(BaseSettings):
     # Every sign-in code is this, for end-to-end tests only. Refused outside
     # local and test environments, below.
     otp_test_code: str | None = None
+    # While no SMS gateway is set up (PLAN.md §15) sign-in codes only reach the
+    # log, so members can sign in with this code instead. Member sign-in only;
+    # never staff password resets. Refused once SMS_PROVIDER is a real gateway,
+    # so it can't outlive the need for it.
+    master_otp: str | None = None
 
     # --- Worker ---
     worker_poll_seconds: float = 5.0
@@ -95,6 +124,31 @@ class Settings(BaseSettings):
             self.secret_key == INSECURE_SECRET or len(self.secret_key) < 32
         ):
             raise ValueError("SECRET_KEY must be set to a long random value.")
+        if self.environment in ("staging", "production") and (
+            not self.totp_key or len(self.totp_key) < 32
+        ):
+            raise ValueError("TOTP_KEY must be set to a long random value.")
+        if self.environment == "test" and (
+            self.email_provider != "console"
+            or self.sms_provider != "console"
+            or self.push_provider != "console"
+        ):
+            raise ValueError("Tests never send real email, SMS or push: use console.")
+        if self.push_provider == "webpush" and not self.vapid_private_key:
+            raise ValueError("PUSH_PROVIDER=webpush needs VAPID_PRIVATE_KEY.")
+        if self.master_otp:
+            if self.sms_provider != "console":
+                raise ValueError(
+                    "MASTER_OTP is only for while there is no SMS gateway: remove it."
+                )
+            code = self.master_otp
+            if not (len(code) == 6 and code.isdigit()):
+                raise ValueError("MASTER_OTP must be 6 digits.")
+            # Locally anything goes; on a server anyone could try 111111.
+            if self.environment in ("staging", "production") and (
+                len(set(code)) < 3 or code in ("123456", "654321")
+            ):
+                raise ValueError("MASTER_OTP must be 6 digits that are hard to guess.")
         if self.otp_test_code and self.environment not in ("local", "test"):
             raise ValueError("OTP_TEST_CODE is for local end-to-end tests only.")
         if self.storage_backend == "s3" and not (

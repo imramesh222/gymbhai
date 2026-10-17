@@ -122,10 +122,26 @@ def revoke(db: Session, raw: str | None) -> StaffSession | None:
     return session
 
 
-def revoke_all(db: Session, staff: StaffUser, keep=None) -> None:
+def live_sessions(db: Session, staff: StaffUser) -> list[StaffSession]:
+    """Every device signed in to this account, most recently used first."""
+    return list(
+        db.scalars(
+            select(StaffSession)
+            .where(
+                StaffSession.staff_user_id == staff.id,
+                StaffSession.revoked_at.is_(None),
+                StaffSession.expires_at > utcnow(),
+            )
+            .order_by(StaffSession.last_used_at.desc().nulls_last())
+        )
+    )
+
+
+def revoke_all(db: Session, staff: StaffUser, keep=None) -> int:
     """Sign a staff member out of every device (except `keep`, a session id).
 
     Through the ORM, so sessions already loaded in this request see it too.
+    Returns how many devices were signed out.
     """
     stmt = select(StaffSession).where(
         StaffSession.staff_user_id == staff.id, StaffSession.revoked_at.is_(None)
@@ -133,6 +149,9 @@ def revoke_all(db: Session, staff: StaffUser, keep=None) -> None:
     if keep is not None:
         stmt = stmt.where(StaffSession.id != keep)
     now = utcnow()
+    count = 0
     for session in db.scalars(stmt):
         session.revoked_at = now
+        count += 1
     db.flush()
+    return count

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,7 @@ from app.core.permissions import Permission
 from app.core.time import today_in_nepal, utcnow
 from app.models.gym import Branch
 from app.models.member import Member
+from app.models.member_app import LET_IN, CheckIn
 from app.models.membership import SOURCE_DESK, Membership, MembershipFreeze
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
 from app.models.plan import Plan, PlanBranch
@@ -183,14 +184,51 @@ def member_dues(db: Session, member: Member) -> int:
     )
 
 
+# --- visit packs (PLAN.md §16.4, 9.3) ---------------------------------------------
+
+
+def visits_used_expression():
+    """Visits let in on a membership, as a correlated SQL expression."""
+    return (
+        select(func.count())
+        .where(CheckIn.membership_id == Membership.id, CheckIn.result.in_(LET_IN))
+        .correlate(Membership)
+        .scalar_subquery()
+    )
+
+
+def usable():
+    """Not a visit pack with every visit used: in SQL, beside the dates."""
+    return or_(
+        Membership.visit_limit.is_(None),
+        visits_used_expression() < Membership.visit_limit,
+    )
+
+
+def visits_used(db: Session, memberships: Sequence[Membership]) -> dict[uuid.UUID, int]:
+    """Visits used on each visit pack among these: one query, none without packs."""
+    ids = [m.id for m in memberships if m.visit_limit is not None]
+    if not ids:
+        return {}
+    return dict(
+        db.execute(
+            select(CheckIn.membership_id, func.count())
+            .where(CheckIn.membership_id.in_(ids), CheckIn.result.in_(LET_IN))
+            .group_by(CheckIn.membership_id)
+        ).all()
+    )
+
+
 def renewal_start(db: Session, member: Member, today: dt.date | None = None) -> dt.date:
-    """The day after the current membership ends, or today after a lapse."""
+    """The day after the current membership ends, or today after a lapse (or
+    once a visit pack is used up)."""
     today = today or today_in_nepal()
     latest_end = db.scalar(
         select(func.max(Membership.end_date)).where(
             Membership.member_id == member.id,
             Membership.gym_id == member.gym_id,
             Membership.cancelled_at.is_(None),
+            usable(),
         )
     )
     if latest_end is not None and latest_end >= today:
@@ -416,6 +454,8 @@ def sell(
         member_id=member.id,
         plan_id=plan.id,
         plan_name=plan.name,
+        visit_limit=plan.visit_limit,
+        access_hours=plan.access_hours,
         branch_id=branch.id,
         start_date=start,
         end_date=end,
@@ -580,6 +620,23 @@ def extend(
     return membership
 
 
+def extend_all_selection(
+    db: Session, ctx: StaffContext, branch_id: uuid.UUID | None = None
+):
+    """The memberships Extend everyone would change: current and upcoming."""
+    stmt = select(Membership).where(
+        Membership.gym_id == ctx.gym_id,
+        Membership.cancelled_at.is_(None),
+        Membership.end_date >= today_in_nepal(),
+    )
+    if branch_id is not None:
+        _branch_in_gym(db, ctx, branch_id)
+        stmt = stmt.where(Membership.branch_id == branch_id)
+    elif ctx.branch_ids is not None:
+        stmt = stmt.where(Membership.branch_id.in_(ctx.branch_ids))
+    return stmt
+
+
 def extend_all(
     db: Session,
     ctx: StaffContext,
@@ -590,18 +647,7 @@ def extend_all(
     request: Request | None = None,
 ) -> int:
     """Every current and upcoming membership, e.g. the gym shut for Dashain."""
-    today = today_in_nepal()
-    stmt = select(Membership).where(
-        Membership.gym_id == ctx.gym_id,
-        Membership.cancelled_at.is_(None),
-        Membership.end_date >= today,
-    )
-    if branch_id is not None:
-        _branch_in_gym(db, ctx, branch_id)
-        stmt = stmt.where(Membership.branch_id == branch_id)
-    elif ctx.branch_ids is not None:
-        stmt = stmt.where(Membership.branch_id.in_(ctx.branch_ids))
-
+    stmt = extend_all_selection(db, ctx, branch_id)
     batch = uuid.uuid4()
     count = 0
     # Locked in id order, so two runs at once queue up instead of deadlocking.

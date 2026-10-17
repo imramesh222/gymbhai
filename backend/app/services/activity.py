@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.time import utcnow
-from app.models.activity import ACTOR_STAFF, ActivityLog
+from app.models.activity import ACTOR_MEMBER, ACTOR_STAFF, ActivityLog
+from app.models.member import Member
 from app.models.staff import StaffUser
 
 
@@ -77,6 +78,22 @@ def record(
     )
     db.add(entry)
     return entry
+
+
+def member_action(
+    db: Session, member: Member, action: str, **kwargs: Any
+) -> ActivityLog:
+    """Something a member did in their app; the entity is the member unless given."""
+    kwargs.setdefault("entity", "member")
+    kwargs.setdefault("entity_id", member.id)
+    return record(
+        db,
+        gym_id=member.gym_id,
+        actor_type=ACTOR_MEMBER,
+        actor_id=member.id,
+        action=action,
+        **kwargs,
+    )
 
 
 def staff_action(

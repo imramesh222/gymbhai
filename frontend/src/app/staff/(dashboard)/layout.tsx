@@ -1,72 +1,36 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { CommandPalette, usePaletteShortcut } from "@/components/staff/CommandPalette";
+import { BottomNav, PhoneTopBar, Sidebar } from "@/components/staff/Navigation";
 import { RequireStaff } from "@/components/staff/RequireStaff";
 import { SubscriptionBanner } from "@/components/staff/SubscriptionBanner";
-import { LogoMark } from "@/components/ui/Logo";
-import { t, type MessageKey } from "@/i18n";
-import { openStaffLive, paymentRequestsApi } from "@/lib/api";
+import { UiProviders } from "@/components/ui/Providers";
+import { freezeRequestsApi, openStaffLive, paymentRequestsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { LiveProvider, useLive } from "@/lib/live";
-
-interface NavItem {
-  href: string;
-  label: MessageKey;
-  // Shown if the staff member holds any of these; none means everyone.
-  anyOf?: string[];
-}
-
-const NAV: NavItem[] = [
-  { href: "/staff", label: "nav.today" },
-  { href: "/staff/members", label: "nav.members", anyOf: ["members.view"] },
-  { href: "/staff/expiring", label: "nav.expiring", anyOf: ["members.view"] },
-  { href: "/staff/door", label: "nav.door", anyOf: ["door.check_in"] },
-  {
-    href: "/staff/payment-requests",
-    label: "nav.requests",
-    anyOf: ["payments.approve_app"],
-  },
-  { href: "/staff/payments", label: "nav.payments", anyOf: ["reports.money"] },
-  { href: "/staff/attendance", label: "nav.attendance", anyOf: ["members.view"] },
-  { href: "/staff/reports", label: "nav.reports", anyOf: ["reports.money"] },
-  { href: "/staff/notices", label: "nav.notices", anyOf: ["messages.notices"] },
-  { href: "/staff/sms", label: "nav.sms", anyOf: ["messages.sms"] },
-  { href: "/staff/team", label: "nav.staff", anyOf: ["staff.manage"] },
-  { href: "/staff/data", label: "nav.data", anyOf: ["members.view"] },
-  { href: "/staff/subscription", label: "nav.subscription", anyOf: ["setup.gym"] },
-  {
-    href: "/staff/settings",
-    label: "nav.settings",
-    anyOf: [
-      "setup.gym",
-      "setup.plans",
-      "setup.payment_methods",
-      "setup.check_in_rules",
-      "setup.reminders",
-      "setup.devices",
-      "memberships.extend_all",
-    ],
-  },
-];
+import { LiveProvider, useLive, type LiveType } from "@/lib/live";
+import { useFollowLanguage } from "@/lib/locale";
 
 /**
- * The red count on Payment requests (§5.4): updated live when a member sends
- * one, and every few minutes in case the live stream can't get through.
+ * A count of what's waiting, for a menu badge (§5.4, §16.3 8.6): updated live
+ * when a member sends one, and every few minutes in case the live stream
+ * can't get through.
  */
-function usePendingRequests(enabled: boolean): number {
-  const [count, setCount] = useState(0);
+function useWaiting(
+  enabled: boolean,
+  event: LiveType,
+  count: () => Promise<{ pending: number }>,
+): number {
+  const [waiting, setWaiting] = useState(0);
   const [version, setVersion] = useState(0);
-  useLive(["payment_request"], () => setVersion((v) => v + 1));
+  useLive([event], () => setVersion((v) => v + 1));
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     const check = () =>
-      paymentRequestsApi
-        .count()
-        .then((r) => !cancelled && setCount(r.pending))
+      count()
+        .then((r) => !cancelled && setWaiting(r.pending))
         .catch(() => undefined);
     void check();
     const timer = setInterval(check, 5 * 60_000);
@@ -74,98 +38,77 @@ function usePendingRequests(enabled: boolean): number {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [enabled, version]);
-  return count;
+  }, [enabled, version, count]);
+  return waiting;
 }
 
-function Header() {
-  const { me, signOut, can } = useAuth();
-  const pending = usePendingRequests(can("payments.approve_app"));
-  const router = useRouter();
-  const pathname = usePathname();
-  const items = NAV.filter((item) => !item.anyOf || item.anyOf.some(can));
-  const isActive = (href: string) =>
-    href === "/staff" ? pathname === "/staff" : pathname.startsWith(href);
+/**
+ * A staff account or the gym's sign-in rules changed (permissions, disabled,
+ * two-step sign-in required): re-read who is signed in, so the menu and the
+ * screens follow at once. RequireStaff then sends anyone who must now set up
+ * two-step sign-in to do that, and a disabled account is signed out.
+ */
+function StaffChanges() {
+  const { refreshMe } = useAuth();
+  useLive(["staff"], () => void refreshMe().catch(() => undefined));
+  return null;
+}
+
+/** The menu (sidebar or phone bars), search, and the page itself. */
+function Shell({ children }: { children: React.ReactNode }) {
+  const { can, me } = useAuth();
+  useFollowLanguage(me);
+  const badges = {
+    whatsNew: me?.changelog_unread ? 1 : 0,
+    requests: useWaiting(
+      can("payments.approve_app"),
+      "payment_request",
+      paymentRequestsApi.count,
+    ),
+    freezes: useWaiting(
+      can("memberships.freeze"),
+      "freeze_request",
+      freezeRequestsApi.count,
+    ),
+  };
+  const [searching, setSearching] = useState(false);
+  const openSearch = useCallback(() => setSearching(true), []);
+  usePaletteShortcut(openSearch);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-hairline bg-surface/85 backdrop-blur-md print:hidden">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 pt-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <LogoMark className="size-9" />
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-slate-900">
-              {me?.gym?.name ?? t("app.name")}
-            </p>
-            <p className="truncate text-xs text-slate-500">{me?.staff.name}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1 text-sm">
-          <Link
-            href="/staff/profile"
-            className="rounded-lg px-2.5 py-1.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            {t("nav.profile")}
-          </Link>
-          <button
-            type="button"
-            onClick={async () => {
-              await signOut();
-              router.replace("/staff/login");
-            }}
-            className="rounded-lg px-2.5 py-1.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            {t("common.signOut")}
-          </button>
-        </div>
+    <div className="flex min-h-dvh">
+      <Sidebar badges={badges} onSearch={openSearch} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <PhoneTopBar onSearch={openSearch} />
+        <SubscriptionBanner />
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-24 sm:pt-8 lg:px-8 lg:pb-10 print:max-w-none print:p-0">
+          {children}
+        </main>
       </div>
-      {/* Pills, and they scroll sideways on a phone: a gym with every
-          permission ticked has fourteen of them. */}
-      <nav className="no-scrollbar mx-auto flex max-w-6xl gap-1 overflow-x-auto px-3 pt-2 pb-2 lg:flex-wrap lg:overflow-x-visible">
-        {items.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={isActive(item.href) ? "page" : undefined}
-            className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-              isActive(item.href)
-                ? "bg-brand-600 text-white shadow-brand"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            }`}
-          >
-            {t(item.label)}
-            {item.href === "/staff/payment-requests" && pending > 0 && (
-              <span
-                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-xs font-bold ${
-                  isActive(item.href)
-                    ? "bg-white/20 text-white"
-                    : "bg-red-600 text-white"
-                }`}
-              >
-                {pending}
-              </span>
-            )}
-          </Link>
-        ))}
-      </nav>
-    </header>
+      <BottomNav badges={badges} />
+      {searching && <CommandPalette onClose={() => setSearching(false)} />}
+    </div>
   );
 }
 
 function Live({ children }: { children: React.ReactNode }) {
   const { me } = useAuth();
-  return <LiveProvider open={me?.gym ? openStaffLive : null}>{children}</LiveProvider>;
+  return (
+    <LiveProvider open={me?.gym ? openStaffLive : null}>
+      <StaffChanges />
+      {children}
+    </LiveProvider>
+  );
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireStaff>
-      <Live>
-        <Header />
-        <SubscriptionBanner />
-        <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8 print:max-w-none print:p-0">
-          {children}
-        </main>
-      </Live>
+      <UiProviders>
+        <Live>
+          <Shell>{children}</Shell>
+        </Live>
+      </UiProviders>
     </RequireStaff>
   );
 }

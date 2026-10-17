@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import { errorMessage, paymentsApi, type Membership, type Payment } from "@/lib/api";
 import { formatRs } from "@/lib/money";
+import { useIdempotencyKey } from "@/lib/idempotency";
 
 /** Take money towards a membership's dues (part payments are normal). */
 export function CollectPayment({
@@ -37,6 +38,7 @@ export function CollectPayment({
   });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const saving = useIdempotencyKey();
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -45,7 +47,10 @@ export function CollectPayment({
     setPending(true);
     setError(null);
     try {
-      onDone(await paymentsApi.collect(chosen.id, payment));
+      const key = saving.keyFor({ membership: chosen.id, payment });
+      const saved = await paymentsApi.collect(chosen.id, payment, key);
+      saving.succeeded();
+      onDone(saved);
     } catch (err) {
       setError(errorMessage(err));
     } finally {

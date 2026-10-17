@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.tenancy import StaffContext
 from app.core.calendar import days_in_bs_month, from_bs, to_bs
 from app.core.errors import AppError
+from app.core.gym_settings import GymSettings
 from app.core.time import NEPAL, today_in_nepal, utcnow
 from app.models.gym import Gym
 from app.models.member import Member
@@ -70,15 +71,31 @@ class Today:
     inside_now: list[tuple[uuid.UUID, str, dt.datetime]]
     due_today: int
     expiring_this_week: int
+    not_visiting: int
     expired_but_visiting: list[tuple[uuid.UUID, str, str, dt.datetime]]
     members_with_dues: int
     dues_total: int
     collected: int | None
     collected_by_method: dict[str, int] | None
     active_members: int
+    check_ins_by_hour: list[int]
+    check_ins_yesterday: int
+    collected_yesterday: int | None
+    ending_today: list[tuple[uuid.UUID, str, str]]
+    top_owing: list[tuple[uuid.UUID, str, int]]
 
 
-def today(db: Session, ctx: StaffContext, *, with_money: bool) -> Today:
+ENDING_SHOWN = 10
+OWING_SHOWN = 5
+
+
+def today(
+    db: Session,
+    ctx: StaffContext,
+    *,
+    with_money: bool,
+    not_visiting_days: int = GymSettings.model_fields["not_visiting_days"].default,
+) -> Today:
     now = utcnow()
     date = today_in_nepal(now)
     start = day_start(date)
@@ -93,6 +110,23 @@ def today(db: Session, ctx: StaffContext, *, with_money: bool) -> Today:
         .order_by(CheckIn.at.desc())
     ).all()
     let_in = [s for s in scans if s.result in LET_IN]
+    by_hour = [0] * 24
+    for s in let_in:
+        # Nepal keeps one offset all year: hours since its midnight are its hours.
+        by_hour[min(23, int((s.at - start).total_seconds() // 3600))] += 1
+    yesterday = start - dt.timedelta(days=1)
+    same_time_yesterday = now - dt.timedelta(days=1)
+    check_ins_yesterday = db.scalar(
+        select(func.count())
+        .select_from(CheckIn)
+        .where(
+            CheckIn.gym_id == ctx.gym_id,
+            CheckIn.at >= yesterday,
+            CheckIn.at < same_time_yesterday,
+            CheckIn.result.in_(LET_IN),
+            *branch_filter,
+        )
+    )
     recent = now - dt.timedelta(hours=INSIDE_HOURS)
     inside: dict[uuid.UUID, tuple[uuid.UUID, str, dt.datetime]] = {}
     for s in let_in:
@@ -113,7 +147,11 @@ def today(db: Session, ctx: StaffContext, *, with_money: bool) -> Today:
         )
     )
     states = members_service.states_for(db, candidates, date)
-    due_today = sum(1 for s in states.values() if s.valid_until == date)
+    ending = sorted(
+        (m for m in candidates if states[m.id].valid_until == date),
+        key=lambda m: m.name.lower(),
+    )
+    due_today = len(ending)
 
     dues = members_service.dues_expression()
     owing = db.execute(
@@ -125,16 +163,39 @@ def today(db: Session, ctx: StaffContext, *, with_money: bool) -> Today:
         )
     ).one()
 
+    top_owing = db.execute(
+        select(Member.id, Member.name, dues)
+        .where(
+            Member.id.in_(
+                members_service.search(ctx, today=date).with_only_columns(Member.id)
+            ),
+            dues > 0,
+        )
+        .order_by(dues.desc(), Member.name)
+        .limit(OWING_SHOWN)
+    ).all()
+
     active = db.scalar(
         select(func.count()).select_from(
             members_service.search(ctx, status=ms.ACTIVE, today=date).subquery()
         )
     )
 
-    collected = by_method = None
+    not_visiting = db.scalar(
+        select(func.count()).select_from(
+            members_service.search(
+                ctx, today=date, not_visiting_days=not_visiting_days
+            ).subquery()
+        )
+    )
+
+    collected = by_method = collected_yesterday = None
     if with_money:
         collected, by_method = money_between(
             db, ctx.gym_id, start, start + dt.timedelta(days=1), ctx.branch_ids
+        )
+        collected_yesterday, _ = money_between(
+            db, ctx.gym_id, yesterday, same_time_yesterday, ctx.branch_ids
         )
     return Today(
         date=date,
@@ -143,13 +204,29 @@ def today(db: Session, ctx: StaffContext, *, with_money: bool) -> Today:
         inside_now=list(inside.values()),
         due_today=due_today,
         expiring_this_week=len(candidates),
+        not_visiting=not_visiting or 0,
         expired_but_visiting=denied,
         members_with_dues=owing[0],
         dues_total=owing[1],
         collected=collected,
         collected_by_method=by_method,
         active_members=active or 0,
+        check_ins_by_hour=by_hour,
+        check_ins_yesterday=check_ins_yesterday or 0,
+        collected_yesterday=collected_yesterday,
+        ending_today=[(m.id, m.name, m.phone) for m in ending[:ENDING_SHOWN]],
+        top_owing=[(row.id, row.name, int(row[2])) for row in top_owing],
     )
+
+
+def setup_checklist(db: Session, gym: Gym) -> dict[str, bool] | None:
+    """The steps a new gym still has to take, or None once done or put away."""
+    if gym.config.setup_dismissed:
+        return None
+    from app.services.platform_stats import setups
+
+    steps = setups(db, [gym])[gym.id]
+    return None if all(steps.values()) else steps
 
 
 # --- monthly ---
@@ -202,6 +279,18 @@ class Monthly:
     @property
     def renewal_rate(self) -> float | None:
         return round(self.renewed / self.due_to_renew, 3) if self.due_to_renew else None
+
+
+def months_back(month: str, count: int) -> list[str]:
+    """`count` months ending with `month`, oldest first: "2083-06" style.
+
+    AD and BS both have twelve months, so the same arithmetic serves both.
+    """
+    year, number = (int(x) for x in month.split("-"))
+    index = year * 12 + number - 1
+    return [
+        f"{i // 12:04d}-{i % 12 + 1:02d}" for i in range(index - count + 1, index + 1)
+    ]
 
 
 def monthly(db: Session, ctx: StaffContext, month: str) -> Monthly:

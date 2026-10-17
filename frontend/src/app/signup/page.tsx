@@ -1,22 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Choice } from "@/components/Choice";
+import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { Trans } from "@/components/Trans";
 import { LogoMark } from "@/components/ui/Logo";
 import { t } from "@/i18n";
 import { errorMessage, type DateDisplay, type PlanMonths } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useLocale } from "@/lib/locale";
 import { memberAppUrl, slugify } from "@/lib/slug";
 
 export default function SignupPage() {
   const { registerGym } = useAuth();
   const router = useRouter();
+  // Sent by another gym: /signup?ref=their-address (§16.5, 10.5).
+  const ref = useSearchParams().get("ref");
+  // The language they sign up in is the gym's (§16.6).
+  const { locale } = useLocale();
 
   const [gymName, setGymName] = useState("");
   const [slug, setSlug] = useState("");
@@ -29,6 +36,7 @@ export default function SignupPage() {
   const [ownerPhone, setOwnerPhone] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -41,6 +49,10 @@ export default function SignupPage() {
     event.preventDefault();
     if (!planMonths || !dateDisplay) {
       setError(t("signup.chooseCalendar"));
+      return;
+    }
+    if (!acceptTerms) {
+      setError(t("signup.acceptTermsNeeded"));
       return;
     }
     setPending(true);
@@ -56,6 +68,9 @@ export default function SignupPage() {
         owner_phone: ownerPhone,
         owner_email: ownerEmail,
         password,
+        accept_terms: acceptTerms,
+        ref,
+        language: locale,
       });
       router.push("/staff");
     } catch (err) {
@@ -149,6 +164,13 @@ export default function SignupPage() {
             ]}
           />
           <p className="text-sm text-slate-500">{t("signup.calendarHelp")}</p>
+          <div>
+            <p className="mb-1.5 text-sm font-medium text-slate-700">
+              {t("signup.language")}
+            </p>
+            <LanguageSwitch />
+            <p className="mt-1.5 text-sm text-slate-500">{t("signup.languageHelp")}</p>
+          </div>
         </section>
 
         <section className="space-y-4 rounded-2xl bg-surface p-5 shadow-card ring-1 ring-hairline sm:p-6">
@@ -191,6 +213,39 @@ export default function SignupPage() {
           />
         </section>
 
+        <label className="flex cursor-pointer items-start gap-3 px-1 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={acceptTerms}
+            onChange={(e) => setAcceptTerms(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-brand-600"
+          />
+          <span>
+            <Trans
+              k="signup.acceptTerms"
+              parts={{
+                terms: (
+                  <Link
+                    href="/terms"
+                    target="_blank"
+                    className="font-semibold text-brand-700 hover:underline"
+                  >
+                    {t("signup.termsLink")}
+                  </Link>
+                ),
+                privacy: (
+                  <Link
+                    href="/privacy"
+                    target="_blank"
+                    className="font-semibold text-brand-700 hover:underline"
+                  >
+                    {t("signup.privacyLink")}
+                  </Link>
+                ),
+              }}
+            />
+          </span>
+        </label>
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" size="lg" block disabled={pending}>
           {pending ? t("signup.submitting") : t("signup.submit")}

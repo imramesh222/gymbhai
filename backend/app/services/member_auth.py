@@ -161,12 +161,23 @@ def request_code(
     db.commit()
 
 
+def is_master_code(code: str) -> bool:
+    """The MASTER_OTP, while there is no SMS gateway (app/core/config.py)."""
+    master = settings.master_otp
+    return bool(master) and hmac.compare_digest(code.strip(), master)
+
+
 def check_code(db: Session, gym: Gym, where: Destination, code: str) -> OtpCode:
-    """The live code row, if `code` is right. Counts wrong tries."""
+    """The live code row, if `code` is right. Counts wrong tries.
+
+    The master code works only once a code has been asked for, so the number
+    must still be registered here and the limits on asking still apply.
+    """
     row = db.scalars(
         select(OtpCode)
         .where(
             OtpCode.gym_id == gym.id,
+            OtpCode.channel == where.channel,
             OtpCode.destination == where.value,
             OtpCode.consumed_at.is_(None),
             OtpCode.expires_at > utcnow(),
@@ -177,11 +188,87 @@ def check_code(db: Session, gym: Gym, where: Destination, code: str) -> OtpCode:
     wrong = AppError(401, "bad_code", "That code is wrong or has expired.")
     if row is None or row.attempts >= settings.otp_max_attempts:
         raise wrong
-    if not hmac.compare_digest(row.code_hash, _hash(gym.id, where, code.strip())):
+    right = hmac.compare_digest(row.code_hash, _hash(gym.id, where, code.strip()))
+    if not right and not is_master_code(code):
         row.attempts += 1
         db.commit()
         raise wrong
     return row
+
+
+# --- a new email, confirmed (PLAN.md §16.3, 8.5) ---------------------------------
+
+# Its own channel: a code to confirm an email is never a sign-in code, and the
+# master code (for sign-in only) does not confirm an email.
+VERIFY = "verify"
+
+
+def request_email_change(
+    db: Session, gym: Gym, member: Member, new_email: str, request: Request | None
+) -> None:
+    """Send a code to the new address: it only becomes theirs once they type it.
+
+    Otherwise someone holding a member's phone for a minute could add their own
+    email, and sign in as them from anywhere for good.
+    """
+    where = Destination(VERIFY, new_email.strip().lower())
+    ip = client_ip(request)
+    if _rate_limited(db, where, ip):
+        raise AppError(
+            429, "too_many_codes", "Too many codes asked for. Wait a few minutes."
+        )
+    code = settings.otp_test_code or f"{secrets.randbelow(1_000_000):06d}"
+    db.add(
+        OtpCode(
+            gym_id=gym.id,
+            channel=VERIFY,
+            destination=where.value,
+            code_hash=_hash(gym.id, where, f"{member.id}:{code}"),
+            expires_at=utcnow() + dt.timedelta(minutes=settings.otp_minutes),
+            ip=ip,
+        )
+    )
+    try:
+        email.send(
+            where.value,
+            f"Confirm your email for {gym.name}",
+            f"{code} is your code to use this email with {gym.name}. "
+            f"It expires in {settings.otp_minutes} minutes. "
+            "If you didn't ask for it, ignore this email.",
+        )
+    except email.EmailError as exc:
+        db.commit()
+        raise AppError(503, "email_failed", "We couldn't send the email.") from exc
+    db.commit()
+
+
+def confirm_email_change(
+    db: Session, gym: Gym, member: Member, new_email: str, code: str
+) -> str:
+    """The confirmed address, once the code from request_email_change is right."""
+    where = Destination(VERIFY, new_email.strip().lower())
+    row = db.scalars(
+        select(OtpCode)
+        .where(
+            OtpCode.gym_id == gym.id,
+            OtpCode.channel == VERIFY,
+            OtpCode.destination == where.value,
+            OtpCode.consumed_at.is_(None),
+            OtpCode.expires_at > utcnow(),
+        )
+        .order_by(OtpCode.created_at.desc())
+        .with_for_update()
+    ).first()
+    wrong = AppError(401, "bad_code", "That code is wrong or has expired.")
+    if row is None or row.attempts >= settings.otp_max_attempts:
+        raise wrong
+    expected = _hash(gym.id, where, f"{member.id}:{code.strip()}")
+    if not hmac.compare_digest(row.code_hash, expected):
+        row.attempts += 1
+        db.commit()
+        raise wrong
+    row.consumed_at = utcnow()
+    return where.value
 
 
 # --- sessions ---------------------------------------------------------------------

@@ -10,11 +10,13 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Select } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
 import { t, type MessageKey } from "@/i18n";
+import { AdminSummary } from "@/components/admin/AdminSummary";
+import { STEPS } from "@/components/today/SetupChecklist";
 import { adminApi, errorMessage, type AdminGym } from "@/lib/api";
 import { formatAd, formatDateTime } from "@/lib/dates";
 import { useLoad } from "@/lib/useLoad";
 
-type Action = "grant" | "credits" | "suspend" | "password";
+type Action = "grant" | "credits" | "suspend" | "password" | "two_step";
 
 export default function AdminGymsPage() {
   const [q, setQ] = useState("");
@@ -43,6 +45,7 @@ export default function AdminGymsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("admin.gyms")} />
+      <AdminSummary />
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
       {payments.data && payments.data.length > 0 && (
@@ -107,6 +110,8 @@ export default function AdminGymsPage() {
               <th className="px-3 py-2.5">{t("admin.ends")}</th>
               <th className="px-3 py-2.5">{t("admin.members")}</th>
               <th className="px-3 py-2.5">{t("admin.sms")}</th>
+              <th className="px-3 py-2.5">{t("admin.health")}</th>
+              <th className="px-3 py-2.5">{t("admin.setup")}</th>
               <th className="px-3 py-2.5" />
             </tr>
           </thead>
@@ -131,6 +136,7 @@ export default function AdminGymsPage() {
                   {g.owner_name}
                   <p className="text-xs text-slate-500">
                     {g.owner_phone ?? g.owner_email}
+                    {g.owner_two_step && ` · ${t("team.twoStepOn")}`}
                   </p>
                 </td>
                 <td className="px-3 py-3 align-top">{g.plan_name ?? "—"}</td>
@@ -142,6 +148,30 @@ export default function AdminGymsPage() {
                 </td>
                 <td className="px-3 py-3 align-top">{g.active_members}</td>
                 <td className="px-3 py-3 align-top">{g.sms_balance}</td>
+                <td className="px-3 py-3 align-top text-xs text-slate-600">
+                  {g.going_quiet && (
+                    <span className="mb-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+                      {t("admin.quiet")}
+                    </span>
+                  )}
+                  <p>
+                    {t("admin.lastSignIn")}:{" "}
+                    {g.last_sign_in_at ? formatDateTime(g.last_sign_in_at, "ad") : "—"}
+                  </p>
+                  <p>{t("admin.visits7d", { count: g.check_ins_7d })}</p>
+                  <p>{t("admin.added30d", { count: g.members_added_30d })}</p>
+                </td>
+                <td className="px-3 py-3 align-top text-xs">
+                  <p className="font-semibold">
+                    {Object.values(g.setup).filter(Boolean).length}/
+                    {Object.keys(g.setup).length}
+                  </p>
+                  <ul className="text-slate-500">
+                    {STEPS.filter((step) => g.setup[step.key] === false).map((step) => (
+                      <li key={step.key}>{t(step.label)}</li>
+                    ))}
+                  </ul>
+                </td>
                 <td className="px-3 py-3 align-top">
                   <Select<Action>
                     compact
@@ -159,6 +189,14 @@ export default function AdminGymsPage() {
                             : t("admin.suspend"),
                       },
                       { value: "password", label: t("admin.resetOwner") },
+                      ...(g.owner_two_step
+                        ? [
+                            {
+                              value: "two_step" as const,
+                              label: t("admin.resetOwnerTwoStep"),
+                            },
+                          ]
+                        : []),
                     ]}
                   />
                 </td>
@@ -222,6 +260,8 @@ function ActionDialog({
           unsuspend ? adminApi.unsuspend(gym.id) : adminApi.suspend(gym.id, reason),
         unsuspend ? "admin.unsuspendedDone" : "admin.suspendedDone",
       );
+    else if (action === "two_step")
+      void run(() => adminApi.resetOwnerTwoStep(gym.id), "admin.twoStepReset");
     else void run(() => adminApi.ownerPassword(gym.id, value), "admin.passwordReset");
   }
 
@@ -272,6 +312,9 @@ function ActionDialog({
               required
             />
           </>
+        )}
+        {action === "two_step" && (
+          <Notice tone="warning">{t("admin.resetOwnerTwoStepHelp")}</Notice>
         )}
         {action === "password" && (
           <Field

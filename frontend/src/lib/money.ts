@@ -2,12 +2,15 @@
  * Money is integer paisa everywhere except on screen (CLAUDE.md). Shown with
  * Nepali grouping: Rs 1,00,000, not 100,000 (PLAN.md §10).
  */
+import { getLocale, localDigits } from "@/i18n";
+
 const rupees = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
 export function formatRs(paisa: number | null | undefined): string {
   if (paisa === null || paisa === undefined) return "—";
   const sign = paisa < 0 ? "−" : "";
-  return `${sign}Rs ${rupees.format(Math.abs(paisa) / 100)}`;
+  const symbol = getLocale() === "ne" ? "रु" : "Rs";
+  return `${sign}${symbol} ${localDigits(rupees.format(Math.abs(paisa) / 100))}`;
 }
 
 /** "1,500" or "1500.50" typed by a person -> paisa. Null if not a number. */

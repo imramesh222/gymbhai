@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -14,6 +14,12 @@ class GymSettingsUpdate(Strict):
     date_display: DateDisplay | None = None
     member_code_prefix: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,5}$")
     daily_summary_sms: bool | None = None
+    poster_printed: bool | None = None
+    setup_dismissed: bool | None = None
+    show_busyness: bool | None = None
+    join_form: bool | None = None
+    language: Literal["en", "ne"] | None = None
+    digits: Literal["nepali", "western"] | None = None
 
 
 class CheckInRulesUpdate(Strict):
@@ -22,6 +28,14 @@ class CheckInRulesUpdate(Strict):
     dues_rule: DuesRule | None = None
     grace_days: int | None = Field(default=None, ge=0, le=30)
     rescan_minutes: int | None = Field(default=None, ge=0, le=24 * 60)
+    # Follow up's "not visiting" (§16.3, 8.1).
+    not_visiting_days: int | None = Field(default=None, ge=3, le=90)
+
+
+class SecurityUpdate(Strict):
+    """Settings → Security: the owner's alone (PATCH /gym/security)."""
+
+    require_two_step: bool
 
 
 class GymUpdate(Strict):

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.tenancy import StaffContext
 from app.core.calendar import format_date
 from app.core.permissions import ALL_PERMISSIONS
-from app.core.time import today_in_nepal
+from app.core.time import NEPAL, today_in_nepal
 from app.models.gym import GYM_ACTIVE, Gym
 from app.models.messaging import SMS_PLATFORM, SMS_SUMMARY
 from app.models.staff import StaffUser
@@ -83,5 +83,56 @@ def daily_summaries(db: Session) -> int:
             + "."
         )
         sms.queue(db, gym_id=gym.id, to=owner.phone, body=text, kind=SMS_SUMMARY)
+        sent += 1
+    return sent
+
+
+# --- setup nudges (PLAN.md §16.5, 10.2) ----------------------------------------------
+
+JOB_SETUP_NUDGE = "owners.setup_nudge"
+NUDGE_DAYS = (3, 10)
+
+# What to say about the first step still to do.
+NEXT_STEP = {
+    "plans_priced": "set your plan prices (Settings > Plans)",
+    "payment_account": "add your eSewa or bank QR (Settings > Payment accounts)",
+    "logo": "add your logo (Settings > Gym)",
+    "staff_invited": "add your front desk staff (Staff)",
+    "poster_printed": "print the QR poster for the door (Settings > Door)",
+    "first_member": "add your first member, or import your register (Data)",
+}
+
+
+def setup_nudges(db: Session, today: dt.date | None = None) -> int:
+    """On day 3 and day 10 of the trial, to owners who haven't finished setting
+    up: how far they are, and the next step. On us, like every SMS from us."""
+    from app.core.config import settings
+    from app.models.billing import SUBSCRIPTION_TRIAL
+    from app.services.platform_stats import SETUP_STEPS, setups
+
+    today = today or today_in_nepal()
+    due = []
+    for gym in db.scalars(select(Gym).where(Gym.status == GYM_ACTIVE)):
+        day = (today - gym.created_at.astimezone(NEPAL).date()).days
+        if day not in NUDGE_DAYS or gym.config.setup_dismissed:
+            continue
+        row = subscription.latest(db, gym.id)
+        if row is None or row.status != SUBSCRIPTION_TRIAL:
+            continue
+        due.append(gym)
+    sent = 0
+    steps = setups(db, due)
+    for gym in due:
+        done = steps[gym.id]
+        missing = [s for s in SETUP_STEPS if not done[s]]
+        owner = _owner(db, gym)
+        if not missing or owner is None or not owner.phone:
+            continue
+        text = (
+            f"GymBhai: {gym.name} is {len(SETUP_STEPS) - len(missing)} of "
+            f"{len(SETUP_STEPS)} steps set up. Next: {NEXT_STEP[missing[0]]}. "
+            f"{settings.public_app_url.rstrip('/')}/staff"
+        )
+        sms.queue(db, gym_id=gym.id, to=owner.phone, body=text, kind=SMS_PLATFORM)
         sent += 1
     return sent

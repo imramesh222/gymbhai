@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+
+import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
@@ -10,6 +13,7 @@ import { errorMessage } from "@/lib/api";
 import { memberApi, type PublicGym } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
 import { useLoad } from "@/lib/useLoad";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 
 /** Phone or email -> 6-digit code -> (shared phone) who are you? (§7) */
 export function SignIn() {
@@ -141,6 +145,19 @@ export function SignIn() {
           </button>
         </form>
       )}
+      {gym.data?.join_form && (
+        <p className="mt-6 text-center text-sm text-slate-600">
+          {t("app.join.notYet")}{" "}
+          <Link href={`/${slug}/join`} className="font-semibold text-brand-700">
+            {t("app.join.ask")}
+          </Link>
+        </p>
+      )}
+      <div className="mt-6 flex justify-center">
+        <LanguageSwitch />
+      </div>
+      {/* Members agreed nothing with us; they may want to know what we hold. */}
+      <LegalLinks privacyOnly />
     </main>
   );
 }

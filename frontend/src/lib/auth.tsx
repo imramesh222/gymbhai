@@ -11,6 +11,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -24,10 +25,26 @@ import {
   type Session,
 } from "./api";
 
+/** Signed in, or the password was right and a two-step code comes next. */
+export type SignInResult = { me: Me } | { twoStepToken: string };
+
+/** Must use two-step sign-in and hasn't set it up: only setting it up works. */
+export function needsTwoStepSetup(me: Me): boolean {
+  return me.two_step_required && !me.staff.two_step_enabled;
+}
+
+/** Where a signed-in account belongs. */
+export function homeFor(me: Me): string {
+  if (needsTwoStepSetup(me)) return "/staff/two-step";
+  return me.staff.is_platform_admin ? "/admin" : "/staff";
+}
+
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  signIn: (identifier: string, password: string) => Promise<Me>;
+  signIn: (identifier: string, password: string) => Promise<SignInResult>;
+  /** The code from the authenticator app (or a recovery code). */
+  completeTwoStep: (twoStepToken: string, code: string) => Promise<Me>;
   registerGym: (payload: GymSignup) => Promise<Me>;
   signOut: () => Promise<void>;
   can: (permission: string) => boolean;
@@ -40,6 +57,9 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped on sign-out: an answer to a request sent before it (a re-read of
+  // the account still in flight) must not sign the person back in on screen.
+  const generation = useRef(0);
 
   const apply = useCallback((session: Session) => {
     setAccessToken(session.access_token);
@@ -48,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const forget = useCallback(() => {
+    generation.current += 1;
     setAccessToken(null);
     setMe(null);
   }, []);
@@ -85,15 +106,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       me,
       loading,
-      signIn: async (identifier, password) =>
-        apply(await authApi.login(identifier, password)),
+      signIn: async (identifier, password) => {
+        const result = await authApi.login(identifier, password);
+        if ("two_step_token" in result) return { twoStepToken: result.two_step_token };
+        return { me: apply(result) };
+      },
+      completeTwoStep: async (twoStepToken, code) =>
+        apply(await authApi.loginTwoStep(twoStepToken, code)),
       registerGym: async (payload) => apply(await authApi.registerGym(payload)),
       signOut: async () => {
         await authApi.logout().catch(() => undefined);
         forget();
       },
       can: (permission) => me?.permissions.includes(permission) ?? false,
-      refreshMe: async () => setMe(await authApi.me()),
+      refreshMe: async () => {
+        const asked = generation.current;
+        const fresh = await authApi.me();
+        if (asked === generation.current) setMe(fresh);
+      },
     }),
     [me, loading, apply, forget],
   );

@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { Notice } from "@/components/Notice";
 import { LogoMark } from "@/components/ui/Logo";
 import { t } from "@/i18n";
-import { useAuth } from "@/lib/auth";
+import { needsTwoStepSetup, useAuth } from "@/lib/auth";
 
 /** Platform admin (us): every gym, our prices, payments sent to us. */
 export function AdminShell({ children }: { children: React.ReactNode }) {
@@ -16,10 +16,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !me) router.replace("/staff/login");
+    if (loading) return;
+    if (!me) router.replace("/staff/login");
+    // Required for us, always (PLAN.md §16.1).
+    else if (needsTwoStepSetup(me)) router.replace("/staff/two-step");
   }, [loading, me, router]);
 
-  if (loading || !me)
+  if (loading || !me || needsTwoStepSetup(me))
     return <p className="p-10 text-center text-slate-500">{t("common.loading")}</p>;
   if (!me.staff.is_platform_admin) {
     return (
@@ -31,6 +34,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const links = [
     { href: "/admin", label: t("admin.gyms") },
     { href: "/admin/plans", label: t("admin.plans") },
+    { href: "/admin/referrals", label: t("referrals.title") },
+    { href: "/admin/changelog", label: t("changelog.title") },
+    { href: "/admin/account", label: t("nav.profile") },
   ];
   return (
     <div className="min-h-dvh">

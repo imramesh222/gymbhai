@@ -35,7 +35,7 @@ from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
 from app.services import activity, live, reminders
 from app.services import memberships as ms
-from app.services.sms import service as sms
+from app.services.push import service as push
 
 REF_USED = AppError(
     409, "transaction_ref_used", "That transaction ID has already been used."
@@ -254,14 +254,20 @@ def reject(
         reason=reason,
         request=request,
     )
-    sms.queue(
+    text = (
+        f"{gym.name}: we couldn't confirm your payment: {reason}. "
+        f"Please check, or ask at the desk."
+    )
+    push.notify(
         db,
-        gym_id=gym.id,
-        to=member.phone,
-        body=f"{gym.name}: we couldn't confirm your payment: {reason}. "
-        f"Please check, or ask at the desk. {reminders.member_link(gym)}",
-        kind=SMS_PAYMENT,
-        member_id=member.id,
+        gym,
+        member,
+        title=gym.name,
+        body=text,
+        url=f"/{gym.slug}/renew",
+        tag="payment_request",
+        sms_body=f"{text} {reminders.member_link(gym)}",
+        sms_kind=SMS_PAYMENT,
         created_by=ctx.staff.id,
     )
     return row

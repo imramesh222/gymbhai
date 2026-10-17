@@ -1,6 +1,10 @@
 /** The member app's API (PLAN.md §8 "Member app"). */
+import type { Digits, Locale } from "@/i18n";
+import type { AccessWindow } from "@/lib/accessHours";
+import type { ReceiptLink } from "@/lib/receiptShare";
 import {
   createClient,
+  type FreezeRequest,
   type Notice,
   type Payment,
   type PaymentMethodAccount,
@@ -15,6 +19,7 @@ export interface PublicGym {
   brand_color: string | null;
   date_display: "ad" | "bs" | "both";
   branches: { id: string; name: string }[];
+  join_form: boolean;
 }
 
 export interface MemberMe {
@@ -31,12 +36,22 @@ export interface MemberMe {
     valid_until: string | null;
     days_left: number;
     dues: number;
+    visit_limit: number | null;
+    visits_left: number | null;
+    access_hours: AccessWindow[] | null;
   };
   qr: QrIdentity;
   gym: PublicGym;
   visits_this_month: number;
   streak_weeks: number;
   latest_notice: Notice | null;
+  emergency_contact: string | null;
+  /** How busy their branch is now; null if hidden or too new to tell (8.5). */
+  busy: "quiet" | "normal" | "busy" | null;
+  /** The app's language: their own choice, else the gym's (§16.6). */
+  language: Locale;
+  own_language: Locale | null;
+  digits: Digits;
 }
 
 export interface MemberSignIn {
@@ -76,6 +91,12 @@ const post = (body?: unknown): RequestInit => ({
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
+/** PLAN.md §16.3, 8.3. No public key: push isn't set up on this server. */
+export interface PushStatus {
+  public_key: string | null;
+  subscribed: boolean;
+}
+
 export const memberApi = {
   gym: (slug: string) =>
     request<PublicGym>(`/api/v1/m/${encodeURIComponent(slug)}/gym`),
@@ -92,12 +113,45 @@ export const memberApi = {
       `/api/v1/m/${encodeURIComponent(slug)}/otp/verify`,
       post(body),
     ),
+  joinOptions: (slug: string) =>
+    request<{ plans: { id: string; name: string; price: number | null }[] }>(
+      `/api/v1/m/${encodeURIComponent(slug)}/join`,
+    ),
+  askToJoin: (
+    slug: string,
+    body: {
+      name: string;
+      phone: string;
+      email?: string | null;
+      plan_id?: string | null;
+      branch_id?: string | null;
+      source?: string;
+      message?: string | null;
+    },
+  ) =>
+    request<{ received: boolean }>(
+      `/api/v1/m/${encodeURIComponent(slug)}/join`,
+      post(body),
+    ),
   logout: () => request<void>("/api/v1/m/auth/logout", post()),
+  pushStatus: (endpoint?: string) =>
+    request<PushStatus>(
+      `/api/v1/m/me/push${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ""}`,
+    ),
+  pushOn: (subscription: PushSubscriptionJSON) =>
+    request<PushStatus>(
+      "/api/v1/m/me/push",
+      post({ endpoint: subscription.endpoint, keys: subscription.keys }),
+    ),
+  pushOff: (endpoint: string) =>
+    request<PushStatus>("/api/v1/m/me/push/off", post({ endpoint })),
   me: () => request<MemberMe>("/api/v1/m/me"),
   payments: () =>
     request<{ dues: number; payments: Payment[]; requests: PaymentRequest[] }>(
       "/api/v1/m/me/payments",
     ),
+  receiptLink: (paymentId: string) =>
+    request<ReceiptLink>(`/api/v1/m/me/payments/${paymentId}/receipt-link`, post()),
   visits: (month?: string) =>
     request<{ at: string; result: string; branch_name: string | null }[]>(
       `/api/v1/m/me/visits${month ? `?month=${month}` : ""}`,
@@ -124,6 +178,21 @@ export const memberApi = {
       body: form,
     });
   },
+  updateMe: (body: { emergency_contact?: string | null; language?: Locale | null }) =>
+    request<MemberMe>("/api/v1/m/me", { ...post(body), method: "PATCH" }),
+  changeEmail: (email: string) => request<void>("/api/v1/m/me/email", post({ email })),
+  confirmEmail: (email: string, code: string) =>
+    request<MemberMe>("/api/v1/m/me/email/confirm", post({ email, code })),
+  uploadPhoto: (file: Blob) => {
+    const form = new FormData();
+    form.append("file", file, "photo.jpg");
+    return request<MemberMe>("/api/v1/m/me/photo", { method: "POST", body: form });
+  },
+  latestFreeze: () => request<FreezeRequest | null>("/api/v1/m/freeze-requests/latest"),
+  askToFreeze: (body: { from_date: string; to_date: string; reason: string }) =>
+    request<FreezeRequest>("/api/v1/m/freeze-requests", post(body)),
+  withdrawFreeze: (id: string) =>
+    request<FreezeRequest>(`/api/v1/m/freeze-requests/${id}/withdraw`, post()),
   withdraw: (id: string) =>
     request<PaymentRequest>(`/api/v1/m/payment-requests/${id}/withdraw`, post()),
 };

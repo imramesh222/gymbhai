@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/Button";
@@ -17,12 +18,11 @@ import {
   type PlanMonths,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useUnsavedWarning } from "@/lib/unsaved";
 import { shrinkImage } from "@/lib/image";
 
-export function GymSection({ gym }: { gym: Gym }) {
-  const { refreshMe } = useAuth();
-  const logoInput = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState({
+function savedForm(gym: Gym) {
+  return {
     name: gym.name,
     phone: gym.phone ?? "",
     address: gym.address ?? "",
@@ -30,7 +30,20 @@ export function GymSection({ gym }: { gym: Gym }) {
     date_display: gym.settings.date_display,
     member_code_prefix: gym.settings.member_code_prefix,
     daily_summary_sms: gym.settings.daily_summary_sms,
-  });
+    show_busyness: gym.settings.show_busyness,
+    join_form: gym.settings.join_form,
+    language: gym.settings.language,
+    digits: gym.settings.digits,
+  };
+}
+
+export function GymSection({ gym }: { gym: Gym }) {
+  const { refreshMe } = useAuth();
+  const logoInput = useRef<HTMLInputElement>(null);
+  const [form, setForm] = useState(() => savedForm(gym));
+  // The gym as saved comes back through refreshMe; anything else is unsaved.
+  const dirty = JSON.stringify(form) !== JSON.stringify(savedForm(gym));
+  useUnsavedWarning(dirty);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
     text: string;
@@ -48,9 +61,17 @@ export function GymSection({ gym }: { gym: Gym }) {
           date_display: form.date_display,
           member_code_prefix: form.member_code_prefix.toUpperCase(),
           daily_summary_sms: form.daily_summary_sms,
+          show_busyness: form.show_busyness,
+          join_form: form.join_form,
+          language: form.language,
+          digits: form.digits,
         },
       });
       await refreshMe();
+      setForm((f) => ({
+        ...f,
+        member_code_prefix: f.member_code_prefix.toUpperCase(),
+      }));
       setMessage({ tone: "success", text: t("common.saved") });
     } catch (err) {
       setMessage({ tone: "error", text: errorMessage(err) });
@@ -152,12 +173,46 @@ export function GymSection({ gym }: { gym: Gym }) {
             { value: "both", label: t("signup.dateDisplay.both") },
           ]}
         />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Select<"en" | "ne">
+            label={t("settings.language")}
+            value={form.language}
+            onChange={(language) => setForm({ ...form, language })}
+            options={[
+              { value: "en", label: "English" },
+              { value: "ne", label: "नेपाली" },
+            ]}
+          />
+          <Select<"western" | "nepali">
+            label={t("settings.digits")}
+            value={form.digits}
+            onChange={(digits) => setForm({ ...form, digits })}
+            options={[
+              { value: "western", label: t("settings.digits.western") },
+              { value: "nepali", label: t("settings.digits.nepali") },
+            ]}
+          />
+        </div>
+        <p className="text-sm text-slate-500">{t("settings.languageHelp")}</p>
         <Checkbox
           label={t("settings.dailySummary")}
           checked={form.daily_summary_sms}
           onChange={(daily_summary_sms) => setForm({ ...form, daily_summary_sms })}
           hint={t("settings.dailySummaryHelp")}
         />
+        <Checkbox
+          label={t("settings.showBusyness")}
+          checked={form.show_busyness}
+          onChange={(show_busyness) => setForm({ ...form, show_busyness })}
+          hint={t("settings.showBusynessHelp")}
+        />
+        <Checkbox
+          label={t("settings.joinForm")}
+          checked={form.join_form}
+          onChange={(join_form) => setForm({ ...form, join_form })}
+          hint={t("settings.joinFormHelp")}
+        />
+        {dirty && <Notice tone="warning">{t("settings.unsaved")}</Notice>}
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <Button type="submit">{t("common.save")}</Button>
       </form>
@@ -171,6 +226,7 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
     dues_rule: gym.settings.dues_rule,
     grace_days: String(gym.settings.grace_days),
     rescan_minutes: String(gym.settings.rescan_minutes),
+    not_visiting_days: String(gym.settings.not_visiting_days),
   });
   const [message, setMessage] = useState<{
     tone: "success" | "error";
@@ -184,6 +240,7 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
         dues_rule: form.dues_rule,
         grace_days: Number(form.grace_days),
         rescan_minutes: Number(form.rescan_minutes),
+        not_visiting_days: Number(form.not_visiting_days),
       });
       await refreshMe();
       setMessage({ tone: "success", text: t("common.saved") });
@@ -222,10 +279,67 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
             inputMode="numeric"
             help={t("settings.rescanMinutesHelp")}
           />
+          <Field
+            label={t("settings.notVisitingDays")}
+            value={form.not_visiting_days}
+            onChange={(not_visiting_days) => setForm({ ...form, not_visiting_days })}
+            type="number"
+            inputMode="numeric"
+            help={t("settings.notVisitingDaysHelp")}
+          />
         </div>
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <Button type="submit">{t("common.save")}</Button>
       </form>
+    </Card>
+  );
+}
+
+/**
+ * Settings → Security: the owner alone (PLAN.md §16.1). Requiring two-step
+ * sign-in needs the owner's own turned on first.
+ */
+export function SecuritySection({ gym }: { gym: Gym }) {
+  const { me, refreshMe } = useAuth();
+  const [message, setMessage] = useState<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
+  const ownOn = me?.staff.two_step_enabled ?? false;
+
+  async function change(required: boolean) {
+    try {
+      await gymApi.updateSecurity(required);
+      await refreshMe();
+      setMessage({ tone: "success", text: t("common.saved") });
+    } catch (err) {
+      setMessage({ tone: "error", text: errorMessage(err) });
+    }
+  }
+
+  return (
+    <Card title={t("settings.security")}>
+      <div className="space-y-3">
+        <Checkbox
+          label={t("settings.requireTwoStep")}
+          hint={t("settings.requireTwoStepHint")}
+          checked={gym.settings.require_two_step}
+          disabled={!ownOn && !gym.settings.require_two_step}
+          onChange={(checked) => void change(checked)}
+        />
+        {!ownOn && (
+          <Notice>
+            {t("settings.requireTwoStepFirst")}{" "}
+            <Link
+              href="/staff/profile"
+              className="font-semibold text-brand-700 hover:underline"
+            >
+              {t("nav.profile")}
+            </Link>
+          </Notice>
+        )}
+        {message && <Notice tone={message.tone}>{message.text}</Notice>}
+      </div>
     </Card>
   );
 }

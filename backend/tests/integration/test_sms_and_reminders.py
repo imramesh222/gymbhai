@@ -30,7 +30,17 @@ def test_a_new_gym_starts_with_trial_credits_and_rules(
     sign_in(db, client, gym_a.owner)
     assert client.get("/api/v1/sms").json()["balance"] == 50
     rules = client.get("/api/v1/reminder-rules").json()
-    assert [r["days_from_expiry"] for r in rules] == [-7, -3, 0, 3]
+    # Expiry reminders on; the other automations there, but off (§16.3, 8.2).
+    assert [(r["trigger"], r["days"], r["enabled"]) for r in rules] == [
+        ("birthday", 0, False),
+        ("dues", 7, False),
+        ("expiry", -7, True),
+        ("expiry", -3, True),
+        ("expiry", 0, True),
+        ("expiry", 3, True),
+        ("lapsed", 30, False),
+        ("not_visiting", 14, False),
+    ]
 
 
 def test_welcome_sms_on_add_and_sale(
@@ -197,7 +207,7 @@ def test_daily_tasks_queue_once_a_day_at_their_time(db: Session) -> None:
     )
 
 
-# --- the Expiring list, one-off SMS, notices ---
+# --- Follow up, one-off SMS, notices ---
 
 
 def test_expiring_lists(client: TestClient, db: Session, gym_a: GymFixture) -> None:
@@ -207,7 +217,7 @@ def test_expiring_lists(client: TestClient, db: Session, gym_a: GymFixture) -> N
     expiring_in(db, gym_a, -40, "9800000104")
     expiring_in(db, gym_a, 30, "9800000105")
     sign_in(db, client, gym_a.owner)
-    lists = client.get("/api/v1/lists/expiring").json()
+    lists = client.get("/api/v1/lists/follow-up").json()
     assert [m["id"] for m in lists["due_this_week"]] == [str(week.id)]
     assert [m["id"] for m in lists["due_today"]] == [str(today.id)]
     assert [m["id"] for m in lists["lapsed"]] == [str(lapsed.id)]
@@ -237,12 +247,15 @@ def test_notice_with_sms_shows_the_cost_first(
     cost = client.post("/api/v1/notices/cost", json=notice).json()
     assert cost == {
         "recipients": 2,
+        "by_push": 0,  # nobody has turned notifications on (see test_push.py)
+        "by_sms": 2,
         "segments_each": 1,
         "total_credits": 2,
         "balance": 50,
     }
     created = client.post("/api/v1/notices", json=notice).json()
     assert created["sms_count"] == 2
+    assert created["push_count"] == 0
     assert len(messages(db, kind="notice")) == 2
     assert client.get("/api/v1/notices").json()[0]["title"] == "Closed Saturday"
 

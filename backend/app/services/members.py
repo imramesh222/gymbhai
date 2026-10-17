@@ -22,17 +22,31 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import Select, and_, case, exists, func, or_, select
+from sqlalchemy import Select, and_, case, delete, exists, func, or_, select
+from sqlalchemy import update as sql_update
 from sqlalchemy.orm import Session
 
 from app.api.tenancy import StaffContext
 from app.core.errors import AppError
 from app.core.gym_settings import GymSettings
-from app.core.time import today_in_nepal
+from app.core.phone import normalize_phone
+from app.core.time import NEPAL, today_in_nepal, utcnow
+from app.models.activity import ActivityLog
 from app.models.gym import Branch
+from app.models.lead import Lead
 from app.models.member import Member
+from app.models.member_app import (
+    LET_IN,
+    CheckIn,
+    MemberSession,
+    OtpCode,
+    PaymentRequest,
+)
 from app.models.membership import Membership, MembershipFreeze
+from app.models.messaging import SmsMessage
 from app.models.payment import KIND_PAYMENT, Payment
+from app.models.platform import MemberImport
+from app.models.push import PushSubscription
 from app.services import activity, counters, live
 from app.services import memberships as ms
 
@@ -49,6 +63,7 @@ TRACKED = (
     "address",
     "emergency_contact",
     "home_branch_id",
+    "referred_by_id",
     "joined_on",
     "notes",
     "app_access",
@@ -56,6 +71,7 @@ TRACKED = (
     "photo_key",
     "qr_version",
     "card_token",
+    "language",
 )
 
 
@@ -78,6 +94,13 @@ def _branch(db: Session, ctx: StaffContext, branch_id: uuid.UUID) -> Branch:
     if not ctx.can_access_branch(branch.id):
         raise AppError(403, "branch_denied", "You don't work at that branch.")
     return branch
+
+
+def _referrer(db: Session, ctx: StaffContext, member_id: uuid.UUID) -> Member:
+    member = db.get(Member, member_id)
+    if member is None or member.gym_id != ctx.gym_id:
+        raise AppError(422, "bad_member", "That member does not exist.")
+    return member
 
 
 def default_branch_id(db: Session, ctx: StaffContext) -> uuid.UUID:
@@ -124,6 +147,8 @@ def create_many(
         if data.get("home_branch_id") is None:
             default = default or default_branch_id(db, ctx)
             data["home_branch_id"] = default
+        if data.get("referred_by_id") is not None:
+            _referrer(db, ctx, data["referred_by_id"])
         if data["home_branch_id"] not in checked:
             _branch(db, ctx, data["home_branch_id"])
             checked.add(data["home_branch_id"])
@@ -167,8 +192,13 @@ def update(
     reason: str | None = None,
     request: Request | None = None,
 ) -> Member:
+    ensure_not_erased(member)
     if changes.get("home_branch_id") is not None:
         _branch(db, ctx, changes["home_branch_id"])
+    if changes.get("referred_by_id") is not None:
+        if changes["referred_by_id"] == member.id:
+            raise AppError(422, "bad_member", "A member can't refer themselves.")
+        _referrer(db, ctx, changes["referred_by_id"])
     before = snapshot(member)
     for name, value in changes.items():
         setattr(member, name, value)
@@ -190,6 +220,35 @@ def update(
             reason=reason,
             request=request,
         )
+    return member
+
+
+# What a member may change in their own app (PLAN.md §16.3, 8.5). The email
+# comes through member_auth.confirm_email_change; never the phone, which is
+# how the gym knows them and signs them in.
+SELF_EDITABLE = ("email", "emergency_contact", "photo_key", "language")
+
+
+def update_by_member(
+    db: Session,
+    member: Member,
+    changes: dict[str, Any],
+    *,
+    action: str = "member.updated_own",
+    request: Request | None = None,
+) -> Member:
+    """The member's own change, logged with them as the one who made it."""
+    ensure_not_erased(member)
+    unknown = set(changes) - set(SELF_EDITABLE)
+    if unknown:
+        raise ValueError(f"Members can't change {sorted(unknown)}")
+    before = snapshot(member)
+    for name, value in changes.items():
+        setattr(member, name, value)
+    diff = activity.diff(before, snapshot(member))
+    if diff:
+        live.member_changed(db, member.gym_id, member.id, member.home_branch_id)
+        activity.member_action(db, member, action, changes=diff, request=request)
     return member
 
 
@@ -216,6 +275,17 @@ class MemberState:
     days_left: int = 0
     dues: int = 0
     memberships: list[Membership] = field(default_factory=list)
+    # A visit pack (§16.4, 9.3): used and allowed on `current`.
+    visits_used: int | None = None
+    visit_limit: int | None = None
+    # Its dates cover today, but every visit is used: the door says so.
+    used_up_today: bool = False
+
+    @property
+    def visits_left(self) -> int | None:
+        if self.visit_limit is None or self.visits_used is None:
+            return None
+        return max(self.visit_limit - self.visits_used, 0)
 
 
 def state_of(
@@ -223,11 +293,20 @@ def state_of(
     freezes: dict[uuid.UUID, list[MembershipFreeze]],
     payments: dict[uuid.UUID, list[Payment]],
     today: dt.date | None = None,
+    visits: dict[uuid.UUID, int] | None = None,
 ) -> MemberState:
+    """Computed from dates, and for visit packs the visits used (§16.4, 9.3):
+    a pack with every visit used counts as ended."""
     today = today or today_in_nepal()
-    live = sorted(
+    visits = visits or {}
+
+    def used_up(m: Membership) -> bool:
+        return m.visit_limit is not None and visits.get(m.id, 0) >= m.visit_limit
+
+    all_live = sorted(
         (m for m in memberships if m.cancelled_at is None), key=lambda m: m.start_date
     )
+    live = [m for m in all_live if not used_up(m)]
     dues = sum(ms.dues_of(m, payments.get(m.id, [])) for m in memberships)
 
     def chain_end(first: Membership) -> dt.date:
@@ -251,6 +330,8 @@ def state_of(
             days_left=(until - today).days + 1,
             dues=dues,
             memberships=list(memberships),
+            visits_used=visits.get(current.id, 0) if current.visit_limit else None,
+            visit_limit=current.visit_limit,
         )
     upcoming = [m for m in live if m.start_date > today]
     if upcoming:
@@ -261,14 +342,18 @@ def state_of(
             dues=dues,
             memberships=list(memberships),
         )
-    if live:
-        last = max(live, key=lambda m: m.end_date)
+    spent = [m for m in all_live if used_up(m) and m.start_date <= today <= m.end_date]
+    if all_live:
+        last = spent[-1] if spent else max(all_live, key=lambda m: m.end_date)
         return MemberState(
             status=ms.EXPIRED,
             current=last,
             valid_until=last.end_date,
             dues=dues,
             memberships=list(memberships),
+            visits_used=visits.get(last.id, 0) if last.visit_limit else None,
+            visit_limit=last.visit_limit,
+            used_up_today=bool(spent),
         )
     return MemberState(status=NONE, dues=dues, memberships=list(memberships))
 
@@ -291,7 +376,11 @@ def states_for(
     payments: dict[uuid.UUID, list[Payment]] = defaultdict(list)
     for p in ms.payments_for(db, membership_ids):
         payments[p.membership_id].append(p)  # type: ignore[index]
-    return {m.id: state_of(by_member[m.id], freezes, payments, today) for m in members}
+    visits = ms.visits_used(db, rows)
+    return {
+        m.id: state_of(by_member[m.id], freezes, payments, today, visits)
+        for m in members
+    }
 
 
 def state(db: Session, member: Member) -> MemberState:
@@ -307,6 +396,7 @@ def _covering_today(today: dt.date):
         Membership.cancelled_at.is_(None),
         Membership.start_date <= today,
         Membership.end_date >= today,
+        ms.usable(),
     )
 
 
@@ -382,6 +472,29 @@ def dues_expression():
     return owed - paid
 
 
+def last_visit_expression():
+    """When a member was last let in at the door, for sorting (null: never)."""
+    return (
+        select(func.max(CheckIn.at))
+        .where(CheckIn.member_id == Member.id, CheckIn.result.in_(LET_IN))
+        .correlate(Member)
+        .scalar_subquery()
+    )
+
+
+def last_visits(db: Session, member_ids: list[uuid.UUID]) -> dict[uuid.UUID, Any]:
+    """Each member's last visit, in one query for the whole page."""
+    if not member_ids:
+        return {}
+    return dict(
+        db.execute(
+            select(CheckIn.member_id, func.max(CheckIn.at))
+            .where(CheckIn.member_id.in_(member_ids), CheckIn.result.in_(LET_IN))
+            .group_by(CheckIn.member_id)
+        ).all()
+    )
+
+
 def expiring_filter(today: dt.date, within_days: int):
     """Active now, and the last day of their chain falls within N days."""
     last_end = (
@@ -395,6 +508,20 @@ def expiring_filter(today: dt.date, within_days: int):
     )
 
 
+def not_visiting_filter(today: dt.date, days: int):
+    """Active today (not frozen), and not let in at the door for N days.
+
+    Someone who joined in the last N days hasn't had the chance yet: left out.
+    """
+    since = dt.datetime.combine(today - dt.timedelta(days=days), dt.time(), NEPAL)
+    visited = exists().where(
+        CheckIn.member_id == Member.id,
+        CheckIn.result.in_(LET_IN),
+        CheckIn.at >= since,
+    )
+    return and_(status_filter(ms.ACTIVE, today), ~visited, Member.created_at < since)
+
+
 def search(
     ctx: StaffContext,
     *,
@@ -404,6 +531,7 @@ def search(
     plan_id: uuid.UUID | None = None,
     has_dues: bool | None = None,
     expiring_within: int | None = None,
+    not_visiting_days: int | None = None,
     archived: bool = False,
     today: dt.date | None = None,
 ) -> Select:
@@ -436,4 +564,168 @@ def search(
         stmt = stmt.where(dues > 0 if has_dues else dues <= 0)
     if expiring_within is not None:
         stmt = stmt.where(expiring_filter(today, expiring_within))
+    if not_visiting_days is not None:
+        stmt = stmt.where(not_visiting_filter(today, not_visiting_days))
     return stmt
+
+
+# --- erasing (PLAN.md §16.1) ---------------------------------------------------------
+
+ERASED_NAME = "Erased member"
+# Phone is required. No Nepali mobile number starts with 0: this reaches nobody.
+ERASED_PHONE = "0000000000"
+ERASED_SMS = "(erased)"
+
+
+def ensure_not_erased(member: Member) -> None:
+    if member.erased_at is not None:
+        raise AppError(409, "member_erased", "This member's details were erased.")
+
+
+def _shared(db: Session, member: Member, column, value: str | None) -> bool:
+    """Someone else at this gym still uses that phone or email (a family)."""
+    if not value:
+        return False
+    return bool(
+        db.scalar(
+            select(Member.id).where(
+                Member.gym_id == member.gym_id,
+                Member.id != member.id,
+                Member.erased_at.is_(None),
+                column == value,
+            )
+        )
+    )
+
+
+def _has_phone(values: list[Any], phone: str) -> bool:
+    for value in values:
+        try:
+            if value is not None and normalize_phone(str(value)) == phone:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def erase(
+    db: Session, ctx: StaffContext, member: Member, request: Request | None = None
+) -> list[str]:
+    """Erase a member's personal details, at their request, for good.
+
+    Their name, phone, email, birthday, address, emergency contact, notes and
+    photo go, here and on the enquiry they joined from; so do their sign-in
+    codes and app sessions, the SMS sent to them, their payment screenshots,
+    the before-and-after values in their History, and their row in any
+    register imported. Their memberships,
+    payments and check-ins stay, as "Erased member": they are the gym's
+    accounts. Returns the stored files to delete once this is committed.
+    """
+    ensure_not_erased(member)
+    phone, email = member.phone, member.email
+    files = [key for key in [member.photo_key] if key]
+    phone_shared = _shared(db, member, Member.phone, phone)
+    email_shared = _shared(db, member, func.lower(Member.email), (email or "").lower())
+
+    for name in (
+        "email",
+        "gender",
+        "date_of_birth",
+        "address",
+        "emergency_contact",
+        "notes",
+        "photo_key",
+    ):
+        setattr(member, name, None)
+    member.name = ERASED_NAME
+    member.phone = ERASED_PHONE
+    member.app_access = False
+    member.is_archived = True
+    # The app QR and the printed card stop working.
+    member.qr_version += 1
+    member.qr_secret = new_qr_secret()
+    member.card_token = new_card_token()
+    member.erased_at = utcnow()
+
+    # Deleted, not just revoked: the device details are theirs too.
+    db.execute(delete(MemberSession).where(MemberSession.member_id == member.id))
+    # A push endpoint names their phone: gone as well.
+    db.execute(delete(PushSubscription).where(PushSubscription.member_id == member.id))
+    db.execute(
+        sql_update(SmsMessage)
+        .where(SmsMessage.gym_id == member.gym_id, SmsMessage.member_id == member.id)
+        .values(to=ERASED_PHONE, body=ERASED_SMS)
+    )
+    if not phone_shared:
+        db.execute(
+            delete(OtpCode).where(
+                OtpCode.gym_id == member.gym_id, OtpCode.destination == phone
+            )
+        )
+        # Sign-in codes are logged against the number, not the member.
+        db.execute(
+            sql_update(SmsMessage)
+            .where(SmsMessage.gym_id == member.gym_id, SmsMessage.to == phone)
+            .values(to=ERASED_PHONE)
+        )
+    if email and not email_shared:
+        db.execute(
+            delete(OtpCode).where(
+                OtpCode.gym_id == member.gym_id,
+                OtpCode.destination == email.lower(),
+            )
+        )
+    for row in db.scalars(
+        select(PaymentRequest).where(
+            PaymentRequest.member_id == member.id,
+            PaymentRequest.screenshot_key.is_not(None),
+        )
+    ):
+        files.append(row.screenshot_key)  # type: ignore[arg-type]
+        row.screenshot_key = None
+    # The enquiry they joined from held the same details (§16.4, 9.1).
+    lead_ids = list(
+        db.scalars(
+            select(Lead.id).where(
+                Lead.gym_id == member.gym_id, Lead.member_id == member.id
+            )
+        )
+    )
+    if lead_ids:
+        db.execute(
+            sql_update(Lead)
+            .where(Lead.id.in_(lead_ids))
+            .values(name=ERASED_NAME, phone=None, email=None, notes=None)
+        )
+    # The History keeps what happened and when, not what the details were.
+    db.execute(
+        sql_update(ActivityLog)
+        .where(
+            ActivityLog.gym_id == member.gym_id,
+            or_(
+                and_(
+                    ActivityLog.entity == "member", ActivityLog.entity_id == member.id
+                ),
+                and_(ActivityLog.entity == "lead", ActivityLog.entity_id.in_(lead_ids)),
+            ),
+        )
+        .values(changes=None)
+    )
+    if not phone_shared:
+        for upload in db.scalars(
+            select(MemberImport).where(MemberImport.gym_id == member.gym_id)
+        ):
+            kept = [row for row in upload.rows if not _has_phone(row, phone)]
+            if len(kept) != len(upload.rows):
+                upload.rows = kept
+
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "member.erased",
+        entity="member",
+        entity_id=member.id,
+        request=request,
+    )
+    live.member_changed(db, ctx.gym_id, member.id, member.home_branch_id)
+    return files

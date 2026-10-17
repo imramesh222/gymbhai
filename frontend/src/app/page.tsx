@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { LogoMark } from "@/components/ui/Logo";
 import { t, type MessageKey } from "@/i18n";
+import { LegalLinks } from "@/components/legal/LegalLinks";
 
 const FEATURES: { key: string; icon: React.ReactNode }[] = [
   {
@@ -99,6 +100,7 @@ export default function Home() {
             </div>
           ))}
         </section>
+        <LegalLinks />
       </div>
     </main>
   );

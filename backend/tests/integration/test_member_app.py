@@ -233,3 +233,85 @@ def test_public_gym_page(client: TestClient, gym_a: GymFixture) -> None:
     assert body["name"] == "Gym fitness-zone"
     assert body["date_display"] == "both"
     assert client.get("/api/v1/m/no-such-gym/gym").status_code == 404
+
+
+# --- the master code, while there is no SMS gateway (PLAN.md §15) -----------------
+
+
+def test_the_master_code_signs_a_member_in(client, db, gym_a, monkeypatch) -> None:
+    from sqlalchemy import select
+
+    from app.core.config import settings
+    from app.models.activity import ActivityLog
+
+    monkeypatch.setattr(settings, "master_otp", "583920")
+    member = make_member(db, gym_a, phone="9812300001")
+    asked = client.post(
+        "/api/v1/m/fitness-zone/otp/request", json={"phone": member.phone}
+    )
+    assert asked.status_code == 200, asked.text
+    signed_in = client.post(
+        "/api/v1/m/fitness-zone/otp/verify",
+        json={"phone": member.phone, "code": "583920"},
+    )
+    assert signed_in.status_code == 200, signed_in.text
+    assert signed_in.json()["access_token"]
+    entry = db.scalars(
+        select(ActivityLog).where(
+            ActivityLog.action == "member.signed_in_with_master_code"
+        )
+    ).one()
+    assert entry.actor_id == member.id
+
+
+def test_the_master_code_needs_a_code_asked_for_first(
+    client, db, gym_a, monkeypatch
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "master_otp", "583920")
+    member = make_member(db, gym_a, phone="9812300002")
+    response = client.post(
+        "/api/v1/m/fitness-zone/otp/verify",
+        json={"phone": member.phone, "code": "583920"},
+    )
+    assert response.status_code == 401
+
+
+def test_without_a_master_code_only_the_real_one_works(client, db, gym_a) -> None:
+    member = make_member(db, gym_a, phone="9812300003")
+    client.post("/api/v1/m/fitness-zone/otp/request", json={"phone": member.phone})
+    response = client.post(
+        "/api/v1/m/fitness-zone/otp/verify",
+        json={"phone": member.phone, "code": "583920"},
+    )
+    assert response.status_code == 401
+
+
+def test_the_master_code_is_refused_with_a_real_sms_gateway() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError, match="no SMS gateway"):
+        Settings(
+            environment="local",
+            sms_provider="sparrow",
+            master_otp="583920",
+            _env_file=None,
+        )
+    for weak in ("111111", "123456", "121212"):
+        with pytest.raises(ValidationError, match="hard to guess"):
+            Settings(
+                environment="production",
+                secret_key="x" * 40,
+                totp_key="y" * 40,
+                master_otp=weak,
+                _env_file=None,
+            )
+        # Locally, for testing, a simple one is fine.
+        assert Settings(environment="local", master_otp=weak, _env_file=None)
+    for wrong in ("12345", "abcdef"):
+        with pytest.raises(ValidationError, match="6 digits"):
+            Settings(environment="local", master_otp=wrong, _env_file=None)

@@ -1,9 +1,19 @@
 """Members: the people who train (PLAN.md §5.5, §6)."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,4 +57,13 @@ class Member(IdMixin, TimestampMixin, GymOwned, Base):
     card_token: Mapped[str] = mapped_column(String(32))
     is_archived: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
+    )
+    # Erased at their request (§16.1): personal details gone for good, the
+    # gym's accounts kept. An erased member can't be restored or edited.
+    erased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Their own language for the app (§16.6); null follows the gym's.
+    language: Mapped[str | None] = mapped_column(String(2))
+    # The member who sent them (§16.4, 9.6).
+    referred_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id", ondelete="SET NULL")
     )

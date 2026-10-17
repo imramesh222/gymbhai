@@ -5,7 +5,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ from app.api.deps import require
 from app.api.presenters import member_read
 from app.api.routes.members import load_member
 from app.api.tenancy import StaffContext, for_gym, get_in_gym
-from app.core.errors import AppError
+from app.core.errors import AppError, not_found
 from app.core.gym_settings import GymSettings
 from app.core.permissions import Permission
 from app.core.sms_text import segments
@@ -30,7 +30,9 @@ from app.models.messaging import (
     SmsMessage,
 )
 from app.schemas.messaging import (
-    ExpiringLists,
+    BulkSmsIn,
+    BulkSmsResult,
+    FollowUpLists,
     MemberSmsIn,
     NoticeCost,
     NoticeIn,
@@ -42,9 +44,11 @@ from app.schemas.messaging import (
     SmsRead,
     SmsTemplates,
     SmsTemplatesUpdate,
+    check_days,
 )
 from app.services import activity, reminders
 from app.services import members as members_service
+from app.services.push import service as push
 from app.services.sms import service as sms
 
 router = APIRouter(tags=["messages"])
@@ -59,46 +63,81 @@ def _gym(db: Session, ctx: StaffContext) -> Gym:
     return gym
 
 
-# --- the Expiring list ----------------------------------------------------------
+# --- Follow up --------------------------------------------------------------------
+
+FOLLOW_UP_SHOWN = 100
 
 
-@router.get("/lists/expiring", response_model=ExpiringLists)
-def expiring(
+@router.get("/lists/follow-up", response_model=FollowUpLists)
+def follow_up(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
-) -> ExpiringLists:
-    """Who to chase today: ending this week, ending today, lapsed this month."""
+) -> FollowUpLists:
+    """Who to chase (PLAN.md §16.3, 8.1): ending today or this week, lapsed in
+    the last 30 days, owing money, and active but not visiting."""
     today = today_in_nepal()
-    stmt = (
-        select(Member)
-        .join(Membership, Membership.member_id == Member.id)
-        .where(
-            Member.gym_id == ctx.gym_id,
-            Member.is_archived.is_(False),
-            Membership.cancelled_at.is_(None),
-            Membership.end_date >= today - dt.timedelta(days=LAPSED_DAYS),
-            Membership.end_date <= today + dt.timedelta(days=WEEK),
+    days = _gym(db, ctx).config.not_visiting_days
+    ending = list(
+        db.scalars(
+            members_service.search(ctx, today=today).where(
+                Member.id.in_(
+                    select(Membership.member_id).where(
+                        Membership.gym_id == ctx.gym_id,
+                        Membership.cancelled_at.is_(None),
+                        Membership.end_date >= today - dt.timedelta(days=LAPSED_DAYS),
+                        Membership.end_date <= today + dt.timedelta(days=WEEK),
+                    )
+                )
+            )
         )
-        .distinct()
     )
-    if ctx.branch_ids is not None:
-        stmt = stmt.where(Member.home_branch_id.in_(ctx.branch_ids))
-    members = list(db.scalars(stmt))
-    states = members_service.states_for(db, members, today)
+    dues = members_service.dues_expression()
+    owing_stmt = members_service.search(ctx, today=today).where(dues > 0)
+    owing = list(
+        db.scalars(owing_stmt.order_by(dues.desc(), Member.name).limit(FOLLOW_UP_SHOWN))
+    )
+    away_stmt = members_service.search(ctx, today=today, not_visiting_days=days)
+    last_visit = members_service.last_visit_expression()
+    away = list(
+        db.scalars(
+            away_stmt.order_by(last_visit.desc().nulls_last(), Member.name).limit(
+                FOLLOW_UP_SHOWN
+            )
+        )
+    )
 
-    lists = ExpiringLists(due_today=[], due_this_week=[], lapsed=[])
-    for member in sorted(members, key=lambda m: (states[m.id].valid_until, m.name)):
-        state = states[member.id]
-        end = state.valid_until
+    everyone = list({m.id: m for m in [*ending, *owing, *away]}.values())
+    states = members_service.states_for(db, everyone, today)
+    visits = members_service.last_visits(db, [m.id for m in everyone])
+
+    def read(member: Member):
+        item = member_read(member, states[member.id])
+        item.last_visit_at = visits.get(member.id)
+        return item
+
+    def count(stmt) -> int:
+        return db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+    lists = FollowUpLists(
+        due_today=[],
+        due_this_week=[],
+        lapsed=[],
+        owing=[read(m) for m in owing],
+        owing_total=count(owing_stmt),
+        not_visiting=[read(m) for m in away],
+        not_visiting_total=count(away_stmt),
+        not_visiting_days=days,
+    )
+    for member in sorted(ending, key=lambda m: (states[m.id].valid_until, m.name)):
+        end = states[member.id].valid_until
         if end is None:
             continue
-        item = member_read(member, state)
         if end == today:
-            lists.due_today.append(item)
+            lists.due_today.append(read(member))
         elif today < end <= today + dt.timedelta(days=WEEK):
-            lists.due_this_week.append(item)
+            lists.due_this_week.append(read(member))
         elif today - dt.timedelta(days=LAPSED_DAYS) <= end < today:
-            lists.lapsed.append(item)
+            lists.lapsed.append(read(member))
     lists.lapsed.reverse()  # most recently lapsed first
     return lists
 
@@ -135,8 +174,9 @@ def sms_member(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MESSAGES_SMS)),
 ) -> SmsMessage:
-    """A one-off SMS, or "Send reminder now" from the Expiring list."""
+    """A one-off SMS, or "Send reminder now" from Follow up."""
     member = load_member(db, ctx, member_id)
+    members_service.ensure_not_erased(member)
     gym = _gym(db, ctx)
     body = (
         reminders.reminder_text(db, gym, member) if payload.reminder else payload.body
@@ -164,10 +204,55 @@ def sms_member(
     return message
 
 
+@router.post("/members/sms", response_model=BulkSmsResult)
+def sms_members(
+    payload: BulkSmsIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MESSAGES_SMS)),
+) -> BulkSmsResult:
+    """One message to the members picked on the Members list (§16.2, 7.6).
+
+    Only this gym's members the sender may see; archived and erased ones are
+    left out. One SMS each, queued together.
+    """
+    members = db.scalars(
+        members_service.search(ctx).where(
+            Member.id.in_(payload.member_ids), Member.erased_at.is_(None)
+        )
+    ).all()
+    if len(members) != len(set(payload.member_ids)):
+        raise not_found("Some of those members can't be found.")
+    for member in members:
+        sms.queue(
+            db,
+            gym_id=ctx.gym_id,
+            to=member.phone,
+            body=payload.body,
+            kind=SMS_MANUAL,
+            member_id=member.id,
+            created_by=ctx.staff.id,
+            flush=False,
+        )
+    db.flush()
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "sms.sent_to_members",
+        entity="member",
+        changes={"members": len(members)},
+        request=request,
+    )
+    db.commit()
+    return BulkSmsResult(queued=len(members))
+
+
 # --- reminder rules and wording -----------------------------------------------------
 
 SETUP_REMINDERS = require(Permission.SETUP_REMINDERS)
-RULE_TAKEN = AppError(409, "rule_exists", "There is already a reminder for that day.")
+RULE_TAKEN = AppError(
+    409, "rule_exists", "There is already an automation for that day."
+)
 
 
 @router.get("/reminder-rules", response_model=list[ReminderRuleRead])
@@ -175,7 +260,7 @@ def list_rules(
     db: Session = Depends(get_db), ctx: StaffContext = Depends(SETUP_REMINDERS)
 ) -> list[ReminderRule]:
     stmt = for_gym(select(ReminderRule), ReminderRule, ctx)
-    return list(db.scalars(stmt.order_by(ReminderRule.days_from_expiry)))
+    return list(db.scalars(stmt.order_by(ReminderRule.trigger, ReminderRule.days)))
 
 
 @router.post(
@@ -218,11 +303,15 @@ def update_rule(
     ctx: StaffContext = Depends(SETUP_REMINDERS),
 ) -> ReminderRule:
     rule = get_in_gym(db, ReminderRule, rule_id, ctx, message="No such reminder.")
-    fields = ("days_from_expiry", "template", "enabled")
+    fields = ("days", "template", "enabled")
     before = {f: getattr(rule, f) for f in fields}
-    for name, value in payload.model_dump(
-        exclude_unset=True, exclude_none=True
-    ).items():
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    if "days" in changes:
+        try:
+            check_days(rule.trigger, changes["days"])
+        except ValueError as exc:
+            raise AppError(422, "bad_days", str(exc)) from exc
+    for name, value in changes.items():
         setattr(rule, name, value)
     try:
         db.flush()
@@ -258,7 +347,7 @@ def delete_rule(
         "reminder_rule.deleted",
         entity="reminder_rule",
         entity_id=rule.id,
-        changes={"days_from_expiry": rule.days_from_expiry, "template": rule.template},
+        changes={"trigger": rule.trigger, "days": rule.days, "template": rule.template},
         request=request,
     )
     db.delete(rule)
@@ -266,14 +355,20 @@ def delete_rule(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _templates(gym: Gym) -> SmsTemplates:
+    config = gym.config
+    return SmsTemplates(
+        welcome_sms=config.welcome_sms,
+        membership_sms=config.membership_sms,
+        also_sms=config.also_sms,
+    )
+
+
 @router.get("/sms-templates", response_model=SmsTemplates)
 def get_templates(
     db: Session = Depends(get_db), ctx: StaffContext = Depends(SETUP_REMINDERS)
 ) -> SmsTemplates:
-    config = _gym(db, ctx).config
-    return SmsTemplates(
-        welcome_sms=config.welcome_sms, membership_sms=config.membership_sms
-    )
+    return _templates(_gym(db, ctx))
 
 
 @router.patch("/sms-templates", response_model=SmsTemplates)
@@ -299,9 +394,7 @@ def update_templates(
             request=request,
         )
     db.commit()
-    return SmsTemplates(
-        welcome_sms=gym.config.welcome_sms, membership_sms=gym.config.membership_sms
-    )
+    return _templates(gym)
 
 
 # --- notices ---------------------------------------------------------------------
@@ -351,14 +444,19 @@ def notice_cost(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(NOTICES),
 ) -> NoticeCost:
-    """What sending this notice by SMS would cost, before sending it (§7)."""
+    """What sending this notice would cost, before sending it (§7, §16.3 8.3):
+    members whose phone takes push get it free; the rest by SMS."""
     gym = _gym(db, ctx)
-    count = len(notice_recipients(db, ctx, payload.branch_id))
+    recipients = notice_recipients(db, ctx, payload.branch_id)
+    by_push = len(push.reachable(db, [m.id for m in recipients]))
+    by_sms = len(recipients) if gym.config.also_sms else len(recipients) - by_push
     each = segments(_notice_sms(gym, payload.title, payload.body))
     return NoticeCost(
-        recipients=count,
+        recipients=len(recipients),
+        by_push=by_push,
+        by_sms=by_sms,
         segments_each=each,
-        total_credits=count * each,
+        total_credits=by_sms * each,
         balance=sms.balance(db, ctx.gym_id),
     )
 
@@ -393,18 +491,25 @@ def create_notice(
                 permission=Permission.MESSAGES_SMS.value,
             )
         text = _notice_sms(gym, payload.title, payload.body)
-        for member in notice_recipients(db, ctx, payload.branch_id):
-            sms.queue(
+        recipients = notice_recipients(db, ctx, payload.branch_id)
+        pushable = push.reachable(db, [m.id for m in recipients])
+        for member in recipients:
+            channel, _ = push.notify(
                 db,
-                gym_id=ctx.gym_id,
-                to=member.phone,
-                body=text,
-                kind=SMS_NOTICE,
-                member_id=member.id,
+                gym,
+                member,
+                title=payload.title,
+                body=payload.body,
+                url=f"/{gym.slug}/notices",
+                tag=f"notice:{notice.id}",
+                sms_body=text,
+                sms_kind=SMS_NOTICE,
                 created_by=ctx.staff.id,
+                pushable=pushable,
                 flush=False,
             )
-            notice.sms_count += 1
+            notice.push_count += channel != "sms"
+            notice.sms_count += channel != "push"
         db.flush()
     activity.staff_action(
         db,
@@ -412,7 +517,11 @@ def create_notice(
         "notice.published",
         entity="notice",
         entity_id=notice.id,
-        changes={"title": notice.title, "sms_count": notice.sms_count},
+        changes={
+            "title": notice.title,
+            "sms_count": notice.sms_count,
+            "push_count": notice.push_count,
+        },
         request=request,
     )
     db.commit()

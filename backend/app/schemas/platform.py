@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.auth import MIN_PASSWORD_LENGTH, Strict
+from app.schemas.auth import NewPassword, Strict
 
 MAX_PAISA = 10_000_000_00
 
@@ -104,6 +104,7 @@ class AdminGym(BaseModel):
     owner_name: str | None
     owner_phone: str | None
     owner_email: str | None
+    owner_two_step: bool
     created_at: dt.datetime
     subscription_status: str
     plan_name: str | None
@@ -112,6 +113,13 @@ class AdminGym(BaseModel):
     active_members: int
     sms_balance: int
     pending_payments: int
+    # How it's doing (§16.5, 10.1, 10.2).
+    state: str = "trial"  # trial, paying, grace, read_only, suspended
+    last_sign_in_at: dt.datetime | None = None
+    check_ins_7d: int = 0
+    members_added_30d: int = 0
+    going_quiet: bool = False
+    setup: dict[str, bool] = {}
 
 
 class GrantIn(Strict):
@@ -144,4 +152,80 @@ class ApproveSubscriptionIn(Strict):
 
 
 class OwnerPasswordIn(Strict):
-    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
+    new_password: NewPassword
+
+
+class MonthCount(BaseModel):
+    month: str
+    gyms: int
+
+
+class MonthSms(BaseModel):
+    month: str
+    credits: int
+    amount: int
+
+
+class AdminSummary(BaseModel):
+    """The /admin home (§16.5, 10.1)."""
+
+    mrr: int
+    gyms: int
+    by_state: dict[str, int]
+    trial_conversion: float | None
+    trials_ended: int
+    trials_converted: int
+    lost_by_month: list[MonthCount]
+    sms_sold_by_month: list[MonthSms]
+    going_quiet: int
+
+
+class ChangelogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    body: str
+    published_at: dt.datetime | None
+    created_at: dt.datetime
+
+
+class ChangelogIn(Strict):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=5000)
+    # Leave out to keep it a draft; now or later to publish.
+    published_at: dt.datetime | None = None
+
+
+class ChangelogUpdate(Strict):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    body: str | None = Field(default=None, min_length=1, max_length=5000)
+    published_at: dt.datetime | None = None
+
+
+class GymReferralRead(BaseModel):
+    """A gym that sent us another (§16.5, 10.5)."""
+
+    id: uuid.UUID
+    referrer_gym_id: uuid.UUID
+    referrer_name: str
+    referred_gym_id: uuid.UUID
+    referred_name: str
+    status: str
+    created_at: dt.datetime
+    ready_at: dt.datetime | None
+    note: str | None
+
+
+class ReferredGym(BaseModel):
+    name: str
+    status: str
+    joined_at: dt.datetime
+
+
+class MyReferrals(BaseModel):
+    """Settings > Subscription: the link to share, and who joined (10.5)."""
+
+    link: str
+    free_months: int
+    gyms: list[ReferredGym]

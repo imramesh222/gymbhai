@@ -1,8 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
+import { openFromMenu, randomDigits, signUpGym } from "./helpers";
 
-import { randomDigits, signUpGym } from "./helpers";
-
-test("expiring list, a reminder by SMS, and a notice with its cost shown first", async ({
+test("follow up, a reminder by SMS, and a notice with its cost shown first", async ({
   page,
 }) => {
   await signUpGym(page, "AD");
@@ -20,15 +19,23 @@ test("expiring list, a reminder by SMS, and a notice with its cost shown first",
   await page.getByRole("button", { name: "Save member" }).click();
   await expect(page.getByRole("heading", { name: /Ram Thapa/ })).toBeVisible();
 
-  await page.getByRole("link", { name: "Expiring" }).click();
-  await page.waitForURL("**/staff/expiring");
+  await openFromMenu(page, "Follow up");
+  await page.waitForURL("**/staff/follow-up");
   const week = page.locator("section", { hasText: "Ends this week" });
   await expect(week.getByText("Ram Thapa")).toBeVisible();
-  await week.getByRole("button", { name: "Send reminder" }).click();
-  await expect(week.getByRole("button", { name: "Reminder sent" })).toBeDisabled();
+  await week.getByRole("button", { name: "Send message" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Send reminder" }).click();
+  await expect(page.getByText("Message sent to Ram Thapa.")).toBeVisible();
+  // Joined today, so not "not visiting" yet: that tab names the rule instead.
+  await page.getByRole("tab", { name: /Not visiting/ }).click();
+  await expect(page).toHaveURL(/tab=not-visiting/);
+  await expect(
+    page.getByText("Active members with no visit in 14 days."),
+  ).toBeVisible();
+  await expect(page.getByText("Ram Thapa")).toHaveCount(0);
 
   // The SMS log shows the welcome and the reminder; the worker sends them.
-  await page.getByRole("link", { name: "SMS" }).click();
+  await openFromMenu(page, "SMS");
   await page.waitForURL("**/staff/sms");
   await expect(page.getByRole("heading", { name: "Sent messages" })).toBeVisible();
   await expect(page.getByText("· reminder")).toBeVisible();
@@ -38,26 +45,43 @@ test("expiring list, a reminder by SMS, and a notice with its cost shown first",
     await expect(page.getByText("Sent", { exact: true }).first()).toBeVisible();
   }).toPass({ timeout: 20_000 });
 
-  // A notice by SMS: the cost comes first.
-  await page.getByRole("link", { name: "Notices" }).click();
+  // A notice to their phones: the cost comes first. Nobody has notifications
+  // on yet, so it is all SMS.
+  await openFromMenu(page, "Notices");
   await page.waitForURL("**/staff/notices");
   await page.getByLabel("Title").fill("Closed on Saturday");
   await page.getByLabel("Message").fill("The gym is closed for Tihar.");
-  await page.getByLabel("Also send by SMS").check();
-  await page.getByRole("button", { name: "Check SMS cost" }).click();
-  await expect(page.getByText(/1 members will get this SMS: 1 credits/)).toBeVisible();
-  await page.getByRole("button", { name: "Publish and send SMS" }).click();
+  await page.getByLabel("Also send to their phones").check();
+  await page.getByRole("button", { name: "Check the cost" }).click();
   await expect(
-    page.getByText("Published, and SMS on its way to 1 members."),
+    page.getByText(/1 members: 0 by notification, 1 by SMS \(1 credits\)/),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Publish and send" }).click();
+  await expect(page.getByText("Published, and on its way to 1 members.")).toBeVisible();
 });
 
-test("reminder wording shows how many SMS it costs", async ({ page }) => {
+test("automations: turn one on, and the wording shows its SMS cost", async ({
+  page,
+}) => {
   await signUpGym(page);
-  await page.goto("/staff/settings");
-  const add = page.locator("form", { hasText: "Add a reminder" });
-  await add
-    .getByLabel("Wording")
-    .fill("नमस्ते {name}, तपाईंको सदस्यता छिट्टै सकिँदैछ।");
-  await expect(add.getByText(/Nepali text fits 70 characters per SMS/)).toBeVisible();
+  // The old address still lands here.
+  await page.goto("/staff/settings/reminders");
+  await page.waitForURL("**/staff/automations");
+
+  // Win-back comes switched off; turning it on is one tick.
+  const winBack = page.locator("section", { hasText: "Win back" });
+  const rule = winBack.getByRole("checkbox", { name: /30 days after it ended/ });
+  await expect(rule).not.toBeChecked();
+  await rule.check();
+  await expect(page.getByText("Turned on.")).toBeVisible();
+  await page.reload();
+  await expect(rule).toBeChecked();
+
+  const birthday = page.locator("section", { hasText: "Birthday" });
+  await birthday.getByLabel("Wording").fill("नमस्ते {name}, जन्मदिनको शुभकामना!");
+  await expect(
+    birthday.getByText(/Nepali text fits 70 characters per SMS/),
+  ).toBeVisible();
+  await birthday.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
 });

@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -22,13 +22,24 @@ from app.models.activity import ACTOR_STAFF
 from app.models.billing import PlatformPlan
 from app.models.gym import GYM_ACTIVE, GYM_SUSPENDED, Gym
 from app.models.messaging import SMS_PLATFORM
-from app.models.platform import KIND_SMS, KIND_SUBSCRIPTION, SubscriptionPayment
+from app.models.platform import (
+    KIND_SMS,
+    KIND_SUBSCRIPTION,
+    ChangelogEntry,
+    GymReferral,
+    SubscriptionPayment,
+)
 from app.models.staff import StaffUser
 from app.schemas.platform import (
     AdminGym,
+    AdminSummary,
     ApproveSubscriptionIn,
+    ChangelogIn,
+    ChangelogRead,
+    ChangelogUpdate,
     CreditsIn,
     GrantIn,
+    GymReferralRead,
     OwnerPasswordIn,
     PlatformPlanIn,
     PlatformPlanRead,
@@ -36,7 +47,15 @@ from app.schemas.platform import (
     ReasonIn,
     SubscriptionPaymentRead,
 )
-from app.services import activity, sessions, subscription
+from app.services import (
+    activity,
+    gym_referrals,
+    live,
+    platform_stats,
+    sessions,
+    subscription,
+    two_step,
+)
 from app.services.sms import service as sms
 
 router = APIRouter(prefix="/admin", tags=["platform admin"])
@@ -136,10 +155,12 @@ def _admin_gyms(db: Session, gyms: Sequence[Gym]) -> list[AdminGym]:
         ).all()
     )
     balances = sms.balances(db, ids)
+    healths = platform_stats.health(db, gyms)
     reads = []
     for gym in gyms:
         owner = owners.get(gym.id)
         state = states[gym.id]
+        health = healths[gym.id]
         reads.append(
             AdminGym(
                 id=gym.id,
@@ -149,6 +170,7 @@ def _admin_gyms(db: Session, gyms: Sequence[Gym]) -> list[AdminGym]:
                 owner_name=owner.name if owner else None,
                 owner_phone=owner.phone if owner else None,
                 owner_email=owner.email if owner else None,
+                owner_two_step=bool(owner and owner.two_step_enabled),
                 created_at=gym.created_at,
                 subscription_status=state.status,
                 plan_name=state.plan_name,
@@ -157,6 +179,12 @@ def _admin_gyms(db: Session, gyms: Sequence[Gym]) -> list[AdminGym]:
                 active_members=state.active_members,
                 sms_balance=balances.get(gym.id, 0),
                 pending_payments=pending.get(gym.id, 0),
+                state=platform_stats.state_of(gym, state),
+                last_sign_in_at=health.last_sign_in_at,
+                check_ins_7d=health.check_ins_7d,
+                members_added_30d=health.members_added_30d,
+                going_quiet=health.going_quiet,
+                setup=health.setup,
             )
         )
     return reads
@@ -164,6 +192,14 @@ def _admin_gyms(db: Session, gyms: Sequence[Gym]) -> list[AdminGym]:
 
 def _admin_gym(db: Session, gym: Gym) -> AdminGym:
     return _admin_gyms(db, [gym])[0]
+
+
+@router.get("/summary", response_model=AdminSummary)
+def admin_summary(
+    db: Session = Depends(get_db), admin: StaffUser = ADMIN
+) -> AdminSummary:
+    """Revenue, gyms by state, trials that pay, gyms lost, SMS sold (10.1)."""
+    return AdminSummary(**platform_stats.summary(db))
 
 
 @router.get("/gyms", response_model=list[AdminGym])
@@ -316,7 +352,36 @@ def reset_owner_password(
         entity="staff",
         entity_id=owner.id,
     )
+    live.staff_changed(db, gym.id)
     db.commit()
+
+
+@router.post("/gyms/{gym_id}/owner-two-step", response_model=AdminGym)
+def reset_owner_two_step(
+    gym_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> AdminGym:
+    """For an owner who lost their phone and their recovery codes: two-step
+    sign-in off, so they can sign in with their password and set it up again."""
+    gym = _gym(db, gym_id)
+    owner = _owner(db, gym.id)
+    if owner is None:
+        raise not_found("This gym has no owner account.")
+    two_step.disable(db, owner)
+    _log(
+        db,
+        admin,
+        gym.id,
+        "owner.two_step_reset",
+        request,
+        entity="staff",
+        entity_id=owner.id,
+    )
+    live.staff_changed(db, gym.id)
+    db.commit()
+    return _admin_gym(db, gym)
 
 
 # --- payments sent to us -----------------------------------------------------------
@@ -381,6 +446,7 @@ def approve_payment(
             f"GymBhai: payment received. Your subscription is active until "
             f"{period.ends_on:%d %b %Y}. Thank you!"
         )
+        gym_referrals.on_first_payment(db, gym.id)
     elif row.kind == KIND_SMS:
         credits = payload.sms_credits or row.sms_credits or 0
         sms.add_credits(db, gym.id, credits, "top-up")
@@ -502,3 +568,210 @@ def update_plan(
         )
     db.commit()
     return plan
+
+
+# --- What's new (PLAN.md §16.5, 10.4) ------------------------------------------------
+
+
+@router.get("/changelog", response_model=list[ChangelogRead])
+def admin_changelog(
+    db: Session = Depends(get_db), admin: StaffUser = ADMIN
+) -> list[ChangelogEntry]:
+    """Drafts first, then the newest published."""
+    return list(
+        db.scalars(
+            select(ChangelogEntry).order_by(
+                ChangelogEntry.published_at.desc().nulls_first(),
+                ChangelogEntry.created_at.desc(),
+            )
+        )
+    )
+
+
+@router.post(
+    "/changelog", response_model=ChangelogRead, status_code=status.HTTP_201_CREATED
+)
+def add_changelog(
+    payload: ChangelogIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> ChangelogEntry:
+    entry = ChangelogEntry(**payload.model_dump(), created_by=admin.id)
+    db.add(entry)
+    db.flush()
+    _log(
+        db,
+        admin,
+        None,
+        "changelog.created",
+        request,
+        entity="changelog",
+        entity_id=entry.id,
+        changes={"title": entry.title, "published_at": entry.published_at},
+    )
+    db.commit()
+    return entry
+
+
+@router.patch("/changelog/{entry_id}", response_model=ChangelogRead)
+def edit_changelog(
+    entry_id: uuid.UUID,
+    payload: ChangelogUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> ChangelogEntry:
+    entry = db.get(ChangelogEntry, entry_id)
+    if entry is None:
+        raise not_found("No such entry.")
+    fields = ("title", "body", "published_at")
+    before = {f: getattr(entry, f) for f in fields}
+    for name, value in payload.model_dump(exclude_unset=True).items():
+        if value is not None or name == "published_at":
+            setattr(entry, name, value)
+    diff = activity.diff(before, {f: getattr(entry, f) for f in fields})
+    if diff:
+        _log(
+            db,
+            admin,
+            None,
+            "changelog.updated",
+            request,
+            entity="changelog",
+            entity_id=entry.id,
+            changes=diff,
+        )
+    db.commit()
+    return entry
+
+
+@router.delete("/changelog/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_changelog(
+    entry_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> Response:
+    entry = db.get(ChangelogEntry, entry_id)
+    if entry is None:
+        raise not_found("No such entry.")
+    _log(
+        db,
+        admin,
+        None,
+        "changelog.deleted",
+        request,
+        entity="changelog",
+        entity_id=entry.id,
+        changes={"title": entry.title},
+    )
+    db.delete(entry)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- gym referrals (PLAN.md §16.5, 10.5) ---------------------------------------------
+
+
+@router.get("/gym-referrals", response_model=list[GymReferralRead])
+def list_gym_referrals(
+    referral_status: Annotated[
+        str | None,
+        Query(alias="status", pattern="^(pending|ready|rewarded|rejected)$"),
+    ] = None,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> list[GymReferralRead]:
+    stmt = select(GymReferral)
+    if referral_status:
+        stmt = stmt.where(GymReferral.status == referral_status)
+    rows = list(db.scalars(stmt.order_by(GymReferral.created_at.desc()).limit(500)))
+    names = dict(
+        db.execute(
+            select(Gym.id, Gym.name).where(
+                Gym.id.in_({r.gym_id for r in rows} | {r.referred_gym_id for r in rows})
+            )
+        ).all()
+    )
+    return [
+        GymReferralRead(
+            id=r.id,
+            referrer_gym_id=r.gym_id,
+            referrer_name=names.get(r.gym_id, ""),
+            referred_gym_id=r.referred_gym_id,
+            referred_name=names.get(r.referred_gym_id, ""),
+            status=r.status,
+            created_at=r.created_at,
+            ready_at=r.ready_at,
+            note=r.note,
+        )
+        for r in rows
+    ]
+
+
+def _referral(db: Session, referral_id: uuid.UUID) -> GymReferral:
+    row = db.scalar(
+        select(GymReferral).where(GymReferral.id == referral_id).with_for_update()
+    )
+    if row is None:
+        raise not_found("No such referral.")
+    return row
+
+
+@router.post("/gym-referrals/{referral_id}/reward", status_code=204)
+def reward_gym_referral(
+    referral_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> Response:
+    """A free month for both gyms."""
+    row = _referral(db, referral_id)
+    referrer, referred = gym_referrals.reward(db, row, admin)
+    for gym, other in ((referrer, referred), (referred, referrer)):
+        _log(
+            db,
+            admin,
+            gym.id,
+            "gym_referral.rewarded",
+            request,
+            entity="gym_referral",
+            entity_id=row.id,
+            changes={"months": gym_referrals.FREE_MONTHS},
+        )
+        _tell_owner(
+            db,
+            gym,
+            f"GymBhai: a free month for {gym.name}, thanks to {other.name} "
+            "joining through your link. Thank you!"
+            if gym is referrer
+            else f"GymBhai: a free month for {gym.name}, for joining through "
+            f"{other.name}'s link. Welcome!",
+        )
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/gym-referrals/{referral_id}/reject", status_code=204)
+def reject_gym_referral(
+    referral_id: uuid.UUID,
+    payload: ReasonIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> Response:
+    row = _referral(db, referral_id)
+    gym_referrals.reject(db, row, admin, payload.reason)
+    _log(
+        db,
+        admin,
+        row.gym_id,
+        "gym_referral.rejected",
+        request,
+        entity="gym_referral",
+        entity_id=row.id,
+        reason=payload.reason,
+    )
+    db.commit()
+    return Response(status_code=204)

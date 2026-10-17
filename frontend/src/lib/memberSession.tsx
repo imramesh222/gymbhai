@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 
+import { pushOff } from "@/lib/push";
 import { memberApi, memberClient, type MemberMe, type MemberSignIn } from "./memberApi";
 
 const storageKey = (slug: string) => `gymbhai.member.${slug}`;
@@ -127,6 +128,8 @@ export function MemberProvider({
         }
       },
       signOut: async () => {
+        // A shared phone: the next member must not get this one's reminders.
+        await pushOff(slug);
         await memberApi.logout().catch(() => undefined);
         memberClient.setAccessToken(null);
         forget();

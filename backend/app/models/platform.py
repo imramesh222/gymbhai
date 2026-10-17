@@ -1,5 +1,6 @@
 """What gyms send us: subscription payments and SMS top-ups (PLAN.md §5.7),
-and register imports (§7 Import / Export)."""
+register imports (§7 Import / Export); and ours: What's new and gym referrals
+(§16.5)."""
 
 import uuid
 from datetime import datetime
@@ -56,3 +57,45 @@ class MemberImport(IdMixin, TimestampMixin, GymOwned, Base):
         UUID(as_uuid=True), ForeignKey("staff_users.id")
     )
     committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ChangelogEntry(IdMixin, TimestampMixin, Base):
+    """What's new in GymBhai, written in /admin (§16.5, 10.4). Ours, not a gym's.
+
+    A draft until `published_at`; staff see a dot until they've read the newest.
+    """
+
+    __tablename__ = "changelog_entries"
+
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="SET NULL")
+    )
+
+
+# A gym that sent us another (§16.5, 10.5).
+REFERRAL_PENDING = "pending"  # signed up; not paid yet
+REFERRAL_READY = "ready"  # their first payment approved: reward both
+REFERRAL_REWARDED = "rewarded"
+REFERRAL_REJECTED = "rejected"
+
+
+class GymReferral(IdMixin, TimestampMixin, GymOwned, Base):
+    """`gym_id` sent us `referred_gym_id`. Each gym can be referred once."""
+
+    __tablename__ = "gym_referrals"
+
+    referred_gym_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("gyms.id", ondelete="CASCADE"), unique=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default=REFERRAL_PENDING)
+    ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="SET NULL")
+    )
+    note: Mapped[str | None] = mapped_column(Text)

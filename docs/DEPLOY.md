@@ -41,7 +41,9 @@ chmod 600 .env.prod
 
 Fill in `.env.prod`. Every setting is explained in the file. The ones that
 must not stay empty: `POSTGRES_PASSWORD`, `SECRET_KEY` (the app refuses to
-start with the development one), the S3 keys and buckets, and the domains.
+start with the development one), `TOTP_KEY` (a second random value, never
+changed afterwards: it would break everyone's authenticator app), the S3 keys
+and buckets, and the domains.
 
 Keep `SMS_PROVIDER=console` until you have tested the gateway (step 5).
 
@@ -66,20 +68,40 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec api \
 In `/admin → Our plans and prices`, add your plans. Prices live only there
 (PLAN.md §15). New gyms get a 14-day trial whether or not a price is set.
 
-## 4. Backups — test a restore before the first real gym
+## 4. Backups — test both restores before the first real gym
 
-Backups run at 02:00 Nepal time. Run one now, and restore it into a scratch
-database to prove it works (PLAN.md §11):
+Two kinds, both in `BACKUP_BUCKET` (PLAN.md §11):
+
+- **Continuous:** the database sends every WAL segment to R2 as it is
+  written, at least once a minute, and the `backup` container takes a base
+  backup at 02:30 Nepal time (full on Saturday, differential otherwise). Any
+  moment of the last 7–14 days can be restored. Under `/pgbackrest`.
+- **Nightly `pg_dump`** at 02:00, kept `BACKUP_KEEP_DAYS`: a plain file you
+  can take anywhere. Under `/db`.
+
+The `backup` container creates the archive when it first starts
+(`$C logs backup` should end with `check command end: completed
+successfully`). Take the first full backup now, then prove both restores:
 
 ```sh
 C="docker compose -f docker-compose.prod.yml --env-file .env.prod"
+$C exec backup base-backup.sh full
+
+# Point in time: a few minutes from now, after making a change you'll look for.
+$C exec backup restore-to-time.sh "2026-10-17 14:05:00+05:45"
+$C exec backup sh -c 'su-exec postgres psql -h /tmp -p 5499 -U "$POSTGRES_USER" "$POSTGRES_DB"'
+$C exec backup su-exec postgres pg_ctl -D /tmp/pitr stop
+
+# The nightly dump.
 $C exec backup backup.sh
 $C exec backup sh -c 'aws s3 --endpoint-url "$S3_ENDPOINT_URL" ls "s3://$BACKUP_BUCKET/db/"'
 $C exec backup restore.sh gymbhai-<stamp>.dump gymbhai_restore_test
-$C exec db dropdb -U GymBhai gymbhai_restore_test
+$C exec db sh -c 'dropdb -U "$POSTGRES_USER" gymbhai_restore_test'
 ```
 
-The restore prints the number of gyms and members it found.
+`restore-to-time.sh` restores into a scratch directory inside the `backup`
+container and starts a throwaway Postgres there; it never touches the live
+database. `restore.sh` prints the number of gyms and members it found.
 
 ## 5. SMS and email, live
 
@@ -88,7 +110,9 @@ have not been run against a live account. Before switching:
 
 1. Give the gateway this server's IP address: Sparrow answers only calls from
    addresses whitelisted on the account (error 1001 otherwise).
-2. Set `SMS_PROVIDER=sparrow` (or `aakash`) and its token in `.env.prod`.
+2. Set `SMS_PROVIDER=sparrow` (or `aakash`) and its token in `.env.prod`,
+   and remove `MASTER_OTP`: it is only for while there is no gateway, and the
+   app refuses to start with both.
    `SPARROW_SENDER` is the identity Sparrow gives the account, not a name you
    choose: their shared sender until your own sender ID is approved.
 3. Restart: `$C up -d api worker`.
@@ -101,6 +125,16 @@ have not been run against a live account. Before switching:
 6. Check the SMS log in the staff dashboard shows it as **Sent**.
 
 Do the same for email with `EMAIL_PROVIDER=smtp`, using a member with an email.
+
+**Help button:** set `SUPPORT_WHATSAPP` in `.env.prod` to our WhatsApp/Viber number, digits with the country code (`9779800000000`). Without it, Help shows only the guides.
+
+**Notifications on members' phones** (free, instead of SMS) need a key, made
+once and kept: `make vapid` on your machine, then `VAPID_PRIVATE_KEY=…` and
+`PUSH_PROVIDER=webpush` in `.env.prod`. A new key later means every member has
+to turn reminders on again. Check it: open the member app on an Android phone
+in Chrome, tap **Turn on**, then publish a notice with *Also send to their
+phones* — it should arrive as a notification, and the notice should say
+*Notification to 1*. On an iPhone, add the app to the Home Screen first.
 
 ## 6. Updating
 
@@ -119,8 +153,38 @@ backup by hand (`$C exec backup backup.sh`).
 | Is it up? | The uptime check on `/health/ready` |
 | Errors | Sentry (if `SENTRY_DSN` is set), or `$C logs --tail 200 api worker` |
 | SMS failing | Staff dashboard → SMS; `$C logs worker` |
-| Backups | The bucket should gain one file a night; 30 days are kept |
+| Backups | `$C exec backup su-exec postgres pgbackrest info`: a full backup each week, a differential each night, WAL up to the last minute; `/db` gains one dump a night |
+| Archiving | `$C exec db psql -U "$POSTGRES_USER" -c "select * from pg_stat_archiver"`: `failed_count` not rising. While R2 is unreachable, WAL waits in the database's volume, so watch the disk |
 | Disk | `df -h`; `docker system prune` removes old images |
 
 Never run `alembic downgrade` against the live database: rolling back drops
 tables. `make migration-check` does its round trip in a scratch database.
+
+## 8. Disaster: put the database back as it was at a moment
+
+Someone deleted what they shouldn't have, or the data is damaged. Everything
+written after the moment you choose is lost, so look first with
+`restore-to-time.sh` (§4) and pick the latest moment that is still right.
+
+```sh
+$C stop api worker web backup db
+$C run --rm --no-deps --entrypoint restore-live.sh db "2026-10-17 14:05:00+05:45"
+$C up -d
+$C exec backup base-backup.sh full
+```
+
+The new full backup starts the history afresh from the restored database.
+
+**If the server itself is gone:** set up a new one (§1–2) with the same
+`.env.prod`, and restore *before* the first start, so the database is never
+created empty:
+
+```sh
+$C build
+$C run --rm --no-deps --entrypoint restore-live.sh db latest
+$C up -d
+$C exec backup base-backup.sh full
+```
+
+`latest` replays everything the archive has: about the last minute before
+the old server stopped is all that can be lost.

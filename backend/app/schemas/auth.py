@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     AfterValidator,
@@ -43,6 +43,19 @@ def _lower(value: str | None) -> str | None:
     return value.lower() if value else value
 
 
+def _not_obvious(value: str) -> str:
+    if value.lower() in OBVIOUS_PASSWORDS:
+        raise ValueError("Choose a less predictable password.")
+    return value
+
+
+# Any password a person chooses: at sign-up, on a change, after a reset.
+NewPassword = Annotated[
+    str,
+    Field(min_length=MIN_PASSWORD_LENGTH, max_length=72),
+    AfterValidator(_not_obvious),
+]
+
 Phone = Annotated[str, AfterValidator(normalize_phone)]
 OptionalPhone = Annotated[Phone | None, BeforeValidator(_blank_to_none)]
 OptionalEmail = Annotated[
@@ -60,18 +73,24 @@ class GymSignup(Strict):
     owner_name: str = Field(min_length=2, max_length=120)
     owner_phone: OptionalPhone = None
     owner_email: OptionalEmail = None
-    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
+    password: NewPassword
+    # The terms of service and privacy policy (app/core/legal.py).
+    accept_terms: bool
+    # The language the gym starts in (§16.6): its staff, members and SMS.
+    language: Literal["en", "ne"] = "en"
+    # The address of the gym that sent them: /signup?ref=... (§16.5, 10.5).
+    ref: str | None = Field(default=None, max_length=60)
 
     @field_validator("slug")
     @classmethod
     def valid_slug(cls, value: str) -> str:
         return check_slug(value)
 
-    @field_validator("password")
+    @field_validator("accept_terms")
     @classmethod
-    def not_obvious(cls, value: str) -> str:
-        if value.lower() in OBVIOUS_PASSWORDS:
-            raise ValueError("Choose a less predictable password.")
+    def terms_accepted(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("Accept the terms and privacy policy to continue.")
         return value
 
     @model_validator(mode="after")
@@ -85,6 +104,71 @@ class LoginRequest(Strict):
     # An email address or a phone number, in any common format.
     identifier: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=200)
+
+
+class PasswordResetRequest(Strict):
+    identifier: str = Field(min_length=3, max_length=254)
+
+
+class PasswordResetConfirm(Strict):
+    identifier: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    new_password: NewPassword
+
+
+class TwoStepChallenge(BaseModel):
+    """The password was right; now the code from the authenticator app."""
+
+    two_step_token: str
+    expires_in: int
+
+
+class TwoStepLogin(Strict):
+    two_step_token: str = Field(min_length=1, max_length=2000)
+    # Six digits from the app, or a recovery code like "abcd-efgh".
+    code: str = Field(min_length=6, max_length=20)
+
+
+class PasswordConfirm(Strict):
+    """Turning two-step sign-in on or off, or new recovery codes, needs the
+    password again: a token lifted from a desk PC must not be enough."""
+
+    password: str = Field(min_length=1, max_length=200)
+
+
+class TwoStepSetupRead(BaseModel):
+    # For typing into the app by hand; `uri` goes in the QR code.
+    secret: str
+    uri: str
+
+
+class TwoStepEnable(Strict):
+    code: str = Field(min_length=6, max_length=10)
+
+
+class RecoveryCodes(BaseModel):
+    recovery_codes: list[str]
+
+
+class TwoStepStatus(BaseModel):
+    enabled: bool
+    required: bool
+    recovery_codes_left: int
+
+
+class DeviceSession(BaseModel):
+    """A device signed in to your account (My account → Devices)."""
+
+    id: uuid.UUID
+    user_agent: str | None
+    ip: str | None
+    created_at: datetime
+    last_used_at: datetime | None
+    current: bool
+
+
+class SignedOut(BaseModel):
+    signed_out: int
 
 
 class GymRead(BaseModel):
@@ -124,15 +208,29 @@ class StaffRead(BaseModel):
     is_owner: bool
     is_platform_admin: bool
     last_login_at: datetime | None
+    two_step_enabled: bool
 
 
 class Me(BaseModel):
     staff: StaffRead
     gym: GymRead | None
+    # Must use two-step sign-in. With it not yet enabled, only setting it up
+    # works (§16.1).
+    two_step_required: bool
     permissions: list[str]
     # None means every branch.
     branch_ids: list[uuid.UUID] | None
     subscription: SubscriptionRead | None
+    # Help (§16.5, 10.3): our WhatsApp/Viber number, if set.
+    support_whatsapp: str | None = None
+    # What's new has an entry they haven't opened (10.4).
+    changelog_unread: bool = False
+    # The language to show (§16.6): their own choice, else the gym's.
+    language: Literal["en", "ne"] = "en"
+    # Their own choice; null follows the gym.
+    own_language: Literal["en", "ne"] | None = None
+    # With Nepali: ०१२ or 012, as the gym chose.
+    digits: Literal["nepali", "western"] = "western"
 
 
 class SessionResponse(BaseModel):
@@ -141,3 +239,9 @@ class SessionResponse(BaseModel):
     # Seconds until the access token expires. Refresh before, or on a 401.
     expires_in: int
     me: Me
+
+
+class LanguageIn(Strict):
+    """Null goes back to the gym's language."""
+
+    language: Literal["en", "ne"] | None

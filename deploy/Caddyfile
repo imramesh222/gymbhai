@@ -16,6 +16,10 @@
 	# TRUSTED_PROXY_COUNT=1 in .env.prod matches this single hop.
 	handle /api/* {
 		encode zstd gzip
+		# JSON and images: nothing in them may run or be framed. Pages get
+		# their own policy, with a per-request nonce, from Next.js
+		# (frontend/src/proxy.ts).
+		header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
 		reverse_proxy api:8000
 	}
 	handle /health* {
@@ -32,6 +36,8 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		# The kiosk and the staff scanner need the camera; nothing needs more.
 		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		# Browsers too old for CSP frame-ancestors: no framing either.
+		X-Frame-Options "DENY"
 		-Server
 	}
 }

@@ -14,6 +14,8 @@ ACTOR_STAFF = "staff"
 ACTOR_MEMBER = "member"
 ACTOR_DEVICE = "device"
 ACTOR_SYSTEM = "system"
+# Someone not signed in: the public join form (§16.4, 9.5).
+ACTOR_PUBLIC = "public"
 
 
 class ActivityLog(IdMixin, TimestampMixin, Base):

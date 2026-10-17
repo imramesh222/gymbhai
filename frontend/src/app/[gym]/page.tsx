@@ -3,8 +3,11 @@
 import Link from "next/link";
 
 import { LiveQr } from "@/components/memberApp/LiveQr";
+import { InstallPrompt } from "@/components/memberApp/InstallPrompt";
+import { PushPrompt } from "@/components/memberApp/PushPrompt";
 import { Money } from "@/components/ui/Money";
 import { t, type MessageKey } from "@/i18n";
+import { describeHours } from "@/lib/accessHours";
 import { formatDate } from "@/lib/dates";
 import { useMember } from "@/lib/memberSession";
 
@@ -75,6 +78,19 @@ export default function MemberHome() {
               {formatDate(state.valid_until, me.gym.date_display)}
             </p>
           )}
+          {state.visit_limit !== null && state.visits_left !== null && (
+            <p className="mt-0.5 text-sm font-medium text-slate-700">
+              {t("app.home.visitsLeft", {
+                left: state.visits_left,
+                limit: state.visit_limit,
+              })}
+            </p>
+          )}
+          {state.access_hours && (
+            <p className="mt-0.5 text-xs text-slate-500">
+              {t("app.home.hours", { hours: describeHours(state.access_hours) ?? "" })}
+            </p>
+          )}
           {state.dues > 0 && (
             <p className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200/70">
               {t("app.home.owes")} <Money paisa={state.dues} className="ml-1" />
@@ -82,6 +98,15 @@ export default function MemberHome() {
           )}
         </div>
       </div>
+
+      {state.status === "active" && (
+        <Link
+          href={`/${slug}/freeze`}
+          className="block text-center text-sm font-medium text-slate-600 underline-offset-2 hover:underline"
+        >
+          {t("app.freeze.link")}
+        </Link>
+      )}
 
       {(!active || state.days_left <= 7) && (
         <Link
@@ -108,6 +133,29 @@ export default function MemberHome() {
         </p>
       </div>
 
+      {me.busy && (
+        <div className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline">
+          <span
+            aria-hidden
+            className={`size-3 shrink-0 rounded-full ${
+              me.busy === "quiet"
+                ? "bg-emerald-500"
+                : me.busy === "normal"
+                  ? "bg-amber-400"
+                  : "bg-red-500"
+            }`}
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900">
+              {t("app.busy.label")}: {t(`app.busy.${me.busy}` as MessageKey)}
+            </p>
+            <p className="text-xs text-slate-500">
+              {t(`app.busy.hint.${me.busy}` as MessageKey)}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline">
           <p className="text-3xl font-bold tracking-tight text-slate-900">
@@ -124,6 +172,9 @@ export default function MemberHome() {
           <p className="mt-0.5 text-xs text-slate-500">{t("app.home.streak")}</p>
         </div>
       </div>
+
+      <InstallPrompt slug={slug} color={brand} />
+      <PushPrompt slug={slug} color={brand} />
 
       {me.latest_notice && (
         <Link

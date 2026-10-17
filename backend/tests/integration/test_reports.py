@@ -124,3 +124,140 @@ def test_payments_export_needs_money_permission(
     sign_in(db, client, make_staff(gym_a.gym, permissions=["members.view"]))
     assert client.get("/api/v1/export/members.xlsx").status_code == 200
     assert client.get("/api/v1/export/payments.xlsx").status_code == 403
+
+
+def test_today_lists_what_to_do(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    ends = make_member(db, gym_a, name="Ends Today", phone="9800000011")
+    sell(db, gym_a, ends, paid=1500_00, start_date=TODAY - dt.timedelta(days=29),
+         end_date=TODAY)  # fmt: skip
+    small = make_member(db, gym_a, name="Owes A Little", phone="9800000012")
+    sell(db, gym_a, small, paid=1400_00)
+    big = make_member(db, gym_a, name="Owes A Lot", phone="9800000013")
+    sell(db, gym_a, big, paid=0)
+    sign_in(db, client, gym_a.owner)
+
+    today = client.get("/api/v1/dashboard/today").json()
+    assert today["ending_today"] == [
+        {"member_id": str(ends.id), "name": "Ends Today", "phone": "9800000011"}
+    ]
+    assert [(m["name"], m["dues"]) for m in today["top_owing"]] == [
+        ("Owes A Lot", 1500_00),
+        ("Owes A Little", 100_00),
+    ]
+
+
+def test_check_ins_by_hour_and_since_yesterday(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    from sqlalchemy import update
+
+    from app.core.time import utcnow
+    from app.models.member_app import CheckIn
+
+    early = make_member(db, gym_a, name="Early", phone="9800000021")
+    late = make_member(db, gym_a, name="Late", phone="9800000022")
+    for m in (early, late):
+        sell(db, gym_a, m, paid=1500_00)
+        check_in(db, gym_a, m)
+    # Yesterday: one before this time of day, one after it.
+    now = utcnow()
+    db.execute(
+        update(CheckIn)
+        .where(CheckIn.member_id == early.id)
+        .values(at=now - dt.timedelta(days=1, minutes=5))
+    )
+    db.execute(
+        update(CheckIn)
+        .where(CheckIn.member_id == late.id)
+        .values(at=now - dt.timedelta(days=1) + dt.timedelta(minutes=5))
+    )
+    today_member = make_member(db, gym_a, name="Today", phone="9800000023")
+    sell(db, gym_a, today_member, paid=1500_00)
+    check_in(db, gym_a, today_member)
+    sign_in(db, client, gym_a.owner)
+
+    today = client.get("/api/v1/dashboard/today").json()
+    assert len(today["check_ins_by_hour"]) == 24
+    assert sum(today["check_ins_by_hour"]) == today["check_ins"] == 1
+    assert today["check_ins_yesterday"] == 1
+    assert today["collected_yesterday"] == 0
+
+
+def test_the_setup_checklist(
+    client: TestClient, db: Session, gym_a: GymFixture, make_staff
+) -> None:
+    sign_in(db, client, gym_a.owner)
+    setup = client.get("/api/v1/dashboard/today").json()["setup"]
+    assert setup == {
+        "plans_priced": False,
+        "payment_account": False,
+        "logo": False,
+        "staff_invited": False,
+        "poster_printed": False,
+        "first_member": False,
+    }
+
+    make_member(db, gym_a)
+    client.patch("/api/v1/gym", json={"settings": {"poster_printed": True}})
+    setup = client.get("/api/v1/dashboard/today").json()["setup"]
+    assert setup["first_member"] and setup["poster_printed"]
+
+    client.patch("/api/v1/gym", json={"settings": {"setup_dismissed": True}})
+    assert client.get("/api/v1/dashboard/today").json()["setup"] is None
+
+
+def test_the_setup_checklist_is_for_whoever_sets_the_gym_up(
+    client: TestClient, db: Session, gym_a: GymFixture, make_staff
+) -> None:
+    sign_in(db, client, make_staff(gym_a.gym, permissions=["members.view"]))
+    assert client.get("/api/v1/dashboard/today").json()["setup"] is None
+
+
+def test_twelve_months_for_the_charts(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    from app.services import reports
+
+    member = make_member(db, gym_a)
+    sell(db, gym_a, member, paid=1500_00)
+    sign_in(db, client, gym_a.owner)
+    body = client.get("/api/v1/reports/trend").json()
+    assert body["calendar"] == "bs"
+    months = body["months"]
+    assert len(months) == 12
+    assert [m["month"] for m in months] == reports.months_back(
+        reports.current_month("bs"), 12
+    )
+    this = months[-1]
+    assert this["started"] and this["income"] == 1500_00 and this["new_members"] == 1
+    # The gym joined this month: the year before is a gap, not zeros to plot.
+    assert not months[0]["started"]
+
+
+def test_months_back_crosses_the_new_year() -> None:
+    from app.services import reports
+
+    assert reports.months_back("2083-02", 3) == ["2082-12", "2083-01", "2083-02"]
+
+
+def test_attendance_by_weekday_and_hour(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    from app.core.time import utcnow
+
+    member = make_member(db, gym_a)
+    sell(db, gym_a, member, paid=1500_00)
+    check_in(db, gym_a, member)
+    sign_in(db, client, gym_a.owner)
+    summary = client.get(
+        f"/api/v1/check-ins/summary?date_from={TODAY}&date_to={TODAY}"
+    ).json()
+    grid = summary["by_weekday_hour"]
+    assert len(grid) == 7 and all(len(row) == 24 for row in grid)
+    from app.core.time import NEPAL
+
+    now = utcnow().astimezone(NEPAL)
+    assert grid[(now.weekday() + 1) % 7][now.hour] == 1
+    assert sum(map(sum, grid)) == summary["let_in"] == 1

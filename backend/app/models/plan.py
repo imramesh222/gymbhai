@@ -11,7 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, GymOwned, IdMixin, TimestampMixin
@@ -33,6 +33,7 @@ class Plan(IdMixin, TimestampMixin, GymOwned, Base):
         CheckConstraint("duration_days IS NULL OR duration_days > 0", name="days"),
         CheckConstraint("price IS NULL OR price >= 0", name="price"),
         CheckConstraint("admission_fee >= 0", name="admission_fee"),
+        CheckConstraint("visit_limit IS NULL OR visit_limit > 0", name="visit_limit"),
     )
 
     name: Mapped[str] = mapped_column(String(80))
@@ -53,6 +54,12 @@ class Plan(IdMixin, TimestampMixin, GymOwned, Base):
     sort_order: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )
+    # A visit pack: this many visits within the dates; null is unlimited
+    # (§16.4, 9.3). Copied onto each membership sold.
+    visit_limit: Mapped[int | None] = mapped_column(Integer)
+    # Off-peak: when the door lets them in, as [{"days": [0..6, Monday is 0],
+    # "from": "06:00", "to": "10:00"}] in Nepal time; null is any time (9.4).
+    access_hours: Mapped[list | None] = mapped_column(JSONB)
 
 
 class PlanBranch(IdMixin, TimestampMixin, Base):

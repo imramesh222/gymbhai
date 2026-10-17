@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from app.api import idempotency
 from app.api.deps import require
 from app.api.presenters import payment_read, payments_read, staff_names
 from app.api.tenancy import StaffContext, get_in_gym
@@ -18,7 +19,6 @@ from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.core.time import NEPAL, utcnow
 from app.db.session import get_db
-from app.models.gym import Branch, Gym
 from app.models.member import Member
 from app.models.membership import Membership
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
@@ -29,10 +29,11 @@ from app.schemas.money import (
     PaymentRead,
     PaymentUpdate,
     Receipt,
+    ReceiptLink,
     RefundCollect,
     VoidIn,
 )
-from app.services import activity, live
+from app.services import activity, live, receipts
 from app.services import memberships as ms
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -84,6 +85,7 @@ def collect(
     ctx: StaffContext = Depends(require(Permission.PAYMENTS_COLLECT)),
 ) -> PaymentRead:
     """Money towards a membership: part payments of dues are normal (§6)."""
+    idem = idempotency.begin(db, ctx, request, payload)
     membership = _membership(db, ctx, payload.membership_id)
     payment = ms.record_payment(
         db,
@@ -92,8 +94,10 @@ def collect(
         ms.PaymentIn(**payload.model_dump(exclude={"membership_id"})),
         request=request,
     )
+    answer = payment_read(payment, {ctx.staff.id: ctx.staff.name})
+    idem.finish(answer)
     db.commit()
-    return payment_read(payment, {ctx.staff.id: ctx.staff.name})
+    return answer
 
 
 @router.post(
@@ -105,6 +109,7 @@ def refund(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.PAYMENTS_REFUND)),
 ) -> PaymentRead:
+    idem = idempotency.begin(db, ctx, request, payload)
     membership = _membership(db, ctx, payload.membership_id)
     payment = ms.record_payment(
         db,
@@ -114,8 +119,10 @@ def refund(
         kind=KIND_REFUND,
         request=request,
     )
+    answer = payment_read(payment, {ctx.staff.id: ctx.staff.name})
+    idem.finish(answer)
     db.commit()
-    return payment_read(payment, {ctx.staff.id: ctx.staff.name})
+    return answer
 
 
 @router.get("", response_model=PaymentList)
@@ -277,30 +284,14 @@ def receipt(
     ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
 ) -> Receipt:
     """A payment receipt, not a VAT invoice (§10)."""
-    payment = _payment(db, ctx, payment_id)
-    gym = db.get(Gym, ctx.gym_id)
-    member = db.get(Member, payment.member_id)
-    assert gym is not None and member is not None
-    membership = (
-        db.get(Membership, payment.membership_id) if payment.membership_id else None
-    )
-    branch = db.get(Branch, membership.branch_id) if membership else None
-    dues_after = None
-    if membership is not None:
-        dues_after = ms.dues_of(membership, ms.payments_for(db, [membership.id]))
-    return Receipt(
-        payment=payments_read(db, [payment])[0],
-        gym_name=gym.name,
-        gym_phone=gym.phone,
-        gym_address=gym.address,
-        branch_name=branch.name if branch else None,
-        member_name=member.name,
-        member_code=member.member_code,
-        member_phone=member.phone,
-        plan_name=membership.plan_name if membership else None,
-        start_date=membership.start_date if membership else None,
-        end_date=membership.end_date if membership else None,
-        membership_total=ms.amount_due(membership) if membership else None,
-        dues_after=dues_after,
-        date_display=gym.config.date_display,
-    )
+    return receipts.build(db, _payment(db, ctx, payment_id))
+
+
+@router.post("/{payment_id}/receipt-link", response_model=ReceiptLink)
+def receipt_link(
+    payment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
+) -> ReceiptLink:
+    """The receipt as a PDF to download or share on WhatsApp (§16.3, 8.4)."""
+    return receipts.share(receipts.build(db, _payment(db, ctx, payment_id)))

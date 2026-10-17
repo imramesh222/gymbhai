@@ -1,7 +1,8 @@
 import datetime as dt
 import uuid
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.schemas.auth import OptionalEmail, Strict
 from app.schemas.messaging import NoticeRead
@@ -23,6 +24,8 @@ class PublicGym(BaseModel):
     brand_color: str | None
     date_display: str
     branches: list[PublicBranch]
+    # "Not a member yet? Ask to join" (§16.4, 9.5).
+    join_form: bool = False
 
 
 class CodeRequest(Strict):
@@ -62,6 +65,10 @@ class MemberState(BaseModel):
     valid_until: dt.date | None
     days_left: int
     dues: int
+    # A visit pack: "7 of 10 visits left"; off-peak: when they may come (9.3, 9.4).
+    visit_limit: int | None = None
+    visits_left: int | None = None
+    access_hours: list[dict] | None = None
 
 
 class MemberMe(BaseModel):
@@ -78,6 +85,14 @@ class MemberMe(BaseModel):
     visits_this_month: int
     streak_weeks: int
     latest_notice: NoticeRead | None
+    emergency_contact: str | None = None
+    # "quiet", "normal" or "busy" at their branch now; None if the gym hides it
+    # or it's too new to tell (§16.3, 8.5).
+    busy: Literal["quiet", "normal", "busy"] | None = None
+    # The app's language (§16.6): their own choice, else the gym's.
+    language: Literal["en", "ne"] = "en"
+    own_language: Literal["en", "ne"] | None = None
+    digits: Literal["nepali", "western"] = "western"
 
 
 class MemberSignIn(BaseModel):
@@ -209,6 +224,8 @@ class ScanResult(BaseModel):
     days_left: int = 0
     valid_until: dt.date | None = None
     dues: int = 0
+    # A visit pack: visits left after this one (§16.4, 9.3).
+    visits_left: int | None = None
     # Staff can override a denial when they hold door.override.
     can_override: bool = False
 
@@ -234,6 +251,8 @@ class CheckInList(BaseModel):
 class AttendanceSummary(BaseModel):
     by_day: dict[str, int]
     by_hour: dict[int, int]
+    # When the gym is busy: [weekday][hour], Sunday first (Nepal's week).
+    by_weekday_hour: list[list[int]]
     denied: int
     let_in: int
     unique_members: int
@@ -254,3 +273,96 @@ class CardRead(BaseModel):
     card_code: str
     gym_name: str
     logo_url: str | None
+
+
+class PushKeys(Strict):
+    p256dh: str = Field(min_length=20, max_length=200)
+    auth: str = Field(min_length=8, max_length=100)
+
+
+class PushSubscriptionIn(Strict):
+    """What the browser's PushManager.subscribe() gives (§16.3, 8.3)."""
+
+    endpoint: str = Field(min_length=10, max_length=2000, pattern=r"^https://")
+    keys: PushKeys
+
+
+class PushEndpoint(Strict):
+    endpoint: str = Field(min_length=10, max_length=2000)
+
+
+class PushStatus(BaseModel):
+    """For "Get reminders on this phone": None means push isn't set up here."""
+
+    public_key: str | None
+    # This phone, if the app sent its endpoint; else any of the member's.
+    subscribed: bool
+
+
+class MyDetailsIn(Strict):
+    """What a member changes in their app; the email goes through a code."""
+
+    emergency_contact: str | None = Field(default=None, max_length=120)
+    # Null follows the gym's language (§16.6).
+    language: Literal["en", "ne"] | None = None
+
+
+class EmailChangeIn(Strict):
+    email: EmailStr
+
+
+class EmailConfirmIn(Strict):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=8)
+
+
+class FreezeRequestIn(Strict):
+    from_date: dt.date
+    to_date: dt.date
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class FreezeRequestRead(BaseModel):
+    """PLAN.md §16.3, 8.6. Names are filled in for staff."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    member_id: uuid.UUID
+    membership_id: uuid.UUID
+    from_date: dt.date
+    to_date: dt.date
+    reason: str
+    status: str
+    reject_reason: str | None
+    created_at: dt.datetime
+    reviewed_at: dt.datetime | None
+    member_name: str | None = None
+    member_code: str | None = None
+    plan_name: str | None = None
+    ends_on: dt.date | None = None
+    reviewed_by_name: str | None = None
+
+
+class JoinPlan(BaseModel):
+    id: uuid.UUID
+    name: str
+    price: int | None
+
+
+class JoinOptions(BaseModel):
+    plans: list[JoinPlan]
+
+
+class JoinIn(Strict):
+    """The public join form (§16.4, 9.5): an enquiry, never a member."""
+
+    name: str = Field(min_length=1, max_length=120)
+    phone: str = Field(min_length=10, max_length=20)
+    email: OptionalEmail = None
+    branch_id: uuid.UUID | None = None
+    plan_id: uuid.UUID | None = None
+    source: Literal[
+        "walk_in", "phone", "facebook", "instagram", "tiktok", "referral", "other"
+    ] = "other"
+    message: str | None = Field(default=None, max_length=500)

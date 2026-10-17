@@ -64,7 +64,7 @@ export function Field({
       <label htmlFor={id} className="block text-sm font-medium text-slate-700">
         {label}
         {optional && optionalLabel && (
-          <span className="ml-1 font-normal text-slate-400">({optionalLabel})</span>
+          <span className="ml-1 font-normal text-slate-500">({optionalLabel})</span>
         )}
       </label>
       <div className="mt-1.5 flex rounded-xl bg-white ring-1 ring-hairline transition focus-within:ring-2 focus-within:ring-brand-500">
@@ -91,7 +91,7 @@ export function Field({
             onClick={() => setRevealed(!revealed)}
             aria-label={t(revealed ? "common.hidePassword" : "common.showPassword")}
             aria-pressed={revealed}
-            className="mr-1 rounded-lg px-2.5 text-slate-400 transition hover:text-slate-700"
+            className="mr-1 rounded-lg px-2.5 text-slate-500 transition hover:text-slate-700"
           >
             <EyeIcon revealed={revealed} />
           </button>

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api import idempotency
 from app.api.deps import require
 from app.api.presenters import staff_names
 from app.api.routes.member_app import requests_read
@@ -123,6 +124,7 @@ def approve(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(APPROVE),
 ) -> PaymentRequestRead:
+    idem = idempotency.begin(db, ctx, request, payload)
     row = _load(db, ctx, request_id)
     service.approve(
         db,
@@ -133,8 +135,10 @@ def approve(
         accept_part_payment=payload.accept_part_payment,
         request=request,
     )
+    answer = _read(db, row)
+    idem.finish(answer)
     db.commit()
-    return _read(db, row)
+    return answer
 
 
 @router.post("/{request_id}/reject", response_model=PaymentRequestRead)

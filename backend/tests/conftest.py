@@ -14,6 +14,13 @@ import os
 os.environ["ENVIRONMENT"] = "test"
 os.environ["SECRET_KEY"] = "test-only-signing-key-that-is-long-enough"
 os.environ["TRUSTED_PROXY_COUNT"] = "0"
+# Never a real gateway: a .env set up to send real email or SMS would otherwise
+# send them from the suite, to the made-up addresses and numbers in the tests.
+os.environ["EMAIL_PROVIDER"] = "console"
+os.environ["SMS_PROVIDER"] = "console"
+os.environ["PUSH_PROVIDER"] = "console"
+# A key made for the tests alone, so push is switched on (PLAN.md §16.3, 8.3).
+os.environ["VAPID_PRIVATE_KEY"] = "r6AP-6DFOTeSWbF00ghu1XlddwGWOeRJmODHuo02Siw"
 
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
@@ -116,7 +123,14 @@ def client(db: Session) -> Generator[TestClient]:
     """Signed out. Sign in with `sign_in(db, client, staff)` or the login route."""
 
     def override_get_db() -> Generator[Session]:
-        yield db
+        try:
+            yield db
+        except Exception:
+            # As in production, where each request's session is closed: what a
+            # failed request didn't commit is thrown away, not left for the
+            # next request in the test to commit.
+            db.rollback()
+            raise
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
@@ -152,6 +166,7 @@ def make_gym(
             owner_phone=phone,
             owner_email=email,
             password=TEST_PASSWORD,
+            accept_terms=True,
         ),
     )
     db.commit()
@@ -273,11 +288,16 @@ def sell(db: Session, fixture: "GymFixture", member, *, paid: int = 0, **sale):
 
 @pytest.fixture
 def platform_admin(db: Session) -> StaffUser:
+    """With two-step sign-in on, as every platform admin must have (§16.1)."""
+    from app.core.time import utcnow
+
     admin = StaffUser(
         name="GymBhai admin",
         email="admin@gymbhai.com",
         password_hash=shared_password_hash(),
         is_platform_admin=True,
+        totp_nonce="test-nonce",
+        totp_enabled_at=utcnow(),
     )
     db.add(admin)
     db.commit()

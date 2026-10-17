@@ -78,13 +78,31 @@ class SmsCreditLedger(IdMixin, TimestampMixin, GymOwned, Base):
     )
 
 
+# What starts an automation (PLAN.md §16.3, 8.2). `days` means, for each:
+TRIGGER_EXPIRY = "expiry"  # from the end of the chain: −7 is a week before
+TRIGGER_LAPSED = "lapsed"  # ended this many days ago and not renewed (win-back)
+TRIGGER_DUES = "dues"  # money still owed this many days after the sale
+TRIGGER_NOT_VISITING = "not_visiting"  # active, no visit for this many days
+TRIGGER_BIRTHDAY = "birthday"  # on the day; `days` is 0
+TRIGGERS = (
+    TRIGGER_EXPIRY,
+    TRIGGER_LAPSED,
+    TRIGGER_DUES,
+    TRIGGER_NOT_VISITING,
+    TRIGGER_BIRTHDAY,
+)
+
+
 class ReminderRule(IdMixin, TimestampMixin, GymOwned, Base):
-    """Send `template` this many days from a membership's end (−7 is a week before)."""
+    """Send `template` when `trigger` is `days` away (see TRIGGERS)."""
 
     __tablename__ = "reminder_rules"
-    __table_args__ = (UniqueConstraint("gym_id", "days_from_expiry"),)
+    __table_args__ = (UniqueConstraint("gym_id", "trigger", "days"),)
 
-    days_from_expiry: Mapped[int] = mapped_column(Integer)
+    trigger: Mapped[str] = mapped_column(
+        String(16), default=TRIGGER_EXPIRY, server_default=TRIGGER_EXPIRY
+    )
+    days: Mapped[int] = mapped_column(Integer)
     template: Mapped[str] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true")
@@ -92,15 +110,24 @@ class ReminderRule(IdMixin, TimestampMixin, GymOwned, Base):
 
 
 class ReminderLog(IdMixin, TimestampMixin, GymOwned, Base):
-    """Which rule has reminded which membership: never the same one twice (§9)."""
+    """What each rule has sent: never the same thing twice (§9, §16.3 8.2).
+
+    `dedupe_key` names the occasion: "membership:<id>" for expiry, lapsed and
+    dues; "visit:<member>:<last visit date>" for not visiting, so each spell
+    away counts once; "birthday:<member>:<year>".
+    """
 
     __tablename__ = "reminder_log"
-    __table_args__ = (UniqueConstraint("rule_id", "membership_id"),)
+    __table_args__ = (UniqueConstraint("rule_id", "dedupe_key"),)
 
     rule_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("reminder_rules.id", ondelete="CASCADE")
     )
-    membership_id: Mapped[uuid.UUID] = mapped_column(
+    dedupe_key: Mapped[str] = mapped_column(String(100))
+    member_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id", ondelete="CASCADE"), index=True
+    )
+    membership_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memberships.id", ondelete="CASCADE"), index=True
     )
     sms_message_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -121,6 +148,10 @@ class Notice(IdMixin, TimestampMixin, GymOwned, Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     send_sms: Mapped[bool] = mapped_column(Boolean, default=False)
     sms_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Members reached by push instead (or as well), at no cost (§16.3, 8.3).
+    push_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("staff_users.id")
     )

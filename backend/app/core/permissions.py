@@ -16,6 +16,8 @@ class Permission(StrEnum):
     MEMBERS_EDIT = "members.edit"
     MEMBERS_ARCHIVE = "members.archive"
     MEMBERS_APP_ACCESS = "members.app_access"
+    # Enquiries: people who might join (§16.4, 9.1)
+    LEADS_MANAGE = "leads.manage"
     # Memberships
     MEMBERSHIPS_SELL = "memberships.sell"
     MEMBERSHIPS_EDIT = "memberships.edit"
@@ -73,6 +75,7 @@ PRESETS: dict[str, frozenset[Permission]] = {
             Permission.MEMBERSHIPS_SELL,
             Permission.PAYMENTS_COLLECT,
             Permission.DOOR_CHECK_IN,
+            Permission.LEADS_MANAGE,
         }
     ),
     "blank": frozenset(),

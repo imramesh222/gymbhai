@@ -6,6 +6,9 @@
  * is an httpOnly cookie the page cannot read, so a reload restores the session
  * by calling refresh(), and a 401 mid-session triggers one refresh and retry.
  */
+import type { Digits, Locale } from "@/i18n";
+import type { AccessWindow } from "@/lib/accessHours";
+import type { ReceiptLink } from "@/lib/receiptShare";
 import { isMessageKey, t } from "@/i18n";
 
 export class ApiError extends Error {
@@ -33,9 +36,16 @@ export interface GymSettings {
   dues_rule: "allow" | "warn" | "refuse";
   grace_days: number;
   rescan_minutes: number;
-  reminder_language: "en" | "ne";
+  not_visiting_days: number;
+  language: Locale;
+  digits: Digits;
   member_code_prefix: string;
   daily_summary_sms: boolean;
+  show_busyness: boolean;
+  join_form: boolean;
+  require_two_step: boolean;
+  poster_printed: boolean;
+  setup_dismissed: boolean;
 }
 
 export interface Gym {
@@ -58,6 +68,7 @@ export interface Staff {
   is_owner: boolean;
   is_platform_admin: boolean;
   last_login_at: string | null;
+  two_step_enabled: boolean;
 }
 
 export interface Subscription {
@@ -74,9 +85,19 @@ export interface Subscription {
 export interface Me {
   staff: Staff;
   gym: Gym | null;
+  /** Must use two-step sign-in; until it's on, only setting it up works. */
+  two_step_required: boolean;
   permissions: string[];
   branch_ids: string[] | null;
   subscription: Subscription | null;
+  /** Help: our WhatsApp/Viber number, if set (§16.5, 10.3). */
+  support_whatsapp: string | null;
+  /** What's new has something they haven't opened (10.4). */
+  changelog_unread: boolean;
+  /** The language to show: their own choice, else the gym's (§16.6). */
+  language: Locale;
+  own_language: Locale | null;
+  digits: Digits;
 }
 
 export interface Session {
@@ -84,6 +105,28 @@ export interface Session {
   token_type: string;
   expires_in: number;
   me: Me;
+}
+
+/** The password was right; the code from the authenticator app comes next. */
+export interface TwoStepChallenge {
+  two_step_token: string;
+  expires_in: number;
+}
+
+/** A device signed in to your account (My account → Devices). */
+export interface DeviceSession {
+  id: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  current: boolean;
+}
+
+export interface TwoStepStatus {
+  enabled: boolean;
+  required: boolean;
+  recovery_codes_left: number;
 }
 
 export interface GymSignup {
@@ -96,6 +139,11 @@ export interface GymSignup {
   owner_phone: string;
   owner_email: string;
   password: string;
+  accept_terms: boolean;
+  /** The gym that sent them (§16.5, 10.5). */
+  ref?: string | null;
+  /** The gym's language (§16.6). */
+  language?: Locale;
 }
 
 // --- clients -------------------------------------------------------------------
@@ -130,6 +178,11 @@ export function createClient<S extends { access_token: string | null }>(options:
           response = await fetch(options.refreshPath, {
             method: "POST",
             credentials: "same-origin",
+            // The server rotates the cookie on every refresh. If the page
+            // navigates away mid-request, keepalive still lets the new cookie
+            // land; otherwise the browser keeps a token that dies 30 seconds
+            // later and the next page load signs the person out.
+            keepalive: true,
           });
         } catch {
           throw new ApiError(0, "network", t("errors.network"));
@@ -268,13 +321,63 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+export const languageApi = {
+  /** Null follows the gym's language (§16.6). */
+  set: (language: Locale | null) =>
+    request<Me>("/api/v1/auth/me/language", send("PUT", { language })),
+};
+
 export const authApi = {
   registerGym: (payload: GymSignup) =>
     request<Session>("/api/v1/auth/register-gym", json(payload)),
   login: (identifier: string, password: string) =>
-    request<Session>("/api/v1/auth/login", json({ identifier, password })),
+    request<Session | TwoStepChallenge>(
+      "/api/v1/auth/login",
+      json({ identifier, password }),
+    ),
+  loginTwoStep: (two_step_token: string, code: string) =>
+    request<Session>("/api/v1/auth/login/two-step", json({ two_step_token, code })),
+  sessions: () => request<DeviceSession[]>("/api/v1/auth/sessions"),
+  signOutDevice: (id: string) =>
+    request<void>(`/api/v1/auth/sessions/${id}/sign-out`, { method: "POST" }),
+  signOutOthers: () =>
+    request<{ signed_out: number }>("/api/v1/auth/sessions/sign-out-others", {
+      method: "POST",
+    }),
   logout: () => request<void>("/api/v1/auth/logout", { method: "POST" }),
   me: () => request<Me>("/api/v1/auth/me"),
+  requestPasswordReset: (identifier: string) =>
+    request<{ expires_in: number }>(
+      "/api/v1/auth/password-reset",
+      json({ identifier }),
+    ),
+  confirmPasswordReset: (identifier: string, code: string, new_password: string) =>
+    request<void>(
+      "/api/v1/auth/password-reset/confirm",
+      json({ identifier, code, new_password }),
+    ),
+};
+
+/** Your own two-step sign-in (PLAN.md §16.1). */
+export const twoStepApi = {
+  status: () => request<TwoStepStatus>("/api/v1/auth/two-step"),
+  setup: (password: string) =>
+    request<{ secret: string; uri: string }>(
+      "/api/v1/auth/two-step/setup",
+      json({ password }),
+    ),
+  enable: (code: string) =>
+    request<{ recovery_codes: string[] }>(
+      "/api/v1/auth/two-step/enable",
+      json({ code }),
+    ),
+  newRecoveryCodes: (password: string) =>
+    request<{ recovery_codes: string[] }>(
+      "/api/v1/auth/two-step/recovery-codes",
+      json({ password }),
+    ),
+  disable: (password: string) =>
+    request<void>("/api/v1/auth/two-step/disable", json({ password })),
 };
 
 // --- M1: members and money ----------------------------------------------------
@@ -304,6 +407,10 @@ export interface Plan {
   branch_ids: string[];
   is_active: boolean;
   sort_order: number;
+  /** A visit pack (§16.4, 9.3); null is unlimited. */
+  visit_limit: number | null;
+  /** Off-peak hours (9.4); null is any time. */
+  access_hours: AccessWindow[] | null;
 }
 
 export interface PaymentMethodAccount {
@@ -360,6 +467,9 @@ export interface Membership {
   cancelled_at: string | null;
   cancel_reason: string | null;
   source: string;
+  visit_limit: number | null;
+  visits_used: number | null;
+  access_hours: AccessWindow[] | null;
   created_at: string;
   status: MembershipStatus;
   days_left: number;
@@ -384,6 +494,8 @@ export interface Member {
   joined_on: string;
   app_access: boolean;
   is_archived: boolean;
+  /** Erased at their request: no personal details left (PLAN.md §16.1). */
+  erased_at: string | null;
   created_at: string;
   photo_url: string | null;
   status: MemberStatus;
@@ -392,13 +504,31 @@ export interface Member {
     plan_name: string;
     start_date: string;
     end_date: string;
+    visit_limit: number | null;
+    visits_left: number | null;
+    access_hours: AccessWindow[] | null;
   } | null;
   valid_until: string | null;
   days_left: number;
   dues: number;
+  /** Lists only: the last time they were let in. */
+  last_visit_at?: string | null;
+}
+
+export interface MemberCounts {
+  all: number;
+  active: number;
+  expiring: number;
+  expired: number;
+  dues: number;
+  frozen: number;
+  not_visiting: number;
+  archived: number;
 }
 
 export interface MemberDetail extends Member {
+  referred_by_id: string | null;
+  referred_by_name: string | null;
   memberships: Membership[];
   payments: Payment[];
   renewal_starts_on: string;
@@ -440,6 +570,10 @@ export interface MemberInput {
   emergency_contact?: string | null;
   notes?: string | null;
   home_branch_id?: string | null;
+  /** The member who sent them (§16.4, 9.6). */
+  referred_by_id?: string | null;
+  /** Convert: the enquiry they came from (9.1). */
+  lead_id?: string | null;
 }
 
 export interface HistoryEntry {
@@ -479,6 +613,7 @@ export interface StaffMember {
   branch_ids: string[];
   last_login_at: string | null;
   created_at: string;
+  two_step_enabled: boolean;
 }
 
 export interface PermissionCatalog {
@@ -493,8 +628,10 @@ export interface MemberFilters {
   branch_id?: string;
   has_dues?: boolean;
   expiring_within?: number;
+  not_visiting?: boolean;
   archived?: boolean;
-  sort?: "name" | "code" | "recent";
+  sort?: "name" | "code" | "recent" | "dues" | "last_visit";
+  direction?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }
@@ -514,6 +651,10 @@ const send = (method: string, body?: unknown): RequestInit => ({
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
+/** A money request the API may receive twice; see lib/idempotency.ts. */
+const once = (init: RequestInit, key?: string): RequestInit =>
+  key ? { ...init, headers: { ...init.headers, "Idempotency-Key": key } } : init;
+
 function upload<T>(path: string, file: Blob, name = "image.jpg"): Promise<T> {
   const form = new FormData();
   form.append("file", file, name);
@@ -526,6 +667,8 @@ export const gymApi = {
     request<Gym>("/api/v1/gym", send("PATCH", patch)),
   updateCheckInRules: (patch: Partial<GymSettings>) =>
     request<Gym>("/api/v1/gym/check-in-rules", send("PATCH", patch)),
+  updateSecurity: (require_two_step: boolean) =>
+    request<Gym>("/api/v1/gym/security", send("PATCH", { require_two_step })),
   uploadLogo: (file: Blob) => upload<Gym>("/api/v1/gym/logo", file),
   changePassword: (current_password: string, new_password: string) =>
     request<void>(
@@ -566,27 +709,35 @@ export const paymentMethodsApi = {
 export const membersApi = {
   list: (filters: MemberFilters = {}) =>
     request<{ items: Member[]; total: number }>(`/api/v1/members${query(filters)}`),
+  counts: () => request<MemberCounts>("/api/v1/members/counts"),
+  smsMany: (member_ids: string[], body: string) =>
+    request<{ queued: number }>(
+      "/api/v1/members/sms",
+      send("POST", { member_ids, body }),
+    ),
   get: (id: string) => request<MemberDetail>(`/api/v1/members/${id}`),
   phoneCheck: (phone: string) =>
     request<PhoneMatch[]>(`/api/v1/members/phone-check${query({ phone })}`),
-  create: (body: MemberInput & { membership?: SaleInput | null }) =>
+  create: (body: MemberInput & { membership?: SaleInput | null }, key?: string) =>
     request<{
       member: MemberDetail;
       payment_id: string | null;
       same_phone: PhoneMatch[];
-    }>("/api/v1/members", send("POST", body)),
+    }>("/api/v1/members", once(send("POST", body), key)),
   update: (id: string, body: Partial<MemberInput>) =>
     request<MemberDetail>(`/api/v1/members/${id}`, send("PATCH", body)),
   archive: (id: string, reason?: string) =>
     request<MemberDetail>(`/api/v1/members/${id}/archive`, send("POST", { reason })),
   unarchive: (id: string) =>
     request<MemberDetail>(`/api/v1/members/${id}/unarchive`, send("POST")),
+  erase: (id: string) =>
+    request<MemberDetail>(`/api/v1/members/${id}/erase`, send("POST")),
   uploadPhoto: (id: string, file: Blob) =>
     upload<MemberDetail>(`/api/v1/members/${id}/photo`, file),
-  sell: (id: string, body: SaleInput) =>
+  sell: (id: string, body: SaleInput, key?: string) =>
     request<{ membership: Membership; payment: Payment | null }>(
       `/api/v1/members/${id}/memberships`,
-      send("POST", body),
+      once(send("POST", body), key),
     ),
   history: (id: string) => request<HistoryEntry[]>(`/api/v1/members/${id}/history`),
 };
@@ -625,12 +776,15 @@ export const membershipsApi = {
 };
 
 export const paymentsApi = {
-  collect: (membership_id: string, payment: PaymentInput) =>
-    request<Payment>("/api/v1/payments", send("POST", { membership_id, ...payment })),
-  refund: (membership_id: string, payment: PaymentInput) =>
+  collect: (membership_id: string, payment: PaymentInput, key?: string) =>
+    request<Payment>(
+      "/api/v1/payments",
+      once(send("POST", { membership_id, ...payment }), key),
+    ),
+  refund: (membership_id: string, payment: PaymentInput, key?: string) =>
     request<Payment>(
       "/api/v1/payments/refunds",
-      send("POST", { membership_id, ...payment }),
+      once(send("POST", { membership_id, ...payment }), key),
     ),
   list: (filters: {
     date_from?: string;
@@ -650,6 +804,136 @@ export const paymentsApi = {
   void: (id: string, reason: string) =>
     request<Payment>(`/api/v1/payments/${id}/void`, send("POST", { reason })),
   receipt: (id: string) => request<Receipt>(`/api/v1/payments/${id}/receipt`),
+  receiptLink: (id: string) =>
+    request<ReceiptLink>(`/api/v1/payments/${id}/receipt-link`, send("POST")),
+};
+
+/** A member's "please freeze my membership" (PLAN.md §16.3, 8.6). */
+export interface FreezeRequest {
+  id: string;
+  member_id: string;
+  membership_id: string;
+  from_date: string;
+  to_date: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "withdrawn";
+  reject_reason: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  member_name: string | null;
+  member_code: string | null;
+  plan_name: string | null;
+  ends_on: string | null;
+  reviewed_by_name: string | null;
+}
+
+export const freezeRequestsApi = {
+  list: (status: FreezeRequest["status"] = "pending") =>
+    request<FreezeRequest[]>(`/api/v1/freeze-requests${query({ status })}`),
+  count: () => request<{ pending: number }>("/api/v1/freeze-requests/count"),
+  approve: (id: string) =>
+    request<FreezeRequest>(`/api/v1/freeze-requests/${id}/approve`, send("POST")),
+  reject: (id: string, reason: string) =>
+    request<FreezeRequest>(
+      `/api/v1/freeze-requests/${id}/reject`,
+      send("POST", { reason }),
+    ),
+};
+
+// --- enquiries (PLAN.md §16.4, 9.1, 9.2, 9.6) ---
+
+export const LEAD_SOURCES = [
+  "walk_in",
+  "phone",
+  "facebook",
+  "instagram",
+  "tiktok",
+  "referral",
+  "other",
+] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+export const LEAD_STATUSES = ["new", "contacted", "trial", "joined", "lost"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+export interface Lead {
+  id: string;
+  branch_id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  source: LeadSource;
+  plan_id: string | null;
+  status: LeadStatus;
+  follow_up_on: string | null;
+  lost_reason: string | null;
+  assigned_to: string | null;
+  trial_on: string | null;
+  referred_by_id: string | null;
+  member_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  plan_name: string | null;
+  assigned_name: string | null;
+  referred_by_name: string | null;
+}
+
+export interface LeadInput {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  source?: LeadSource;
+  branch_id?: string | null;
+  plan_id?: string | null;
+  follow_up_on?: string | null;
+  assigned_to?: string | null;
+  referred_by_id?: string | null;
+  notes?: string | null;
+}
+
+export interface LeadMatch {
+  id: string;
+  name: string;
+  kind: "member" | "lead";
+  detail: string;
+}
+
+export interface SourceRow {
+  source: LeadSource | "all";
+  enquiries: number;
+  trials: number;
+  joined: number;
+  conversion: number | null;
+}
+
+export interface LeadReport {
+  first_day: string;
+  last_day: string;
+  rows: SourceRow[];
+  total: SourceRow;
+  top_referrers: {
+    member_id: string;
+    name: string;
+    member_code: string;
+    referred: number;
+    joined: number;
+  }[];
+}
+
+export const leadsApi = {
+  list: (filters: { status?: LeadStatus; q?: string; source?: LeadSource } = {}) =>
+    request<Lead[]>(`/api/v1/leads${query(filters)}`),
+  get: (id: string) => request<Lead>(`/api/v1/leads/${id}`),
+  create: (body: LeadInput) => request<Lead>("/api/v1/leads", send("POST", body)),
+  update: (
+    id: string,
+    body: Partial<LeadInput> & { status?: LeadStatus; lost_reason?: string | null },
+  ) => request<Lead>(`/api/v1/leads/${id}`, send("PATCH", body)),
+  trial: (id: string) => request<Lead>(`/api/v1/leads/${id}/trial`, send("POST")),
+  phoneCheck: (phone: string) =>
+    request<LeadMatch[]>(`/api/v1/leads/phone-check${query({ phone })}`),
+  report: (from?: string, to?: string) =>
+    request<LeadReport>(`/api/v1/leads/report${query({ from, to })}`),
 };
 
 export const staffApi = {
@@ -661,6 +945,10 @@ export const staffApi = {
     request<StaffMember>(`/api/v1/staff/${id}`, send("PATCH", body)),
   setPassword: (id: string, new_password: string) =>
     request<void>(`/api/v1/staff/${id}/password`, send("POST", { new_password })),
+  resetTwoStep: (id: string) =>
+    request<StaffMember>(`/api/v1/staff/${id}/two-step/reset`, send("POST")),
+  signOutEverywhere: (id: string) =>
+    request<{ signed_out: number }>(`/api/v1/staff/${id}/sign-out`, send("POST")),
 };
 
 // --- M2: expiry, SMS, reminders, notices ---------------------------------------
@@ -678,9 +966,21 @@ export interface SmsMessage {
   created_at: string;
 }
 
+/** What starts an automation (PLAN.md §16.3, 8.2). */
+export type Trigger = "expiry" | "lapsed" | "dues" | "not_visiting" | "birthday";
+
+export interface MessageSettings {
+  welcome_sms: string;
+  membership_sms: string;
+  /** SMS as well as push, for members whose phone takes push (§16.3, 8.3). */
+  also_sms: boolean;
+}
+
 export interface ReminderRule {
   id: string;
-  days_from_expiry: number;
+  trigger: Trigger;
+  /** Meaning depends on the trigger: see components/automations/triggers.ts. */
+  days: number;
   template: string;
   enabled: boolean;
 }
@@ -693,6 +993,7 @@ export interface Notice {
   published_at: string;
   send_sms: boolean;
   sms_count: number;
+  push_count: number;
 }
 
 export interface NoticeInput {
@@ -702,11 +1003,20 @@ export interface NoticeInput {
   send_sms: boolean;
 }
 
+/** Who to chase (PLAN.md §16.3, 8.1). Owing and not visiting: the first 100. */
+export interface FollowUpLists {
+  due_today: Member[];
+  due_this_week: Member[];
+  lapsed: Member[];
+  owing: Member[];
+  owing_total: number;
+  not_visiting: Member[];
+  not_visiting_total: number;
+  not_visiting_days: number;
+}
+
 export const messagesApi = {
-  expiring: () =>
-    request<{ due_today: Member[]; due_this_week: Member[]; lapsed: Member[] }>(
-      "/api/v1/lists/expiring",
-    ),
+  followUp: () => request<FollowUpLists>("/api/v1/lists/follow-up"),
   smsLog: (memberId?: string) =>
     request<{ balance: number; items: SmsMessage[] }>(
       `/api/v1/sms${query({ member_id: memberId })}`,
@@ -720,17 +1030,16 @@ export const messagesApi = {
     request<ReminderRule>(`/api/v1/reminder-rules/${id}`, send("PATCH", body)),
   deleteRule: (id: string) =>
     request<void>(`/api/v1/reminder-rules/${id}`, send("DELETE")),
-  templates: () =>
-    request<{ welcome_sms: string; membership_sms: string }>("/api/v1/sms-templates"),
-  updateTemplates: (body: { welcome_sms?: string; membership_sms?: string }) =>
-    request<{ welcome_sms: string; membership_sms: string }>(
-      "/api/v1/sms-templates",
-      send("PATCH", body),
-    ),
+  templates: () => request<MessageSettings>("/api/v1/sms-templates"),
+  updateTemplates: (body: Partial<MessageSettings>) =>
+    request<MessageSettings>("/api/v1/sms-templates", send("PATCH", body)),
   notices: () => request<Notice[]>("/api/v1/notices"),
   noticeCost: (body: NoticeInput) =>
     request<{
       recipients: number;
+      /** Members whose phone takes push: free (PLAN.md §16.3, 8.3). */
+      by_push: number;
+      by_sms: number;
       segments_each: number;
       total_credits: number;
       balance: number;
@@ -755,6 +1064,8 @@ export interface ScanResult {
   days_left: number;
   valid_until: string | null;
   dues: number;
+  /** A visit pack: left after this visit (§16.4, 9.3). */
+  visits_left: number | null;
   can_override: boolean;
 }
 
@@ -821,6 +1132,8 @@ export const doorApi = {
     request<{
       by_day: Record<string, number>;
       by_hour: Record<string, number>;
+      /** [weekday][hour], Sunday first. */
+      by_weekday_hour: number[][];
       denied: number;
       let_in: number;
       unique_members: number;
@@ -836,10 +1149,11 @@ export const paymentRequestsApi = {
   approve: (
     id: string,
     body: { price?: number | null; discount?: number; accept_part_payment?: boolean },
+    key?: string,
   ) =>
     request<import("./memberApi").PaymentRequest>(
       `/api/v1/payment-requests/${id}/approve`,
-      send("POST", body),
+      once(send("POST", body), key),
     ),
   reject: (id: string, reason: string) =>
     request<import("./memberApi").PaymentRequest>(
@@ -867,13 +1181,39 @@ export const accessApi = {
 
 // --- M4: Today, reports, data, subscription, platform admin ---------------------
 
+export interface SetupChecklist {
+  plans_priced: boolean;
+  payment_account: boolean;
+  logo: boolean;
+  staff_invited: boolean;
+  poster_printed: boolean;
+  first_member: boolean;
+}
+
 export interface TodayData {
   date: string;
   check_ins: number;
+  /** Let in, by hour of the day in Nepal: 24 counts. */
+  check_ins_by_hour: number[];
+  /** Yesterday up to this same time of day. */
+  check_ins_yesterday: number;
+  ending_today: { member_id: string; name: string; phone: string }[];
+  top_owing: { member_id: string; name: string; dues: number }[];
+  collected_yesterday: number | null;
+  setup: SetupChecklist | null;
+  leads_due: number | null;
+  leads_due_list: {
+    lead_id: string;
+    name: string;
+    phone: string | null;
+    status: string;
+    follow_up_on: string;
+  }[];
   unique_visitors: number;
   inside_now: { member_id: string; name: string; at: string }[];
   due_today: number;
   expiring_this_week: number;
+  not_visiting: number;
   turned_away: { member_id: string; name: string; at: string; result: string }[];
   members_with_dues: number;
   dues_total: number;
@@ -900,6 +1240,19 @@ export interface MonthlyReport {
   active_members: number;
   visits: number;
   by_plan: Record<string, number>;
+}
+
+export interface TrendMonth {
+  month: string;
+  /** False before the gym joined: a gap on the charts, not a zero. */
+  started: boolean;
+  income: number;
+  new_members: number;
+  renewals: number;
+  lapsed: number;
+  active_members: number;
+  visits: number;
+  renewal_rate: number | null;
 }
 
 export interface ImportPreview {
@@ -960,6 +1313,7 @@ export interface AdminGym {
   owner_name: string | null;
   owner_phone: string | null;
   owner_email: string | null;
+  owner_two_step: boolean;
   created_at: string;
   subscription_status: string;
   plan_name: string | null;
@@ -968,12 +1322,66 @@ export interface AdminGym {
   active_members: number;
   sms_balance: number;
   pending_payments: number;
+  state: "trial" | "paying" | "grace" | "read_only" | "suspended";
+  last_sign_in_at: string | null;
+  check_ins_7d: number;
+  members_added_30d: number;
+  going_quiet: boolean;
+  setup: Record<string, boolean>;
 }
+
+/** The /admin home (PLAN.md §16.5, 10.1). */
+export interface AdminSummary {
+  mrr: number;
+  gyms: number;
+  by_state: Record<AdminGym["state"], number>;
+  trial_conversion: number | null;
+  trials_ended: number;
+  trials_converted: number;
+  lost_by_month: { month: string; gyms: number }[];
+  sms_sold_by_month: { month: string; credits: number; amount: number }[];
+  going_quiet: number;
+}
+
+export interface ChangelogEntry {
+  id: string;
+  title: string;
+  body: string;
+  published_at: string | null;
+  created_at: string;
+}
+
+export interface GymReferral {
+  id: string;
+  referrer_gym_id: string;
+  referrer_name: string;
+  referred_gym_id: string;
+  referred_name: string;
+  status: "pending" | "ready" | "rewarded" | "rejected";
+  created_at: string;
+  ready_at: string | null;
+  note: string | null;
+}
+
+export interface MyReferrals {
+  link: string;
+  free_months: number;
+  gyms: { name: string; status: GymReferral["status"]; joined_at: string }[];
+}
+
+export const changelogApi = {
+  list: () => request<ChangelogEntry[]>("/api/v1/changelog"),
+  seen: () => request<void>("/api/v1/changelog/seen", send("POST")),
+};
 
 export const reportsApi = {
   today: () => request<TodayData>("/api/v1/dashboard/today"),
   monthly: (month?: string) =>
     request<MonthlyReport>(`/api/v1/reports/monthly${query({ month })}`),
+  trend: (end?: string) =>
+    request<{ calendar: "ad" | "bs"; months: TrendMonth[] }>(
+      `/api/v1/reports/trend${query({ end })}`,
+    ),
   exportUrl: (kind: "members" | "memberships" | "payments" | "check-ins") =>
     `/api/v1/export/${kind}.xlsx`,
   /** Downloads through fetch, so the access token goes with it. */
@@ -1016,18 +1424,41 @@ export const reportsApi = {
 
 export const subscriptionApi = {
   overview: () => request<SubscriptionOverview>("/api/v1/subscription"),
-  pay: (body: {
-    kind: "subscription" | "sms";
-    platform_plan_id?: string | null;
-    months?: number | null;
-    sms_credits?: number | null;
-    amount: number;
-    transaction_ref: string;
-  }) =>
-    request<SubscriptionPayment>("/api/v1/subscription/payments", send("POST", body)),
+  referrals: () => request<MyReferrals>("/api/v1/subscription/referrals"),
+  pay: (
+    body: {
+      kind: "subscription" | "sms";
+      platform_plan_id?: string | null;
+      months?: number | null;
+      sms_credits?: number | null;
+      amount: number;
+      transaction_ref: string;
+    },
+    key?: string,
+  ) =>
+    request<SubscriptionPayment>(
+      "/api/v1/subscription/payments",
+      once(send("POST", body), key),
+    ),
 };
 
 export const adminApi = {
+  summary: () => request<AdminSummary>("/api/v1/admin/summary"),
+  changelog: () => request<ChangelogEntry[]>("/api/v1/admin/changelog"),
+  addChangelog: (body: { title: string; body: string; published_at?: string | null }) =>
+    request<ChangelogEntry>("/api/v1/admin/changelog", send("POST", body)),
+  editChangelog: (
+    id: string,
+    body: { title?: string; body?: string; published_at?: string | null },
+  ) => request<ChangelogEntry>(`/api/v1/admin/changelog/${id}`, send("PATCH", body)),
+  deleteChangelog: (id: string) =>
+    request<void>(`/api/v1/admin/changelog/${id}`, send("DELETE")),
+  referrals: (status?: GymReferral["status"]) =>
+    request<GymReferral[]>(`/api/v1/admin/gym-referrals${query({ status })}`),
+  rewardReferral: (id: string) =>
+    request<void>(`/api/v1/admin/gym-referrals/${id}/reward`, send("POST")),
+  rejectReferral: (id: string, reason: string) =>
+    request<void>(`/api/v1/admin/gym-referrals/${id}/reject`, send("POST", { reason })),
   gyms: (q?: string) => request<AdminGym[]>(`/api/v1/admin/gyms${query({ q })}`),
   grant: (
     id: string,
@@ -1047,6 +1478,8 @@ export const adminApi = {
       `/api/v1/admin/gyms/${id}/owner-password`,
       send("POST", { new_password }),
     ),
+  resetOwnerTwoStep: (id: string) =>
+    request<AdminGym>(`/api/v1/admin/gyms/${id}/owner-two-step`, send("POST")),
   payments: (status = "pending") =>
     request<SubscriptionPayment[]>(
       `/api/v1/admin/subscription-payments?status=${status}`,

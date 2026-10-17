@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api import idempotency
 from app.api.deps import require
 from app.api.tenancy import StaffContext, for_gym
 from app.core.config import settings
@@ -16,14 +17,17 @@ from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.db.session import get_db
 from app.models.billing import PlatformPlan
-from app.models.platform import SubscriptionPayment
+from app.models.gym import Gym
+from app.models.platform import GymReferral, SubscriptionPayment
 from app.schemas.platform import (
+    MyReferrals,
     PlatformPlanRead,
+    ReferredGym,
     SubscriptionOverview,
     SubscriptionPaymentIn,
     SubscriptionPaymentRead,
 )
-from app.services import activity, subscription
+from app.services import activity, gym_referrals, subscription
 from app.services.sms import service as sms
 
 router = APIRouter(prefix="/subscription", tags=["subscription"])
@@ -89,6 +93,7 @@ def send_payment(
     ctx: StaffContext = Depends(PAY),
 ) -> SubscriptionPaymentRead:
     """ "We've paid you": a transaction ID for us to check (§5.7)."""
+    idem = idempotency.begin(db, ctx, request, payload)
     if payload.platform_plan_id is not None:
         plan = db.get(PlatformPlan, payload.platform_plan_id)
         if plan is None or not plan.is_active:
@@ -127,5 +132,28 @@ def send_payment(
         changes=payload.model_dump(),
         request=request,
     )
+    answer = payment_read(db, row)
+    idem.finish(answer)
     db.commit()
-    return payment_read(db, row)
+    return answer
+
+
+@router.get("/referrals", response_model=MyReferrals)
+def my_referrals(
+    db: Session = Depends(get_db), ctx: StaffContext = Depends(SEE)
+) -> MyReferrals:
+    """Share this link: when a gym that signed up with it pays, a free month
+    each (§16.5, 10.5)."""
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    rows = db.execute(
+        select(Gym.name, GymReferral.status, GymReferral.created_at)
+        .join(Gym, Gym.id == GymReferral.referred_gym_id)
+        .where(GymReferral.gym_id == ctx.gym_id)
+        .order_by(GymReferral.created_at.desc())
+    ).all()
+    return MyReferrals(
+        link=gym_referrals.link(gym),
+        free_months=gym_referrals.FREE_MONTHS,
+        gyms=[ReferredGym(name=n, status=st, joined_at=at) for n, st, at in rows],
+    )

@@ -8,6 +8,9 @@
 # start.
 x-e2e-database: &e2e-database
   DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gymbhai}:${POSTGRES_PASSWORD:-gymbhai}@db:5432/${POSTGRES_DB:-gymbhai}_e2e
+  # Push switched on, logged not sent: a key made for the tests alone.
+  PUSH_PROVIDER: console
+  VAPID_PRIVATE_KEY: r6AP-6DFOTeSWbF00ghu1XlddwGWOeRJmODHuo02Siw
 
 services:
   api:

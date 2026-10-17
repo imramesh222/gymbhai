@@ -25,6 +25,9 @@ from app.core.time import utcnow
 ALGORITHM = "HS256"
 ACCESS = "access"
 MEMBER = "member"
+TWO_STEP = "two_step"
+# How long someone has between the right password and their authenticator code.
+TWO_STEP_MINUTES = 5
 # bcrypt ignores everything past 72 bytes, which would make two different long
 # passwords equivalent. Longer ones are refused instead.
 MAX_PASSWORD_BYTES = 72
@@ -154,6 +157,39 @@ def decode_member_token(token: str) -> MemberClaims:
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise TokenError("invalid_token", "Invalid session token.") from exc
+
+
+@dataclass(frozen=True)
+class TwoStepClaims:
+    staff_id: uuid.UUID
+    # The email or phone they signed in with, so a wrong code counts against
+    # the same sign-in limit as a wrong password.
+    identifier: str
+
+
+def create_two_step_token(*, staff_id: uuid.UUID, identifier: str) -> str:
+    """Proof that the password was right, good only for the code step."""
+    now = utcnow()
+    payload = {
+        "typ": TWO_STEP,
+        "sub": str(staff_id),
+        "idf": identifier,
+        "iat": int(now.timestamp()),
+        "exp": int((now + dt.timedelta(minutes=TWO_STEP_MINUTES)).timestamp()),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
+def decode_two_step_token(token: str) -> TwoStepClaims:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+        if payload.get("typ") != TWO_STEP:
+            raise TokenError("two_step_expired", "Sign in again.")
+        return TwoStepClaims(
+            staff_id=uuid.UUID(payload["sub"]), identifier=str(payload["idf"])
+        )
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError) as exc:
+        raise TokenError("two_step_expired", "Sign in again.") from exc
 
 
 def new_refresh_token() -> str:

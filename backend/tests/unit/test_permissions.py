@@ -33,8 +33,8 @@ def test_presets_are_starting_points_within_the_catalogue() -> None:
 
 
 def test_every_permission_in_plan_section_2_1_exists() -> None:
-    # Guards against a key being dropped by accident: 29 ticks on the form.
-    assert len(ALL_PERMISSIONS) == 29
+    # Guards against a key being dropped by accident: 30 ticks on the form.
+    assert len(ALL_PERMISSIONS) == 30
 
 
 def test_staff_can_only_grant_what_they_hold() -> None:

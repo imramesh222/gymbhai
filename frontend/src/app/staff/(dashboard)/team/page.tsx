@@ -18,7 +18,10 @@ import {
   type StaffMember,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { PageSkeleton } from "@/components/ui/Skeleton";
 
 const AREAS = [
   "members",
@@ -40,7 +43,9 @@ export default function TeamPage() {
     [],
   );
   const [editing, setEditing] = useState<StaffMember | "new" | null>(null);
-  if (!data) return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
+  // Another desk changed someone, or a colleague turned on two-step sign-in.
+  useLive(["staff"], reload);
+  if (!data) return <PageSkeleton label={t("common.loading")} />;
   const [staff, catalog, branches] = data;
 
   return (
@@ -68,6 +73,7 @@ export default function TeamPage() {
                     ? t("team.owner")
                     : t("team.permissionCount", { count: s.permissions.length })}
                   {!s.is_active && ` · ${t("team.disabled")}`}
+                  {s.two_step_enabled && ` · ${t("team.twoStepOn")}`}
                   {s.branch_ids.length > 0 &&
                     ` · ${s.branch_ids.map((id) => branches.find((b) => b.id === id)?.name).join(", ")}`}
                 </p>
@@ -110,6 +116,10 @@ function StaffDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const confirm = useConfirm();
+  const { me } = useAuth();
+  // Your own devices and two-step sign-in are on My account, not here.
+  const someoneElse = staff !== null && staff.id !== me?.staff.id;
   const [name, setName] = useState(staff?.name ?? "");
   const [phone, setPhone] = useState(staff?.phone ?? "");
   const [email, setEmail] = useState(staff?.email ?? "");
@@ -239,6 +249,59 @@ function StaffDialog({
             onChange={setActive}
             hint={t("team.activeHelp")}
           />
+        )}
+        {staff && someoneElse && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
+            <span className="text-slate-700">{t("team.signOutHelp")}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                const yes = await confirm({
+                  title: t("team.signOut"),
+                  message: t("team.signOutConfirm", { name: staff.name }),
+                  confirmLabel: t("team.signOut"),
+                });
+                if (!yes) return;
+                try {
+                  await staffApi.signOutEverywhere(staff.id);
+                  onSaved();
+                } catch (err) {
+                  setError(errorMessage(err));
+                }
+              }}
+            >
+              {t("team.signOut")}
+            </Button>
+          </div>
+        )}
+        {staff?.two_step_enabled && someoneElse && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
+            <span className="text-slate-700">{t("team.twoStepIsOn")}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                const yes = await confirm({
+                  title: t("team.resetTwoStep"),
+                  message: t("team.resetTwoStepConfirm", { name: staff.name }),
+                  confirmLabel: t("team.resetTwoStep"),
+                  danger: true,
+                });
+                if (!yes) return;
+                try {
+                  await staffApi.resetTwoStep(staff.id);
+                  onSaved();
+                } catch (err) {
+                  setError(errorMessage(err));
+                }
+              }}
+            >
+              {t("team.resetTwoStep")}
+            </Button>
+          </div>
         )}
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" block>

@@ -1,9 +1,11 @@
-import { expect, test } from "@playwright/test";
-
-import { priceOneMonthPlan, randomDigits, signUpGym } from "./helpers";
-
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "e2e-admin@gymbhai.com";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "e2e-admin-password-123";
+import { expect, test } from "./fixtures";
+import {
+  openFromMenu,
+  priceOneMonthPlan,
+  randomDigits,
+  signInAsAdmin,
+  signUpGym,
+} from "./helpers";
 
 test("Today, the monthly report, import and export", async ({ page }) => {
   await signUpGym(page);
@@ -21,7 +23,7 @@ test("Today, the monthly report, import and export", async ({ page }) => {
   await expect(page.getByText("Collected today").first()).toBeVisible();
   await expect(page.getByText("Rs 1,500").first()).toBeVisible();
 
-  await page.getByRole("link", { name: "Reports" }).click();
+  await openFromMenu(page, "Reports");
   await page.waitForURL("**/staff/reports");
   // The gym shows BS dates, so this is a BS month.
   await expect(
@@ -31,7 +33,8 @@ test("Today, the monthly report, import and export", async ({ page }) => {
       )
       .first(),
   ).toBeVisible();
-  await expect(page.getByText("New members")).toBeVisible();
+  // The figure's label; the charts below repeat it in a title and a legend.
+  await expect(page.getByText("New members", { exact: true }).first()).toBeVisible();
 
   // Import a register with a BS expiry date.
   await page.goto("/staff/data");
@@ -47,8 +50,11 @@ test("Today, the monthly report, import and export", async ({ page }) => {
   });
   await expect(page.getByText("2 rows, 1 ready to import.")).toBeVisible();
   await expect(page.getByText("Row 2: no phone number")).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Import 1 members" }).click();
+  await page
+    .getByRole("dialog", { name: "Import your register" })
+    .getByRole("button", { name: "Import your register" })
+    .click();
   await expect(page.getByText("1 members imported, 0 already here.")).toBeVisible();
 
   // Export: a real Excel file.
@@ -59,14 +65,13 @@ test("Today, the monthly report, import and export", async ({ page }) => {
   );
 });
 
-test("the owner pays us, and the admin activates it", async ({ page, browser }) => {
+test("the owner pays us, and the admin activates it", async ({
+  page,
+  browser,
+}, testInfo) => {
   // Our price list first, from /admin.
   const admin = await (await browser.newContext()).newPage();
-  await admin.goto("/staff/login");
-  await admin.getByLabel("Email or mobile number").fill(ADMIN_EMAIL);
-  await admin.getByLabel("Password", { exact: true }).fill(ADMIN_PASSWORD);
-  await admin.getByRole("button", { name: "Sign in" }).click();
-  await admin.waitForURL("**/admin");
+  await signInAsAdmin(admin, testInfo);
   await admin.getByRole("link", { name: "Our plans and prices" }).click();
   const planName = `Standard ${randomDigits(4)}`;
   const newPlan = admin.locator("section", { hasText: "New plan" });

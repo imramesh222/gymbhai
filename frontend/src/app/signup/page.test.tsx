@@ -8,7 +8,10 @@ const registerGym = vi.fn();
 const push = vi.fn();
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ registerGym }) }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 async function fillEverythingButTheCalendar() {
   const user = userEvent.setup();
@@ -55,6 +58,7 @@ describe("gym sign-up", () => {
     const user = await fillEverythingButTheCalendar();
     await user.click(screen.getByLabelText(/BS months/));
     await user.click(screen.getByLabelText("Both"));
+    await user.click(screen.getByRole("checkbox", { name: /I accept the/ }));
     await user.click(screen.getByRole("button", { name: "Create my gym" }));
 
     expect(registerGym).toHaveBeenCalledWith(
@@ -64,8 +68,25 @@ describe("gym sign-up", () => {
         date_display: "both",
         branch_name: "Main branch",
         owner_phone: "9841234567",
+        accept_terms: true,
       }),
     );
     expect(push).toHaveBeenCalledWith("/staff");
+  });
+
+  it("needs the terms accepted", async () => {
+    render(<SignupPage />);
+    const user = await fillEverythingButTheCalendar();
+    await user.click(screen.getByLabelText(/BS months/));
+    await user.click(screen.getByLabelText("Both"));
+    await user.click(screen.getByRole("button", { name: "Create my gym" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Accept the terms of service and the privacy policy",
+    );
+    expect(registerGym).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "terms of service" })).toHaveAttribute(
+      "href",
+      "/terms",
+    );
   });
 });

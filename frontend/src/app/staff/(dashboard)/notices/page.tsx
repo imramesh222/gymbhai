@@ -13,9 +13,11 @@ import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { useLoad } from "@/lib/useLoad";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 /** Notices for the member app, optionally by SMS — with the cost shown first. */
 export default function NoticesPage() {
+  const confirm = useConfirm();
   const { can } = useAuth();
   const { display } = useGymCalendar();
   const notices = useLoad(() => messagesApi.notices(), []);
@@ -26,11 +28,9 @@ export default function NoticesPage() {
     send_sms: false,
   });
   const [branchId, setBranchId] = useState("all");
-  const [cost, setCost] = useState<{
-    recipients: number;
-    total_credits: number;
-    balance: number;
-  } | null>(null);
+  const [cost, setCost] = useState<Awaited<
+    ReturnType<typeof messagesApi.noticeCost>
+  > | null>(null);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
     text: string;
@@ -56,7 +56,9 @@ export default function NoticesPage() {
       setMessage({
         tone: "success",
         text: notice.send_sms
-          ? t("notices.publishedSms", { count: notice.sms_count })
+          ? t("notices.publishedSms", {
+              count: notice.sms_count + notice.push_count,
+            })
           : t("notices.published"),
       });
       notices.reload();
@@ -118,6 +120,8 @@ export default function NoticesPage() {
             <Alert tone={cost.total_credits > cost.balance ? "warning" : "info"}>
               {t("notices.cost", {
                 recipients: cost.recipients,
+                push: cost.by_push,
+                sms: cost.by_sms,
                 credits: cost.total_credits,
                 balance: cost.balance,
               })}
@@ -144,13 +148,21 @@ export default function NoticesPage() {
                 <p className="text-sm whitespace-pre-line text-slate-700">{n.body}</p>
                 <p className="mt-1 text-xs text-slate-500">
                   {formatDateTime(n.published_at, display)}
+                  {n.push_count > 0 &&
+                    ` · ${t("notices.pushTo", { count: n.push_count })}`}
                   {n.send_sms && ` · ${t("notices.smsTo", { count: n.sms_count })}`}
                 </p>
               </div>
               <Button
                 variant="ghost"
                 onClick={async () => {
-                  if (!window.confirm(t("notices.deleteConfirm"))) return;
+                  const yes = await confirm({
+                    title: t("notices.delete"),
+                    message: t("notices.deleteConfirm"),
+                    confirmLabel: t("notices.delete"),
+                    danger: true,
+                  });
+                  if (!yes) return;
                   await messagesApi.deleteNotice(n.id);
                   notices.reload();
                 }}

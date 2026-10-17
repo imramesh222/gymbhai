@@ -32,13 +32,14 @@ from app.models.gym import GYM_ACTIVE, Gym
 from app.models.member import Member
 from app.models.member_app import Device, MemberSession
 from app.models.staff import StaffBranchAccess, StaffSession, StaffUser
-from app.services import subscription
+from app.services import subscription, two_step
 
 # auto_error=False so a missing header gets our 401, not FastAPI's 403.
 bearer = HTTPBearer(auto_error=False)
 
 
 def current_staff(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     db: Session = Depends(get_db),
 ) -> StaffUser:
@@ -66,7 +67,15 @@ def current_staff(
     staff = db.get(StaffUser, claims.staff_id)
     if staff is None or not staff.is_active or staff.gym_id != claims.gym_id:
         raise unauthorized("session_ended", "You have been signed out.")
+    request.state.staff_session = session
     return staff
+
+
+def current_session(
+    request: Request, staff: StaffUser = Depends(current_staff)
+) -> StaffSession:
+    """The signed-in device this request came from (My account → Devices)."""
+    return request.state.staff_session
 
 
 def staff_context(
@@ -80,6 +89,10 @@ def staff_context(
         raise AppError(
             403, "gym_suspended", "This gym's account is suspended. Contact GymBhai."
         )
+    # The gym requires two-step sign-in and this account hasn't set it up: it
+    # can reach the setup routes, which use current_staff, and nothing else.
+    if gym.config.require_two_step and not staff.two_step_enabled:
+        raise two_step.setup_pending_error()
 
     branch_ids = frozenset(
         db.scalars(
@@ -146,6 +159,13 @@ def require(
     return dependency
 
 
+def require_owner(ctx: StaffContext = Depends(require())) -> StaffContext:
+    """For the few settings only the owner may change, whatever is ticked."""
+    if not ctx.staff.is_owner:
+        raise AppError(403, "owner_only", "Only the gym's owner can do this.")
+    return ctx
+
+
 def current_member(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     db: Session = Depends(get_db),
@@ -199,4 +219,7 @@ def require_platform_admin(
 ) -> StaffUser:
     if not staff.is_platform_admin:
         raise AppError(403, "platform_admin_only", "Platform administrators only.")
+    # Required for us, always (§16.1).
+    if not staff.two_step_enabled:
+        raise two_step.setup_pending_error()
     return staff

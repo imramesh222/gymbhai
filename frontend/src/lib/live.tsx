@@ -13,7 +13,8 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import { ApiError } from "./api";
 
-export type LiveType = "check_in" | "payment_request" | "member";
+export type LiveType =
+  "check_in" | "payment_request" | "freeze_request" | "lead" | "member" | "staff";
 
 export interface LiveEvent {
   type: LiveType | "resync";

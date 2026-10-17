@@ -10,6 +10,7 @@ SIGNUP = dict(
     owner_name="Sita Sharma",
     owner_phone="9841234567",
     password="correct-horse-battery",
+    accept_terms=True,
 )
 
 

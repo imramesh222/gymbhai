@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
 from app.models.gym import Gym
-from app.models.member_app import Device, PaymentRequest
+from app.models.lead import Lead
+from app.models.member_app import Device, FreezeRequest, PaymentRequest
 from app.models.messaging import Notice, ReminderRule
 from app.models.payment import GymPaymentMethod
 from app.models.platform import MemberImport
 from app.services import memberships as ms
+from app.services import sessions
 from tests.conftest import (
     GymFixture,
     context_for,
@@ -62,6 +64,7 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
         select(ReminderRule).where(ReminderRule.gym_id == gym_b.gym.id)
     ).first()
     staff = make_staff(gym_b.gym)
+    b_session = sessions.start(db, staff, None).session
     device = Device(
         gym_id=gym_b.gym.id,
         branch_id=gym_b.branch.id,
@@ -78,12 +81,28 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
     b_import = MemberImport(
         gym_id=gym_b.gym.id, filename="b.csv", headers=["Name"], rows=[["Ram"]]
     )
-    db.add_all([device, b_request, b_import])
+    b_freeze_request = FreezeRequest(
+        gym_id=gym_b.gym.id,
+        member_id=member.id,
+        membership_id=membership.id,
+        from_date=membership.start_date,
+        to_date=membership.start_date,
+        reason="Away",
+    )
+    b_lead = Lead(
+        gym_id=gym_b.gym.id,
+        branch_id=gym_b.branch.id,
+        name="B enquiry",
+        phone="9819999990",
+        source="walk_in",
+    )
+    db.add_all([device, b_request, b_import, b_freeze_request, b_lead])
     db.commit()
     return World(
         ids={
             "branch_id": gym_b.branch.id,
             "staff_id": staff.id,
+            "session_id": b_session.id,
             "plan_id": membership.plan_id,
             "method_id": method.id,
             "member_id": member.id,
@@ -94,6 +113,8 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
             "notice_id": notice.id,
             "device_id": device.id,
             "request_id": b_request.id,
+            "freeze_request_id": b_freeze_request.id,
+            "lead_id": b_lead.id,
             "import_id": b_import.id,
         }
     )
@@ -107,6 +128,11 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PATCH", "/api/v1/branches/{branch_id}", {"name": "Taken"}),
     ("PATCH", "/api/v1/staff/{staff_id}", {"name": "Taken"}),
     ("POST", "/api/v1/staff/{staff_id}/password", {"new_password": "taken-over-123"}),
+    ("POST", "/api/v1/staff/{staff_id}/two-step/reset", None),
+    ("POST", "/api/v1/staff/{staff_id}/sign-out", None),
+    ("POST", "/api/v1/members/{member_id}/erase", None),
+    # Not gym data, but the same rule: another account's device is not found.
+    ("POST", "/api/v1/auth/sessions/{session_id}/sign-out", None),
     ("PATCH", "/api/v1/plans/{plan_id}", {"price": 1}),
     ("PATCH", "/api/v1/payment-methods/{method_id}", {"label": "Taken"}),
     ("POST", "/api/v1/payment-methods/{method_id}/qr", "upload"),
@@ -143,6 +169,16 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("POST", "/api/v1/devices/{device_id}/revoke", None),
     ("POST", "/api/v1/payment-requests/{request_id}/approve", {}),
     ("POST", "/api/v1/payment-requests/{request_id}/reject", {"reason": "taken over"}),
+    ("POST", "/api/v1/freeze-requests/{freeze_request_id}/approve", None),
+    (
+        "POST",
+        "/api/v1/freeze-requests/{freeze_request_id}/reject",
+        {"reason": "taken over"},
+    ),
+    ("POST", "/api/v1/payments/{payment_id}/receipt-link", None),
+    ("GET", "/api/v1/leads/{lead_id}", None),
+    ("PATCH", "/api/v1/leads/{lead_id}", {"name": "Taken"}),
+    ("POST", "/api/v1/leads/{lead_id}/trial", None),
     ("PATCH", "/api/v1/members/{member_id}/access", {"app_access": False}),
     ("POST", "/api/v1/members/{member_id}/sign-out-all", None),
     ("POST", "/api/v1/members/{member_id}/resend-welcome", None),
@@ -156,11 +192,15 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
 # Id routes whose permission is not the gym at all.
 NOT_GYM_SCOPED = {
     ("GET", "/api/v1/files/{key}"),
+    # The signed link is the permission (app/core/signed_links.py).
+    ("GET", "/api/v1/receipts/{payment_id}.pdf"),
     # Public, by the gym's own address.
     ("GET", "/api/v1/m/{slug}/gym"),
     ("GET", "/api/v1/m/{slug}/logo"),
     ("POST", "/api/v1/m/{slug}/otp/request"),
     ("POST", "/api/v1/m/{slug}/otp/verify"),
+    ("GET", "/api/v1/m/{slug}/join"),
+    ("POST", "/api/v1/m/{slug}/join"),
     # Not an id: which export (members, payments, ...), of the caller's gym.
     ("GET", "/api/v1/export/{kind}.xlsx"),
     # Platform admin: every gym, by design (test_platform_admin.py).
@@ -170,12 +210,19 @@ NOT_GYM_SCOPED = {
     ("POST", "/api/v1/admin/gyms/{gym_id}/suspend"),
     ("POST", "/api/v1/admin/gyms/{gym_id}/unsuspend"),
     ("POST", "/api/v1/admin/gyms/{gym_id}/owner-password"),
+    ("POST", "/api/v1/admin/gyms/{gym_id}/owner-two-step"),
     ("POST", "/api/v1/admin/subscription-payments/{payment_id}/approve"),
     ("POST", "/api/v1/admin/subscription-payments/{payment_id}/reject"),
     ("PATCH", "/api/v1/admin/plans/{plan_id}"),
+    ("PATCH", "/api/v1/admin/changelog/{entry_id}"),
+    ("DELETE", "/api/v1/admin/changelog/{entry_id}"),
+    ("POST", "/api/v1/admin/gym-referrals/{referral_id}/reward"),
+    ("POST", "/api/v1/admin/gym-referrals/{referral_id}/reject"),
     # The member's own records: tests/regression/test_member_isolation.py.
     ("POST", "/api/v1/m/payment-requests/{request_id}/screenshot"),
     ("POST", "/api/v1/m/payment-requests/{request_id}/withdraw"),
+    ("POST", "/api/v1/m/me/payments/{payment_id}/receipt-link"),
+    ("POST", "/api/v1/m/freeze-requests/{freeze_request_id}/withdraw"),
 }
 
 
@@ -255,10 +302,15 @@ def test_lists_only_show_your_own_gym(
     assert client.get("/api/v1/payment-methods").json() == []
     assert client.get("/api/v1/notices").json() == []
     assert client.get("/api/v1/sms").json()["items"] == []
-    assert client.get("/api/v1/lists/expiring").json() == {
+    assert client.get("/api/v1/lists/follow-up").json() == {
         "due_today": [],
         "due_this_week": [],
         "lapsed": [],
+        "owing": [],
+        "owing_total": 0,
+        "not_visiting": [],
+        "not_visiting_total": 0,
+        "not_visiting_days": 14,
     }
     plan_ids = {p["id"] for p in client.get("/api/v1/plans").json()}
     assert str(world_b.ids["plan_id"]) not in plan_ids

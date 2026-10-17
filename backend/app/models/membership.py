@@ -18,7 +18,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, GymOwned, IdMixin, TimestampMixin
@@ -63,6 +63,10 @@ class Membership(IdMixin, TimestampMixin, GymOwned, Base):
         UUID(as_uuid=True), ForeignKey("staff_users.id")
     )
     source: Mapped[str] = mapped_column(String(16), default=SOURCE_DESK)
+    # Copied from the plan at sale (§16.4, 9.3, 9.4): changing the plan later
+    # never changes what a member bought.
+    visit_limit: Mapped[int | None] = mapped_column(Integer)
+    access_hours: Mapped[list | None] = mapped_column(JSONB)
 
 
 class MembershipFreeze(IdMixin, TimestampMixin, GymOwned, Base):

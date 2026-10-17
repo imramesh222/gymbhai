@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 
 import { t } from "@/i18n";
 import {
-  BS_MONTHS,
+  bsMonths,
   daysInBsMonth,
   formatAd,
   formatBs,
@@ -157,7 +157,7 @@ export function DateInput({
             className={small}
           >
             {!bs && <option value="">—</option>}
-            {BS_MONTHS.map((name, i) => (
+            {bsMonths().map((name, i) => (
               <option key={name} value={i + 1}>
                 {name}
               </option>

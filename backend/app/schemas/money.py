@@ -88,6 +88,16 @@ class Receipt(BaseModel):
     date_display: str
 
 
+class ReceiptLink(BaseModel):
+    """The receipt as a PDF anyone with the link can open, for a while (8.4)."""
+
+    url: str
+    filename: str
+    # What goes with it when shared: "Fitness Zone: Payment receipt #42, Rs 1,500".
+    text: str
+    expires_at: dt.datetime
+
+
 class PaymentMethodRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

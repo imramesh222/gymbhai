@@ -1,6 +1,8 @@
 "use client";
 
+import { Download, Share2 } from "lucide-react";
 import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Notice } from "@/components/Notice";
@@ -10,7 +12,51 @@ import { Money } from "@/components/ui/Money";
 import { t } from "@/i18n";
 import { paymentsApi } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/dates";
+import { download, receiptFile, share, type ReceiptLink } from "@/lib/receiptShare";
 import { useLoad } from "@/lib/useLoad";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+
+/** Download and Share: the PDF is fetched as the page opens (§16.3, 8.4). */
+function ShareButtons({ id }: { id: string }) {
+  const toast = useToast();
+  const [ready, setReady] = useState<{ link: ReceiptLink; file: File } | null>(null);
+  useEffect(() => {
+    let gone = false;
+    paymentsApi
+      .receiptLink(id)
+      .then(async (link) => ({ link, file: await receiptFile(link) }))
+      .then((found) => !gone && setReady(found))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [id]);
+  return (
+    <>
+      <Button
+        variant="secondary"
+        disabled={!ready}
+        onClick={() => ready && download(ready.file)}
+      >
+        <Download className="size-4" aria-hidden />
+        {t("receipt.pdf")}
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={!ready}
+        onClick={async () => {
+          if (!ready) return;
+          const how = await share(ready.link, ready.file);
+          if (how === "copied") toast.success(t("receipt.linkCopied"));
+        }}
+      >
+        <Share2 className="size-4" aria-hidden />
+        {t("receipt.share")}
+      </Button>
+    </>
+  );
+}
 
 /**
  * A payment receipt — not a VAT invoice, and it says so (PLAN.md §10).
@@ -20,16 +66,17 @@ export default function ReceiptPage() {
   const { id } = useParams<{ id: string }>();
   const { data: r, error } = useLoad(() => paymentsApi.receipt(id), [id]);
   if (error) return <Notice tone="error">{error}</Notice>;
-  if (!r) return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
+  if (!r) return <PageSkeleton label={t("common.loading")} />;
   const p = r.payment;
   const date = (iso: string | null) => formatDate(iso, r.date_display);
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="mb-4 flex justify-end gap-2 print:hidden">
+      <div className="mb-4 flex flex-wrap justify-end gap-2 print:hidden">
         <Button variant="secondary" onClick={() => window.history.back()}>
           {t("common.back")}
         </Button>
+        <ShareButtons id={id} />
         <Button onClick={() => window.print()}>{t("receipt.print")}</Button>
       </div>
       <article className="rounded-2xl bg-surface p-6 shadow-card ring-1 ring-hairline print:p-0 print:ring-0">

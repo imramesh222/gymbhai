@@ -40,7 +40,7 @@ export function Dialog({
             <button
               type="button"
               onClick={onClose}
-              className="-m-1 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="-m-1 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
               aria-label={t("common.close")}
             >
               ✕

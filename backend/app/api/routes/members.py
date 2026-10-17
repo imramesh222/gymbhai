@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require
+from app.api import idempotency
+from app.api.deps import require, require_owner
 from app.api.presenters import (
     member_detail,
     member_read,
@@ -20,17 +21,19 @@ from app.api.presenters import (
 )
 from app.api.tenancy import StaffContext, get_in_gym
 from app.core import qr
-from app.core.errors import AppError
+from app.core.errors import AppError, not_found
 from app.core.permissions import Permission
 from app.core.phone import normalize_phone
 from app.db.session import get_db
 from app.models.activity import ActivityLog
 from app.models.gym import Gym
+from app.models.lead import Lead
 from app.models.member import Member
 from app.schemas.member_app import AccessIn, CardRead
 from app.schemas.members import (
     ArchiveIn,
     HistoryEntry,
+    MemberCounts,
     MemberCreate,
     MemberCreated,
     MemberDetail,
@@ -41,6 +44,7 @@ from app.schemas.members import (
     SaleResult,
 )
 from app.services import activity, live, member_auth, reminders, storage
+from app.services import leads as leads_service
 from app.services import members as members_service
 from app.services import memberships as ms
 from app.services.history import history_for
@@ -87,8 +91,12 @@ def list_members(
     plan_id: uuid.UUID | None = None,
     has_dues: bool | None = None,
     expiring_within: Annotated[int | None, Query(ge=0, le=90)] = None,
+    not_visiting: bool = False,
     archived: bool = False,
-    sort: Annotated[str, Query(pattern="^(name|code|recent)$")] = "name",
+    sort: Annotated[
+        str, Query(pattern="^(name|code|recent|dues|last_visit)$")
+    ] = "name",
+    direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> MemberList:
@@ -101,18 +109,56 @@ def list_members(
         plan_id=plan_id,
         has_dues=has_dues,
         expiring_within=expiring_within,
+        not_visiting_days=_not_visiting_days(db, ctx) if not_visiting else None,
         archived=archived,
     )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    order = {
-        "name": (Member.name, Member.member_code),
-        "code": (Member.member_code,),
-        "recent": (Member.created_at.desc(),),
+    key = {
+        "name": Member.name,
+        "code": Member.member_code,
+        "recent": Member.created_at,
+        "dues": members_service.dues_expression(),
+        "last_visit": members_service.last_visit_expression(),
     }[sort]
-    members = list(db.scalars(stmt.order_by(*order).limit(limit).offset(offset)))
+    first = key.desc().nulls_last() if direction == "desc" else key.asc().nulls_last()
+    members = list(
+        db.scalars(stmt.order_by(first, Member.member_code).limit(limit).offset(offset))
+    )
     states = members_service.states_for(db, members)
-    return MemberList(
-        items=[member_read(m, states[m.id]) for m in members], total=total
+    visits = members_service.last_visits(db, [m.id for m in members])
+    items = []
+    for m in members:
+        read = member_read(m, states[m.id])
+        read.last_visit_at = visits.get(m.id)
+        items.append(read)
+    return MemberList(items=items, total=total)
+
+
+def _not_visiting_days(db: Session, ctx: StaffContext) -> int:
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    return gym.config.not_visiting_days
+
+
+@router.get("/counts", response_model=MemberCounts)
+def member_counts(
+    db: Session = Depends(get_db), ctx: StaffContext = Depends(VIEW)
+) -> MemberCounts:
+    """How many each filter on the Members list shows: a few counts, no rows."""
+
+    def count(**filters) -> int:
+        stmt = members_service.search(ctx, **filters)
+        return db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+    return MemberCounts(
+        all=count(),
+        active=count(status="active"),
+        expiring=count(expiring_within=7),
+        expired=count(status="expired"),
+        dues=count(has_dues=True),
+        frozen=count(status="frozen"),
+        not_visiting=count(not_visiting_days=_not_visiting_days(db, ctx)),
+        archived=count(archived=True),
     )
 
 
@@ -147,11 +193,27 @@ def create_member(
             "You don't have permission to do this.",
             permission=Permission.MEMBERSHIPS_SELL.value,
         )
+    idem = idempotency.begin(db, ctx, request, payload)
     config = _config(db, ctx)
+    lead = None
+    if payload.lead_id is not None:
+        lead = db.scalar(
+            leads_service.visible(ctx)
+            .where(Lead.id == payload.lead_id)
+            .with_for_update()
+        )
+        if lead is None:
+            raise not_found("No such enquiry.")
     matches = members_service.same_phone(db, ctx.gym_id, payload.phone)
     member = members_service.create(
-        db, ctx, payload.model_dump(exclude={"membership"}), config, request=request
+        db,
+        ctx,
+        payload.model_dump(exclude={"membership", "lead_id"}),
+        config,
+        request=request,
     )
+    if lead is not None:
+        leads_service.convert(db, ctx, lead, member, request)
     membership = payment = None
     gym = db.get(Gym, ctx.gym_id)
     assert gym is not None
@@ -164,8 +226,7 @@ def create_member(
         )
     else:
         reminders.welcome(db, gym, member, ctx.staff.id)
-    db.commit()
-    return MemberCreated(
+    answer = MemberCreated(
         member=member_detail(db, member),
         membership_id=membership.id if membership else None,
         payment_id=payment.id if payment else None,
@@ -173,6 +234,9 @@ def create_member(
             PhoneMatch(id=m.id, name=m.name, member_code=m.member_code) for m in matches
         ],
     )
+    idem.finish(answer)
+    db.commit()
+    return answer
 
 
 @router.get("/{member_id}", response_model=MemberDetail)
@@ -283,6 +347,7 @@ def sell_membership(
     ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_SELL)),
 ) -> SaleResult:
     """A new membership or a renewal, with payment taken now if any (§5.3)."""
+    idem = idempotency.begin(db, ctx, request, payload)
     member = load_member(db, ctx, member_id)
     if member.is_archived:
         raise AppError(409, "member_archived", "Restore this member first.")
@@ -294,13 +359,15 @@ def sell_membership(
     reminders.after_sale(
         db, gym, member, membership, new_member=False, staff_id=ctx.staff.id
     )
-    db.commit()
-    return SaleResult(
+    answer = SaleResult(
         membership=membership_read_one(db, membership),
         payment=payment_read(payment, {ctx.staff.id: ctx.staff.name})
         if payment
         else None,
     )
+    idem.finish(answer)
+    db.commit()
+    return answer
 
 
 @router.get("/{member_id}/history", response_model=list[HistoryEntry])
@@ -367,6 +434,27 @@ def sign_out_all(
     return member_detail(db, member)
 
 
+@router.post("/{member_id}/erase", response_model=MemberDetail)
+def erase_member(
+    member_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require_owner),
+) -> MemberDetail:
+    """A member's personal details, gone for good at their request (§16.1).
+
+    The owner only, whatever is ticked: it can't be undone. Their memberships,
+    payments and check-ins stay, for the gym's accounts.
+    """
+    member = load_member(db, ctx, member_id)
+    files = members_service.erase(db, ctx, member, request=request)
+    db.commit()
+    # Only once the erasure is saved: a failed one leaves the photo in place.
+    for key in files:
+        storage.delete(key)
+    return member_detail(db, member)
+
+
 @router.post("/{member_id}/resend-welcome", response_model=MemberDetail)
 def resend_welcome(
     member_id: uuid.UUID,
@@ -374,6 +462,7 @@ def resend_welcome(
     ctx: StaffContext = Depends(ACCESS),
 ) -> MemberDetail:
     member = load_member(db, ctx, member_id)
+    members_service.ensure_not_erased(member)
     gym = db.get(Gym, ctx.gym_id)
     assert gym is not None
     reminders.welcome(db, gym, member, ctx.staff.id)

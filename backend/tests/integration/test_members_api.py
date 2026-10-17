@@ -278,3 +278,77 @@ def test_uploads_must_be_images(
         files={"file": ("x.jpg", b"<script>alert(1)</script>", "image/jpeg")},
     )
     assert response.status_code == 415
+
+
+# --- the Members table (PLAN.md §16.2, 7.6) ------------------------------------------
+
+
+def test_sorting_by_dues_and_last_visit(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    from app.services import checkins
+
+    paid = make_member(db, gym_a, name="Paid Up", phone="9800000101")
+    sell(db, gym_a, paid, paid=1500_00)
+    owes = make_member(db, gym_a, name="Owes", phone="9800000102")
+    sell(db, gym_a, owes, paid=0)
+    never = make_member(db, gym_a, name="Never Came", phone="9800000103")
+    checkins.check_in(
+        db, gym=gym_a.gym, member=paid, branch_id=gym_a.branch.id, method="manual"
+    )
+    db.commit()
+    sign_in(db, client, gym_a.owner)
+
+    by_dues = client.get("/api/v1/members?sort=dues&direction=desc").json()["items"]
+    assert by_dues[0]["name"] == "Owes"
+    by_visit = client.get("/api/v1/members?sort=last_visit&direction=desc").json()
+    names = [m["name"] for m in by_visit["items"]]
+    assert names[0] == "Paid Up" and names[-1] in ("Never Came", "Owes")
+    visited = {m["name"]: m["last_visit_at"] for m in by_visit["items"]}
+    assert visited["Paid Up"] is not None and visited["Never Came"] is None
+    assert never.id  # listed even with no visits
+
+
+def test_counts_for_each_filter(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    active = make_member(db, gym_a, name="Active", phone="9800000111")
+    sell(db, gym_a, active, paid=0)
+    make_member(db, gym_a, name="No Plan", phone="9800000112")
+    sign_in(db, client, gym_a.owner)
+    counts = client.get("/api/v1/members/counts").json()
+    assert counts["all"] == 2
+    assert counts["active"] == 1
+    assert counts["dues"] == 1
+    assert counts["archived"] == 0
+
+
+def test_one_sms_to_the_members_picked(
+    client: TestClient, db: Session, gym_a: GymFixture, gym_b: GymFixture
+) -> None:
+    from sqlalchemy import func, select
+
+    from app.models.messaging import SmsMessage
+
+    one = make_member(db, gym_a, name="One", phone="9800000121")
+    two = make_member(db, gym_a, name="Two", phone="9800000122")
+    other_gym = make_member(db, gym_b, name="Elsewhere", phone="9800000123")
+    sign_in(db, client, gym_a.owner)
+
+    sent = client.post(
+        "/api/v1/members/sms",
+        json={"member_ids": [str(one.id), str(two.id)], "body": "Gym closed Saturday"},
+    )
+    assert sent.json() == {"queued": 2}
+    count = db.scalar(
+        select(func.count())
+        .select_from(SmsMessage)
+        .where(SmsMessage.gym_id == gym_a.gym.id)
+    )
+    assert count >= 2
+
+    refused = client.post(
+        "/api/v1/members/sms",
+        json={"member_ids": [str(one.id), str(other_gym.id)], "body": "Hi"},
+    )
+    assert refused.status_code == 404

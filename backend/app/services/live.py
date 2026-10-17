@@ -4,6 +4,8 @@
 * A member sends "I've paid"         -> the Payment requests badge and list
 * Staff approve or reject it         -> the member's app, other approvers
 * A sale, payment, freeze, edit, ... -> the member's page and their app
+* A staff account or the gym's sign-in -> every staff screen re-reads who is
+  rules change                           signed in; the Staff page reloads
 
 How: the change calls `publish()` in its own transaction. That is a Postgres
 NOTIFY, delivered only if the transaction commits, so nobody hears about a
@@ -43,7 +45,15 @@ CHANNEL = "gymbhai_live"
 
 CHECK_IN = "check_in"
 PAYMENT_REQUEST = "payment_request"
+# A member asked for a freeze, or one was answered (§16.3, 8.6).
+FREEZE_REQUEST = "freeze_request"
+# An enquiry added or moved along (§16.4, 9.1).
+LEAD = "lead"
 MEMBER = "member"
+# A staff account (permissions, disabled, two-step sign-in, devices) or the
+# gym's rules for signing in changed. Carries nothing but the gym: each screen
+# re-reads /auth/me, which anyone signed in may do.
+STAFF = "staff"
 # Sent by us, not by a change: events may have been missed (the listener lost
 # its connection), so reload everything on screen.
 RESYNC = "resync"
@@ -83,6 +93,12 @@ def member_changed(
     publish(db, gym_id=gym_id, kind=MEMBER, member_id=member_id, branch_id=branch_id)
 
 
+def staff_changed(db: Session, gym_id: uuid.UUID | None) -> None:
+    """Platform admins belong to no gym and have no gym screens to tell."""
+    if gym_id is not None:
+        publish(db, gym_id=gym_id, kind=STAFF)
+
+
 # --- who sees what ------------------------------------------------------------------
 
 
@@ -94,12 +110,20 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
     branches = None if ctx.branch_ids is None else {str(b) for b in ctx.branch_ids}
     sees_members = ctx.can(Permission.MEMBERS_VIEW)
     approves = ctx.can(Permission.PAYMENTS_APPROVE_APP)
+    freezes = ctx.can(Permission.MEMBERSHIPS_FREEZE)
+    leads = ctx.can(Permission.LEADS_MANAGE)
 
     def accepts(event: Event) -> bool:
         if event.get("gym") != gym:
             return False
+        if event["type"] == STAFF:
+            return True
         if event["type"] == PAYMENT_REQUEST:
             return approves
+        if event["type"] == FREEZE_REQUEST:
+            return freezes
+        if event["type"] == LEAD:
+            return leads and (branches is None or event.get("branch") in branches)
         if event["type"] in (CHECK_IN, MEMBER):
             return sees_members and (
                 branches is None or event.get("branch") in branches

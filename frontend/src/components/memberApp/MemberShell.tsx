@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
+import { useFollowLanguage } from "@/lib/locale";
 import { t, type MessageKey } from "@/i18n";
 import { LiveProvider, useLive } from "@/lib/live";
 import { openMemberLive } from "@/lib/memberApi";
@@ -52,6 +53,7 @@ function TabIcon({ name }: { name: string }) {
 function Frame({ children }: { children: React.ReactNode }) {
   const { slug, me, loading, offline } = useMember();
   const pathname = usePathname();
+  useFollowLanguage(me);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -66,6 +68,8 @@ function Frame({ children }: { children: React.ReactNode }) {
       <p className="p-10 text-center text-sm text-slate-500">{t("common.loading")}</p>
     );
   }
+  // Asking to join (§16.4, 9.5) is for people who aren't members yet.
+  if (!me && pathname === `/${slug}/join`) return <>{children}</>;
   if (!me) return <SignIn />;
 
   const color = me.gym.brand_color ?? "#1d5fd1";
@@ -119,7 +123,7 @@ function Frame({ children }: { children: React.ReactNode }) {
               href={href}
               aria-current={active ? "page" : undefined}
               className={`flex flex-col items-center gap-1 pt-2.5 pb-2 text-[0.6875rem] font-medium transition ${
-                active ? "" : "text-slate-400"
+                active ? "" : "text-slate-500"
               }`}
               style={active ? { color } : undefined}
             >

@@ -192,3 +192,51 @@ def test_two_renewals_at_once_queue_up(sessions, gym: GymFixture) -> None:
     assert second.start_date > first.end_date
     # Only the first membership carries the admission fee.
     assert (first.admission_fee, second.admission_fee) == (500_00, 0)
+
+
+def test_the_same_payment_sent_twice_at_once_is_saved_once(
+    sessions, gym: GymFixture
+) -> None:
+    """Two taps, both in flight: the second waits on the key, then replays."""
+    from types import SimpleNamespace
+
+    from starlette.requests import Request
+
+    from app.api import idempotency
+    from app.schemas.money import PaymentCollect
+
+    with sessions() as db:
+        membership, _ = sell(db, gym, make_member(db, gym))
+        membership_id = membership.id
+    payload = PaymentCollect(membership_id=membership_id, amount=500_00, method="cash")
+
+    def tap(db: Session) -> object:
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/v1/payments",
+                "headers": [(b"idempotency-key", b"double-tap-0001")],
+                "query_string": b"",
+                "server": ("test", 80),
+                "scheme": "http",
+                "route": SimpleNamespace(status_code=201),
+            }
+        )
+        ctx = context_for(db, gym.owner)
+        try:
+            idem = idempotency.begin(db, ctx, request, payload)
+        except idempotency.Replay as replay:
+            return replay
+        payment = ms.record_payment(
+            db, ctx, db.get(Membership, membership_id), ms.PaymentIn(500_00, "cash")
+        )
+        idem.finish(payload)  # any answer will do here
+        return payment
+
+    first, second = race(sessions, tap, tap)
+
+    assert isinstance(first, Payment)
+    assert isinstance(second, idempotency.Replay)
+    with sessions() as db:
+        assert db.scalar(select(func.count()).select_from(Payment)) == 1

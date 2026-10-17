@@ -7,13 +7,14 @@ import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Checkbox, MoneyInput, Select, TextArea } from "@/components/ui/inputs";
+import { Checkbox, MoneyInput, Select } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
+import { AccessHoursEditor } from "@/components/settings/AccessHoursEditor";
+import { describeHours, type AccessWindow } from "@/lib/accessHours";
 import { t, type MessageKey } from "@/i18n";
 import {
   branchesApi,
   errorMessage,
-  membershipsApi,
   paymentMethodsApi,
   plansApi,
   type AccountKind,
@@ -49,7 +50,7 @@ export function BranchesSection() {
       <ul className="divide-y divide-hairline">
         {branches?.map((b) => (
           <li key={b.id} className="flex items-center justify-between py-2 text-sm">
-            <span className={b.is_active ? "" : "text-slate-400"}>{b.name}</span>
+            <span className={b.is_active ? "" : "text-slate-500"}>{b.name}</span>
             <Button
               variant="ghost"
               onClick={() =>
@@ -111,9 +112,20 @@ export function PlansSection() {
               onClick={() => setEditing(p)}
               className="flex w-full items-center justify-between py-2 text-left text-sm hover:bg-slate-50"
             >
-              <span className={p.is_active ? "" : "text-slate-400"}>
+              <span className={p.is_active ? "" : "text-slate-500"}>
                 <span className="font-medium">{p.name}</span>
                 <span className="text-slate-500"> · {duration(p)}</span>
+                {p.visit_limit && (
+                  <span className="text-slate-500">
+                    {" "}
+                    · {t("plans.visits", { count: p.visit_limit })}
+                  </span>
+                )}
+                {p.access_hours && (
+                  <span className="block text-xs text-slate-500">
+                    {describeHours(p.access_hours)}
+                  </span>
+                )}
                 {!p.is_active && <span> · {t("plans.hidden")}</span>}
               </span>
               <span className="text-right">
@@ -169,6 +181,8 @@ function PlanDialog({
     all_branches: plan?.all_branches ?? true,
     branch_ids: plan?.branch_ids ?? [],
     is_active: plan?.is_active ?? true,
+    visit_limit: plan?.visit_limit ? String(plan.visit_limit) : "",
+    access_hours: (plan?.access_hours ?? []) as AccessWindow[],
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -183,6 +197,8 @@ function PlanDialog({
       admission_fee: form.admission_fee ?? 0,
       all_branches: form.all_branches,
       branch_ids: form.all_branches ? [] : form.branch_ids,
+      visit_limit: form.visit_limit ? Number(form.visit_limit) : null,
+      access_hours: form.access_hours.length ? form.access_hours : null,
       ...(plan ? { is_active: form.is_active } : {}),
     };
     try {
@@ -235,6 +251,39 @@ function PlanDialog({
               setForm({ ...form, admission_fee: admission_fee ?? 0 })
             }
           />
+        </div>
+        <Field
+          label={t("plans.visitLimit")}
+          value={form.visit_limit}
+          onChange={(visit_limit) => setForm({ ...form, visit_limit })}
+          type="number"
+          inputMode="numeric"
+          help={t("plans.visitLimitHelp")}
+          optional
+          optionalLabel={t("common.optional")}
+        />
+        <div>
+          <Checkbox
+            label={t("plans.offPeak")}
+            hint={t("plans.offPeakHelp")}
+            checked={form.access_hours.length > 0}
+            onChange={(on) =>
+              setForm({
+                ...form,
+                access_hours: on
+                  ? [{ days: [0, 1, 2, 3, 4, 5, 6], from: "06:00", to: "10:00" }]
+                  : [],
+              })
+            }
+          />
+          {form.access_hours.length > 0 && (
+            <div className="mt-2">
+              <AccessHoursEditor
+                value={form.access_hours}
+                onChange={(access_hours) => setForm({ ...form, access_hours })}
+              />
+            </div>
+          )}
         </div>
         {branches.length > 1 && (
           <div>
@@ -444,72 +493,5 @@ function AddMethodDialog({
         </Button>
       </form>
     </Dialog>
-  );
-}
-
-export function ExtendEveryoneSection() {
-  const { data: branches } = useLoad(() => branchesApi.list(), []);
-  const [days, setDays] = useState("7");
-  const [reason, setReason] = useState("");
-  const [branchId, setBranchId] = useState("all");
-  const [message, setMessage] = useState<{
-    tone: "success" | "error";
-    text: string;
-  } | null>(null);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!window.confirm(t("extendAll.confirm", { days }))) return;
-    try {
-      const result = await membershipsApi.extendAll(
-        Number(days),
-        reason,
-        branchId === "all" ? null : branchId,
-      );
-      setMessage({
-        tone: "success",
-        text: t("extendAll.done", { count: result.extended }),
-      });
-      setReason("");
-    } catch (err) {
-      setMessage({ tone: "error", text: errorMessage(err) });
-    }
-  }
-
-  return (
-    <Card title={t("extendAll.title")}>
-      <p className="mb-3 text-sm text-slate-600">{t("extendAll.help")}</p>
-      <form onSubmit={(e) => void submit(e)} className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field
-            label={t("membership.days")}
-            value={days}
-            onChange={setDays}
-            type="number"
-            inputMode="numeric"
-            required
-          />
-          {branches && branches.length > 1 && (
-            <Select
-              label={t("sale.branch")}
-              value={branchId}
-              onChange={setBranchId}
-              options={[
-                { value: "all", label: t("extendAll.allBranches") },
-                ...branches.map((b) => ({ value: b.id, label: b.name })),
-              ]}
-            />
-          )}
-        </div>
-        <TextArea
-          label={t("membership.reason")}
-          value={reason}
-          onChange={setReason}
-          required
-        />
-        {message && <Notice tone={message.tone}>{message.text}</Notice>}
-        <Button type="submit">{t("extendAll.submit")}</Button>
-      </form>
-    </Card>
   );
 }

@@ -8,9 +8,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core import sms_defaults
+
 PlanMonths = Literal["ad", "bs"]
 DateDisplay = Literal["ad", "bs", "both"]
 DuesRule = Literal["allow", "warn", "refuse"]
+Language = Literal["en", "ne"]
 
 
 class GymSettings(BaseModel):
@@ -26,20 +29,33 @@ class GymSettings(BaseModel):
     grace_days: int = Field(default=0, ge=0, le=30)
     # A second scan within this many minutes is "already checked in" (§4.3).
     rescan_minutes: int = Field(default=180, ge=0, le=24 * 60)
+    # An active member with no visit for this many days is "not visiting" on
+    # Follow up (§16.3, 8.1).
+    not_visiting_days: int = Field(default=14, ge=3, le=90)
     # Member codes are "<prefix>-0042". Changing it only affects new members.
     member_code_prefix: str = Field(default="M", pattern=r"^[A-Z0-9]{1,5}$")
     # SMS wording the gym can edit (§10). Placeholders: app/core/sms_text.py.
-    welcome_sms: str = Field(
-        default="Welcome to {gym}, {name}! Active until {end_date}. "
-        "Your app and check-in QR: {link}",
-        max_length=640,
-    )
-    membership_sms: str = Field(
-        default="{gym}: your {plan} membership is active until {end_date}. App: {link}",
-        max_length=640,
-    )
+    welcome_sms: str = Field(default=sms_defaults.WELCOME["en"], max_length=640)
+    membership_sms: str = Field(default=sms_defaults.MEMBERSHIP["en"], max_length=640)
     # "Today: 42 visits, Rs 18,500 collected, 6 expiring this week" to the
     # owner at 8 in the evening (§9). Uses SMS credits, so off by default.
     daily_summary_sms: bool = False
-    # Language of the reminder SMS wording (§10). The app itself is English.
-    reminder_language: Literal["en", "ne"] = "en"
+    # Members whose phone takes push get push alone, free (§16.3, 8.3). On:
+    # an SMS as well, for gyms whose members don't look at notifications.
+    also_sms: bool = False
+    # "Ask to join" behind the gym QR: makes an enquiry (§16.4, 9.5).
+    join_form: bool = False
+    # "Quiet / Normal / Busy" on the member app's Home (§16.3, 8.5).
+    show_busyness: bool = True
+    # The gym's language (§16.6): the default for its staff and members, and
+    # the language its SMS wording starts in. Each account can choose its own.
+    language: Language = "en"
+    # Digits on screen when showing Nepali: ०१२ or 012.
+    digits: Literal["nepali", "western"] = "western"
+    # Every staff account must use two-step sign-in (§16.1). Only the owner
+    # changes it (PATCH /gym/security).
+    require_two_step: bool = False
+    # The setup checklist on Today (§16.2, 7.4): the one step data can't show,
+    # and whether the gym put the checklist away.
+    poster_printed: bool = False
+    setup_dismissed: bool = False

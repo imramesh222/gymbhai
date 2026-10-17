@@ -16,6 +16,7 @@ import { useGymCalendar } from "@/lib/gym";
 import type { PaymentRequest } from "@/lib/memberApi";
 import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
+import { useIdempotencyKey } from "@/lib/idempotency";
 
 /**
  * Members' app payments waiting for approval (§5.4). Check the gym's eSewa or
@@ -137,6 +138,7 @@ function Decide({
   const [price, setPrice] = useState<number | null>(null);
   const [part, setPart] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const approving = useIdempotencyKey();
   const mismatch =
     request.expected_total !== null && request.expected_total !== request.amount;
 
@@ -145,11 +147,15 @@ function Decide({
     setError(null);
     try {
       if (action === "reject") await paymentRequestsApi.reject(request.id, reason);
-      else
-        await paymentRequestsApi.approve(request.id, {
-          price,
-          accept_part_payment: part,
-        });
+      else {
+        const body = { price, accept_part_payment: part };
+        await paymentRequestsApi.approve(
+          request.id,
+          body,
+          approving.keyFor({ request: request.id, ...body }),
+        );
+        approving.succeeded();
+      }
       onDone();
     } catch (err) {
       setError(

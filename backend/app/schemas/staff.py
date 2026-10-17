@@ -3,7 +3,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.auth import MIN_PASSWORD_LENGTH, OptionalEmail, OptionalPhone, Strict
+from app.schemas.auth import NewPassword, OptionalEmail, OptionalPhone, Strict
 
 
 class StaffMember(BaseModel):
@@ -20,13 +20,14 @@ class StaffMember(BaseModel):
     branch_ids: list[uuid.UUID] = []
     last_login_at: dt.datetime | None
     created_at: dt.datetime
+    two_step_enabled: bool
 
 
 class StaffCreate(Strict):
     name: str = Field(min_length=2, max_length=120)
     email: OptionalEmail = None
     phone: OptionalPhone = None
-    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
+    password: NewPassword
     permissions: list[str] = []
     branch_ids: list[uuid.UUID] = []
 
@@ -47,7 +48,7 @@ class StaffUpdate(Strict):
 
 
 class PasswordSet(Strict):
-    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
+    new_password: NewPassword
 
 
 class PasswordChange(Strict):
@@ -56,7 +57,7 @@ class PasswordChange(Strict):
     real person out."""
 
     current_password: str = Field(min_length=1, max_length=200)
-    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
+    new_password: NewPassword
 
 
 class PermissionInfo(BaseModel):

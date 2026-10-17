@@ -53,10 +53,19 @@ def membership_read(
     membership: Membership,
     freezes: Sequence[MembershipFreeze],
     payments: Sequence[Payment],
+    visits_used: int | None = None,
 ) -> MembershipRead:
     read = MembershipRead.model_validate(membership)
     today = today_in_nepal()
     read.status = ms.status_of(membership, freezes, today)
+    if membership.visit_limit is not None:
+        read.visits_used = visits_used or 0
+        # Every visit used: over, whatever the dates say (§16.4, 9.3).
+        if read.visits_used >= membership.visit_limit and read.status in (
+            ms.ACTIVE,
+            ms.FROZEN,
+        ):
+            read.status = ms.EXPIRED
     read.days_left = (
         ms.days_left(membership, today) if read.status in (ms.ACTIVE, ms.FROZEN) else 0
     )
@@ -72,6 +81,7 @@ def membership_read_one(db: Session, membership: Membership) -> MembershipRead:
         membership,
         ms.freezes_for(db, [membership.id]),
         ms.payments_for(db, [membership.id]),
+        ms.visits_used(db, [membership]).get(membership.id),
     )
 
 
@@ -88,6 +98,9 @@ def member_read(member: Member, state: MemberState) -> MemberRead:
             plan_name=state.current.plan_name,
             start_date=state.current.start_date,
             end_date=state.current.end_date,
+            visit_limit=state.visit_limit,
+            visits_left=state.visits_left,
+            access_hours=state.current.access_hours,
         )
     return read
 
@@ -102,7 +115,10 @@ def member_detail(db: Session, member: Member) -> MemberDetail:
     for p in ms.payments_for(db, ids):
         membership_payments[p.membership_id].append(p)  # type: ignore[index]
     # From the rows already loaded, not a second round of the same queries.
-    state = members_service.state_of(memberships, freezes, membership_payments)
+    visits = ms.visits_used(db, memberships)
+    state = members_service.state_of(
+        memberships, freezes, membership_payments, visits=visits
+    )
 
     all_payments = list(
         db.scalars(
@@ -112,10 +128,14 @@ def member_detail(db: Session, member: Member) -> MemberDetail:
         )
     )
     base = member_read(member, state)
+    referrer = db.get(Member, member.referred_by_id) if member.referred_by_id else None
     return MemberDetail(
         **base.model_dump(),
+        referred_by_name=referrer.name if referrer else None,
         memberships=[
-            membership_read(m, freezes[m.id], membership_payments[m.id])
+            membership_read(
+                m, freezes[m.id], membership_payments[m.id], visits.get(m.id)
+            )
             for m in memberships
         ],
         payments=payments_read(db, all_payments),

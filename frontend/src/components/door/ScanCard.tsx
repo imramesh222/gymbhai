@@ -15,6 +15,7 @@ export function tone(result: ScanResult): "green" | "orange" | "red" {
   if (!result.let_in) return "red";
   if (result.result === "warned" || result.result === "override") return "orange";
   if (result.days_left <= 3 || result.dues > 0) return "orange";
+  if (result.visits_left !== null && result.visits_left <= 1) return "orange";
   return "green";
 }
 
@@ -37,6 +38,8 @@ export function ScanCard({
   if (result.result === "unknown") headline = t("door.unknown");
   else if (result.result === "duplicate")
     headline = t("door.duplicate", { name: first });
+  else if (result.let_in && result.visits_left !== null)
+    headline = t("door.welcomeVisits", { name: first, count: result.visits_left });
   else if (result.let_in)
     headline = t("door.welcome", { name: first, count: result.days_left });
   else

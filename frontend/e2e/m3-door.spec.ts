@@ -1,5 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
 
+import { expect, test } from "./fixtures";
 import { OTP, priceOneMonthPlan, randomDigits, signUpGym } from "./helpers";
 
 async function scanAtKiosk(kiosk: Page, code: string) {
@@ -40,6 +41,11 @@ test("the flow that must never break", async ({ browser }) => {
 
   // The member signs in on their own phone.
   const phoneCtx = await browser.newContext();
+  // Headless Chromium always says notifications are "denied"; a phone that
+  // was never asked says "default".
+  await phoneCtx.addInitScript(() =>
+    Object.defineProperty(Notification, "permission", { get: () => "default" }),
+  );
   const app = await phoneCtx.newPage();
   await app.goto(`/${gym.slug}`);
   await app.getByLabel("Mobile number or email").fill(phone);
@@ -48,6 +54,11 @@ test("the flow that must never break", async ({ browser }) => {
   await app.getByRole("button", { name: "Sign in" }).click();
   await expect(app.getByText("Show this at the door")).toBeVisible();
   await expect(app.getByText("days left", { exact: true })).toBeVisible();
+  // Offered once, put away with "Not now"; it stays in Profile (§16.3, 8.3).
+  const prompt = app.getByRole("region", { name: "Get reminders on this phone" });
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole("button", { name: "Not now" }).click();
+  await expect(prompt).toHaveCount(0);
   const qr = app.getByRole("img", { name: "Your check-in QR code" });
   const code = await qr.getAttribute("data-qr-value");
   expect(code).toMatch(/^gb1\./);
@@ -64,6 +75,7 @@ test("the flow that must never break", async ({ browser }) => {
   await staff.getByRole("button", { name: "Sign in" }).click();
   await staff.waitForURL("**/staff");
   await staff.goto(memberUrl);
+  await staff.getByRole("tab", { name: /Memberships/ }).click();
   await staff.getByRole("link", { name: /1 month/ }).click();
   // The member page has an Edit button too: wait for the membership's.
   await staff.waitForURL("**/staff/memberships/**");
@@ -94,7 +106,7 @@ test("renew from the app, approve at the desk", async ({ browser }) => {
   const desk = await (await browser.newContext()).newPage();
   const gym = await signUpGym(desk, "AD");
   await priceOneMonthPlan(desk, "1500");
-  await desk.goto("/staff/settings");
+  await desk.goto("/staff/settings/payment-accounts");
   await desk
     .locator("section", { hasText: "Your payment accounts" })
     .getByRole("button", { name: "Add", exact: true })
@@ -121,8 +133,17 @@ test("renew from the app, approve at the desk", async ({ browser }) => {
   await app.getByRole("button", { name: "Send me a code" }).click();
   await app.getByLabel("Code").fill(OTP);
   await app.getByRole("button", { name: "Sign in" }).click();
+  // Their own details: an emergency contact (§16.3, 8.5).
+  await app.getByRole("link", { name: "Me", exact: true }).click();
+  await app.getByLabel("Emergency contact").fill("Gita Thapa 9811111111");
+  await app.getByRole("button", { name: "Save" }).click();
+  await expect(app.getByText("Saved.")).toBeVisible();
+
   await app.getByRole("link", { name: "Renew" }).first().click();
+  const steps = app.getByRole("list", { name: "Steps" });
+  await expect(steps.locator('[aria-current="step"]')).toHaveText(/Plan/);
   await app.getByText("1 month").click();
+  await expect(steps.locator('[aria-current="step"]')).toHaveText(/Pay/);
   await app.getByRole("button", { name: "eSewa" }).click();
   await app.getByLabel("Transaction ID").fill(`ES-${randomDigits(6)}`);
   await app.getByRole("button", { name: "I've paid" }).click();
@@ -136,4 +157,19 @@ test("renew from the app, approve at the desk", async ({ browser }) => {
 
   await app.goto(`/${gym.slug}`);
   await expect(app.getByText("days left", { exact: true })).toBeVisible();
+
+  // Going away: ask to freeze, the desk approves (§16.3, 8.6).
+  await app.getByRole("link", { name: /Ask to freeze/ }).click();
+  await app.getByLabel(/^Why/).fill("Home for Dashain");
+  await app.getByRole("button", { name: "Ask the gym" }).click();
+  await expect(app.getByText("Waiting for the gym to answer")).toBeVisible();
+
+  await desk.goto("/staff/freeze-requests");
+  await expect(desk.getByText("“Home for Dashain”")).toBeVisible();
+  await desk.getByRole("button", { name: "Approve" }).click();
+  await desk.getByRole("dialog").getByRole("button", { name: "Approve" }).click();
+  await expect(desk.getByText(/membership is frozen/)).toBeVisible();
+
+  // The member's screen follows by itself.
+  await expect(app.getByText(/^Frozen from/)).toBeVisible();
 });

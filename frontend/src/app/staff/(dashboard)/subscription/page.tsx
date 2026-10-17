@@ -8,12 +8,15 @@ import { Notice } from "@/components/Notice";
 import { Card, PageHeader, Row } from "@/components/ui/Card";
 import { MoneyInput, Select } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
+import { ReferGyms } from "@/components/staff/ReferGyms";
 import { t, type MessageKey } from "@/i18n";
 import { errorMessage, subscriptionApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { useLoad } from "@/lib/useLoad";
+import { useIdempotencyKey } from "@/lib/idempotency";
+import { PageSkeleton } from "@/components/ui/Skeleton";
 
 /** Our plan with the gym: days left, SMS credits, and paying us (§5.7). */
 export default function SubscriptionPage() {
@@ -30,7 +33,8 @@ export default function SubscriptionPage() {
     tone: "success" | "error";
     text: string;
   } | null>(null);
-  if (!data) return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
+  const sending = useIdempotencyKey();
+  if (!data) return <PageSkeleton label={t("common.loading")} />;
 
   const plan = data.plans.find((p) => p.id === (planId || data.plans[0]?.id));
   const suggested =
@@ -42,14 +46,16 @@ export default function SubscriptionPage() {
     event.preventDefault();
     setMessage(null);
     try {
-      await subscriptionApi.pay({
+      const body = {
         kind,
         platform_plan_id: kind === "subscription" ? plan?.id : null,
         months: kind === "subscription" ? Number(months) : null,
         sms_credits: kind === "sms" ? Number(credits) : null,
         amount: amount ?? suggested ?? 0,
         transaction_ref: ref,
-      });
+      };
+      await subscriptionApi.pay(body, sending.keyFor(body));
+      sending.succeeded();
       setRef("");
       setMessage({ tone: "success", text: t("subscription.sent") });
       reload();
@@ -187,6 +193,7 @@ export default function SubscriptionPage() {
           </ul>
         </Card>
       )}
+      <ReferGyms />
     </div>
   );
 }

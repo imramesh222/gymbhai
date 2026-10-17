@@ -27,11 +27,18 @@ from app.models.staff import StaffUser
 from app.schemas.reports import (
     ImportCommit,
     ImportPreview,
+    LeadDue,
+    MemberBrief,
+    MemberOwing,
     MonthlyRead,
     Person,
+    SetupChecklist,
     TodayRead,
+    TrendMonth,
+    TrendRead,
 )
 from app.services import activity, excel, live, reports
+from app.services import leads as leads_service
 from app.services import members as members_service
 from app.services import memberships as ms
 
@@ -47,7 +54,14 @@ def today(
     ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
 ) -> TodayRead:
     """Who's in, who's due, who was turned away, what came in (§7 Today)."""
-    data = reports.today(db, ctx, with_money=ctx.can(Permission.REPORTS_MONEY))
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    data = reports.today(
+        db,
+        ctx,
+        with_money=ctx.can(Permission.REPORTS_MONEY),
+        not_visiting_days=gym.config.not_visiting_days,
+    )
     pending = None
     if ctx.can(Permission.PAYMENTS_APPROVE_APP):
         pending = db.scalar(
@@ -56,13 +70,41 @@ def today(
                 PaymentRequest.status == REQUEST_PENDING,
             )
         )
+    setup = None
+    if ctx.can(Permission.SETUP_GYM):
+        steps = reports.setup_checklist(db, gym)
+        setup = SetupChecklist(**steps) if steps else None
+    leads_due, leads_due_list = None, []
+    if ctx.can(Permission.LEADS_MANAGE):
+        leads_due, rows = leads_service.due(db, ctx, data.date)
+        leads_due_list = [
+            LeadDue(
+                lead_id=r.id,
+                name=r.name,
+                phone=r.phone,
+                status=r.status,
+                follow_up_on=r.follow_up_on,  # type: ignore[arg-type]
+            )
+            for r in rows
+        ]
     return TodayRead(
         date=data.date,
+        leads_due=leads_due,
+        leads_due_list=leads_due_list,
         check_ins=data.check_ins,
+        check_ins_by_hour=data.check_ins_by_hour,
+        check_ins_yesterday=data.check_ins_yesterday,
+        ending_today=[
+            MemberBrief(member_id=i, name=n, phone=p) for i, n, p in data.ending_today
+        ],
+        top_owing=[
+            MemberOwing(member_id=i, name=n, dues=d) for i, n, d in data.top_owing
+        ],
         unique_visitors=data.unique_visitors,
         inside_now=[Person(member_id=i, name=n, at=at) for i, n, at in data.inside_now],
         due_today=data.due_today,
         expiring_this_week=data.expiring_this_week,
+        not_visiting=data.not_visiting,
         turned_away=[
             Person(member_id=i, name=n, at=at, result=r)
             for i, n, r, at in data.expired_but_visiting
@@ -72,7 +114,9 @@ def today(
         active_members=data.active_members,
         collected=data.collected,
         collected_by_method=data.collected_by_method,
+        collected_yesterday=data.collected_yesterday,
         pending_requests=pending,
+        setup=setup,
     )
 
 
@@ -88,6 +132,41 @@ def monthly(
     calendar = "ad" if gym.config.date_display == "ad" else "bs"
     data = reports.monthly(db, ctx, month or reports.current_month(calendar))
     return MonthlyRead(**{**data.__dict__, "renewal_rate": data.renewal_rate})
+
+
+@router.get("/reports/trend", response_model=TrendRead)
+def trend(
+    end: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
+    months: Annotated[int, Query(ge=2, le=24)] = 12,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.REPORTS_MONEY)),
+) -> TrendRead:
+    """The last `months` months up to `end`, for the charts on Reports (7.9).
+
+    The same figures as the monthly report, a month at a time: a fixed number
+    of queries per month, however large the gym.
+    """
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    calendar = "ad" if gym.config.date_display == "ad" else "bs"
+    joined = gym.created_at.astimezone(NEPAL).date()
+    rows = []
+    for month in reports.months_back(end or reports.current_month(calendar), months):
+        data = reports.monthly(db, ctx, month)
+        rows.append(
+            TrendMonth(
+                month=month,
+                started=data.last_day >= joined,
+                income=data.income,
+                new_members=data.new_members,
+                renewals=data.renewals,
+                lapsed=data.lapsed,
+                active_members=data.active_members,
+                visits=data.visits,
+                renewal_rate=data.renewal_rate,
+            )
+        )
+    return TrendRead(calendar=calendar, months=rows)
 
 
 # --- export ------------------------------------------------------------------------

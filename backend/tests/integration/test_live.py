@@ -67,6 +67,13 @@ def test_staff_hear_only_what_they_could_open() -> None:
     assert not approver(event(live.CHECK_IN))
 
 
+def test_every_staff_screen_hears_about_staff_changes() -> None:
+    """Even without any permission: the screen only re-reads who is signed in."""
+    nobody = live.staff_filter(staff())
+    assert nobody(event(live.STAFF, branch=None))
+    assert not nobody(event(live.STAFF, gym=OTHER_GYM, branch=None))
+
+
 def test_staff_hear_only_their_branches() -> None:
     accepts = live.staff_filter(staff(Permission.MEMBERS_VIEW, branches=[BRANCH]))
     assert accepts(event(live.CHECK_IN))
@@ -257,3 +264,35 @@ def test_an_import_is_published_once(
     assert published == [
         {"gym_id": gym_a.gym.id, "kind": live.MEMBER, "branch_id": gym_a.branch.id}
     ]
+
+
+def test_staff_changes_are_published(
+    client: TestClient, db: Session, gym_a, make_staff, published
+) -> None:
+    desk = make_staff(gym_a.gym, permissions=["members.view"])
+    sign_in(db, client, gym_a.owner)
+    client.patch(f"/api/v1/staff/{desk.id}", json={"permissions": []})
+    assert published == [{"gym_id": gym_a.gym.id, "kind": live.STAFF}]
+
+    published.clear()
+    client.post(f"/api/v1/staff/{desk.id}/two-step/reset")
+    assert [c["kind"] for c in published] == [live.STAFF]
+
+
+def test_the_gym_requiring_two_step_is_published(
+    client: TestClient, db: Session, gym_a, published
+) -> None:
+    gym_a.owner.totp_nonce = "test-nonce"
+    gym_a.owner.totp_enabled_at = gym_a.gym.created_at
+    db.commit()
+    sign_in(db, client, gym_a.owner)
+    response = client.patch("/api/v1/gym/security", json={"require_two_step": True})
+    assert response.status_code == 200
+    assert published == [{"gym_id": gym_a.gym.id, "kind": live.STAFF}]
+
+
+def test_platform_admins_publish_nothing(
+    db: Session, platform_admin, published
+) -> None:
+    live.staff_changed(db, platform_admin.gym_id)
+    assert published == []

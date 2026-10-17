@@ -85,6 +85,16 @@ def test_extend_everyone_for_dashain(
     ends = {m.id: m.end_date for m in (here, there, old)}
     sign_in(db, client, gym_a.owner)
 
+    # The confirmation says how many first, and changes nothing.
+    preview = client.get("/api/v1/memberships/extend-all/preview").json()
+    assert preview == {"extended": 2}
+    one_branch = client.get(
+        f"/api/v1/memberships/extend-all/preview?branch_id={gym_a.branch.id}"
+    ).json()
+    assert one_branch == {"extended": 1}
+    db.refresh(here)
+    assert here.end_date == ends[here.id]
+
     response = client.post(
         "/api/v1/memberships/extend-all",
         json={

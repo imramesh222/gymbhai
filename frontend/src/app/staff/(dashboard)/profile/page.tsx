@@ -5,6 +5,9 @@ import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { DevicesCard } from "@/components/staff/DevicesCard";
+import { LanguageCard } from "@/components/staff/LanguageCard";
+import { TwoStepCard } from "@/components/staff/TwoStepCard";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { t } from "@/i18n";
 import { errorMessage, gymApi } from "@/lib/api";
@@ -60,6 +63,9 @@ export default function ProfilePage() {
           <Button type="submit">{t("profile.changePassword")}</Button>
         </form>
       </Card>
+      <LanguageCard />
+      <TwoStepCard />
+      <DevicesCard />
     </div>
   );
 }

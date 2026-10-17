@@ -1,9 +1,10 @@
 """The member app, the door, and app payments (PLAN.md §4, §5.4, §5.5)."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -84,6 +85,10 @@ DENIED_EXPIRED = "denied_expired"
 DENIED_FROZEN = "denied_frozen"
 DENIED_BRANCH = "denied_branch"
 DENIED_DUES = "denied_dues"
+# A visit pack with every visit used (§16.4, 9.3).
+DENIED_VISITS_USED = "denied_visits_used"
+# An off-peak plan, outside its hours (9.4).
+DENIED_HOURS = "denied_hours"
 LET_IN = (ALLOWED, WARNED, OVERRIDE)
 
 
@@ -107,7 +112,7 @@ class CheckIn(IdMixin, TimestampMixin, GymOwned, Base):
     )
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     method: Mapped[str] = mapped_column(String(16))
-    result: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str] = mapped_column(String(24))
     device_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("devices.id")
     )
@@ -152,4 +157,33 @@ class PaymentRequest(IdMixin, TimestampMixin, GymOwned, Base):
     )
     payment_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL")
+    )
+
+
+class FreezeRequest(IdMixin, TimestampMixin, GymOwned, Base):
+    """A member's "please freeze my membership" from the app (§16.3, 8.6).
+
+    Approving it makes an ordinary freeze (`freeze_id`), exactly as at the desk.
+    """
+
+    __tablename__ = "freeze_requests"
+    __table_args__ = (Index("ix_freeze_requests_gym_status", "gym_id", "status"),)
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id", ondelete="CASCADE"), index=True
+    )
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("memberships.id", ondelete="CASCADE")
+    )
+    from_date: Mapped[date] = mapped_column(Date)
+    to_date: Mapped[date] = mapped_column(Date)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default=REQUEST_PENDING)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reject_reason: Mapped[str | None] = mapped_column(Text)
+    freeze_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("membership_freezes.id", ondelete="SET NULL")
     )

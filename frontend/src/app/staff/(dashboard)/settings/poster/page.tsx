@@ -1,19 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { QrCode } from "@/components/QrCode";
 import { Select } from "@/components/ui/inputs";
 import { t } from "@/i18n";
-import { branchesApi } from "@/lib/api";
+import { branchesApi, gymApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useLoad } from "@/lib/useLoad";
 
 /** The gym QR poster (§4.1): A4, logo, "Scan to see your membership". */
 export default function PosterPage() {
-  const { me } = useAuth();
+  const { me, can, refreshMe } = useAuth();
   const branches = useLoad(() => branchesApi.list(), []).data ?? [];
+  // Opening the poster ticks it off Today's setup checklist.
+  const printed = me?.gym?.settings.poster_printed ?? true;
+  const mayMark = can("setup.gym");
+  useEffect(() => {
+    if (printed || !mayMark) return;
+    gymApi
+      .update({ settings: { poster_printed: true } })
+      .then(() => refreshMe())
+      .catch(() => undefined);
+  }, [printed, mayMark, refreshMe]);
   const [branchId, setBranchId] = useState("all");
   if (!me?.gym) return null;
   const origin = typeof window === "undefined" ? "" : window.location.origin;

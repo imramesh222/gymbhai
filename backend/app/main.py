@@ -3,11 +3,19 @@ import logging
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
+from app.api.idempotency import Replay, replay_handler
 from app.api.router import include_all
 from app.core.config import settings
 from app.core.errors import AppError, app_error_handler, validation_error_handler
 
 logging.basicConfig(level=logging.INFO)
+
+if settings.master_otp:
+    # Loud on purpose: it signs in any member who knows a registered number.
+    logging.getLogger("gymbhai").warning(
+        "MASTER_OTP is set: members can sign in with it until an SMS gateway "
+        "is configured (PLAN.md §15)."
+    )
 
 if settings.sentry_dsn:
     import sentry_sdk
@@ -29,5 +37,6 @@ app = FastAPI(
 )
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_exception_handler(Replay, replay_handler)
 
 include_all(app)

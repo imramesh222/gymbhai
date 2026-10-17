@@ -5,7 +5,8 @@
    changes from here. */
 @theme {
   --font-sans:
-    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    var(--font-inter), var(--font-devanagari), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 
   /* Brand blue, anchored at 600 — the colour a gym's app defaults to and the
      browser theme colour, so those two must not drift. */

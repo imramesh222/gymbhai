@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     text,
@@ -63,6 +64,22 @@ class StaffUser(IdMixin, TimestampMixin, Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Two-step sign-in (PLAN.md §16.1). The authenticator secret is derived
+    # from this nonce and TOTP_KEY, never stored (app/core/totp.py). A nonce
+    # without `totp_enabled_at` is a setup that was started and not finished.
+    totp_nonce: Mapped[str | None] = mapped_column(String(32))
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last 30-second step a code was accepted for: no code works twice.
+    totp_last_step: Mapped[int | None] = mapped_column(Integer)
+    # Their own language (§16.6); null follows the gym's.
+    language: Mapped[str | None] = mapped_column(String(2))
+    # When they last opened What's new (§16.5, 10.4): a dot until then.
+    changelog_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def two_step_enabled(self) -> bool:
+        return self.totp_enabled_at is not None
+
 
 class StaffBranchAccess(IdMixin, TimestampMixin, Base):
     """Branches a staff member may work in. No rows means every branch."""
@@ -96,3 +113,66 @@ class StaffSession(IdMixin, TimestampMixin, Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoginAttempt(IdMixin, TimestampMixin, Base):
+    """One staff sign-in try, kept for the limits on guessing (PLAN.md §16.1).
+
+    Written for unknown accounts too, so the limits count guesses at which
+    accounts exist. `at` is the real time rather than created_at: the database's
+    now() is fixed for a whole transaction, and a failure must be able to sort
+    after the success before it.
+    """
+
+    __tablename__ = "login_attempts"
+    __table_args__ = (
+        Index("ix_login_attempts_identifier_at", "identifier", "at"),
+        Index("ix_login_attempts_ip_at", "ip", "at"),
+    )
+
+    # The email or phone typed, in the form accounts are stored in.
+    identifier: Mapped[str] = mapped_column(String(254))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    succeeded: Mapped[bool] = mapped_column(Boolean)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class StaffPasswordReset(IdMixin, TimestampMixin, Base):
+    """A "forgot password" code sent to a staff member (PLAN.md §16.1).
+
+    Written even when nobody has that email or phone, without a code, so the
+    limits on asking count guesses at which accounts exist. Only the latest
+    row for an email or phone can be used.
+    """
+
+    __tablename__ = "staff_password_resets"
+    __table_args__ = (
+        Index(
+            "ix_staff_password_resets_identifier_created", "identifier", "created_at"
+        ),
+        Index("ix_staff_password_resets_ip_created", "ip", "created_at"),
+    )
+
+    # Null when the email or phone typed belongs to no account.
+    staff_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="CASCADE"), index=True
+    )
+    identifier: Mapped[str] = mapped_column(String(254))
+    code_hash: Mapped[str | None] = mapped_column(String(64))
+    # The real time, so the latest row sorts last even within one transaction.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip: Mapped[str | None] = mapped_column(String(64))
+
+
+class StaffRecoveryCode(IdMixin, TimestampMixin, Base):
+    """A single-use code for signing in without the authenticator app."""
+
+    __tablename__ = "staff_recovery_codes"
+
+    staff_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

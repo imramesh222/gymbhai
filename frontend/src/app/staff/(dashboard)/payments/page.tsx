@@ -92,7 +92,7 @@ export default function PaymentsPage() {
                   className="flex items-center justify-between gap-3 py-2 text-sm"
                 >
                   <div
-                    className={`min-w-0 ${p.voided_at ? "text-slate-400 line-through" : ""}`}
+                    className={`min-w-0 ${p.voided_at ? "text-slate-500 line-through" : ""}`}
                   >
                     <Link
                       href={`/staff/members/${p.member_id}`}
@@ -110,7 +110,7 @@ export default function PaymentsPage() {
                   <div className="shrink-0 text-right">
                     <Money
                       paisa={p.kind === "refund" ? -p.amount : p.amount}
-                      className={`font-semibold ${p.voided_at ? "text-slate-400 line-through" : ""}`}
+                      className={`font-semibold ${p.voided_at ? "text-slate-500 line-through" : ""}`}
                     />
                     <Link
                       href={`/staff/receipts/${p.id}`}

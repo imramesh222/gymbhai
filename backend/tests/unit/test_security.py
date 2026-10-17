@@ -5,7 +5,15 @@ import jwt
 import pytest
 
 from app.core import security
-from app.core.config import settings
+from app.core.config import Settings, settings
+
+
+@pytest.fixture(autouse=True)
+def no_developer_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`make` exports .env, and a developer's MASTER_OTP or keys there would
+    decide which check a `Settings(...)` here trips first."""
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
 
 
 def test_password_round_trip() -> None:
@@ -77,7 +85,43 @@ def test_a_fixed_sign_in_code_is_refused_outside_local_and_test() -> None:
         Settings(
             environment="production",
             secret_key="x" * 40,
+            totp_key="y" * 40,
             otp_test_code="123456",
             _env_file=None,
         )
     assert Settings(environment="local", otp_test_code="123456", _env_file=None)
+
+
+def test_production_needs_its_own_two_step_key() -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError, match="TOTP_KEY"):
+        Settings(environment="production", secret_key="x" * 40, _env_file=None)
+    assert Settings(
+        environment="production",
+        secret_key="x" * 40,
+        totp_key="y" * 40,
+        _env_file=None,
+    )
+
+
+def test_tests_never_send_real_email_or_sms() -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings, settings
+
+    assert settings.email_provider == settings.sms_provider == "console"
+    assert settings.push_provider == "console"
+    with pytest.raises(ValidationError, match="never send real email"):
+        Settings(environment="test", email_provider="smtp", _env_file=None)
+    with pytest.raises(ValidationError, match="never send real email"):
+        Settings(environment="test", sms_provider="sparrow", _env_file=None)
+    with pytest.raises(ValidationError, match="never send real email"):
+        Settings(
+            environment="test",
+            push_provider="webpush",
+            vapid_private_key="x",
+            _env_file=None,
+        )

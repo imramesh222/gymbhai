@@ -14,15 +14,32 @@ x-backend: &backend
 
 services:
   db:
-    image: postgres:16-alpine
+    # Postgres 16 with pgBackRest, the same image as `backup` (deploy/backup).
+    build: ./deploy/backup
     restart: unless-stopped
+    # The S3 settings, for archiving (deploy/backup/pgbackrest-env.sh).
+    env_file: .env.prod
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # Every finished WAL segment goes to R2, and a segment finishes at least
+    # once a minute: a lost server loses about a minute, not a day (PLAN.md
+    # §11). On the command line, not in postgresql.conf, so a restored copy
+    # never archives into the live archive.
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/usr/local/bin/pgbackrest-archive-push.sh %p
+      - -c
+      - archive_timeout=60
     # No published port: only the other containers reach the database.
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Shared with `backup`, which takes base backups over this socket.
+      - pgsocket:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -78,14 +95,20 @@ services:
       - api
 
   backup:
+    # Base backups for point-in-time restores, and the nightly pg_dump.
     build: ./deploy/backup
     restart: unless-stopped
     env_file: .env.prod
+    volumes:
+      # pgBackRest reads the data files directly; it never writes them here.
+      - pgdata:/var/lib/postgresql/data:ro
+      - pgsocket:/var/run/postgresql
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  pgsocket:
   caddy_data:
   caddy_config:

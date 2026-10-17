@@ -1,33 +1,23 @@
 "use client";
 
-import { CheckInRulesSection, GymSection } from "@/components/settings/GymSection";
-import {
-  BranchesSection,
-  ExtendEveryoneSection,
-  PaymentMethodsSection,
-  PlansSection,
-} from "@/components/settings/ListSections";
-import { DevicesSection } from "@/components/settings/DevicesSection";
-import { RemindersSection } from "@/components/settings/RemindersSection";
-import { PageHeader } from "@/components/ui/Card";
-import { t } from "@/i18n";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { GymSection } from "@/components/settings/GymSection";
+import { SETTINGS_PAGES } from "@/components/settings/settingsNav";
 import { useAuth } from "@/lib/auth";
 
+/** Gym profile and calendar; anyone without it lands on the first page they may open. */
 export default function SettingsPage() {
   const { me, can } = useAuth();
-  const gym = me?.gym;
-  if (!gym) return null;
-  return (
-    <div className="space-y-4">
-      <PageHeader title={t("nav.settings")} />
-      {can("setup.gym") && <GymSection gym={gym} />}
-      {can("setup.plans") && <PlansSection />}
-      {can("setup.payment_methods") && <PaymentMethodsSection />}
-      {can("setup.gym") && <BranchesSection />}
-      {can("setup.reminders") && <RemindersSection />}
-      {can("setup.check_in_rules") && <CheckInRulesSection gym={gym} />}
-      {can("setup.devices") && <DevicesSection />}
-      {can("memberships.extend_all") && <ExtendEveryoneSection />}
-    </div>
+  const router = useRouter();
+  const allowed = can("setup.gym");
+  const first = SETTINGS_PAGES.find((page) =>
+    page.ownerOnly ? me?.staff.is_owner : page.anyOf?.some(can),
   );
+  useEffect(() => {
+    if (!allowed && first) router.replace(first.href);
+  }, [allowed, first, router]);
+  if (!me?.gym || !allowed) return null;
+  return <GymSection gym={me.gym} />;
 }

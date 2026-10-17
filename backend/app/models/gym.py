@@ -1,8 +1,9 @@
 """Gyms (the tenants) and their branches."""
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, String, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +32,10 @@ class Gym(IdMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(16), default=GYM_ACTIVE, server_default=GYM_ACTIVE
     )
+    # The terms and privacy policy the owner accepted at sign-up (§16.1).
+    # Null for gyms that signed up before there were any.
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terms_version: Mapped[str | None] = mapped_column(String(20))
 
     @property
     def config(self) -> GymSettings:

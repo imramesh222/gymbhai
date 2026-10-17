@@ -1,0 +1,232 @@
+"use client";
+
+import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/components/Button";
+import { Field } from "@/components/Field";
+import { Notice } from "@/components/Notice";
+import { Card } from "@/components/ui/Card";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Checkbox, TextArea } from "@/components/ui/inputs";
+import { SmsCounter } from "@/components/ui/SmsCounter";
+import { useToast } from "@/components/ui/Toast";
+import { t } from "@/i18n";
+import { errorMessage, messagesApi, type ReminderRule } from "@/lib/api";
+
+import { when, type TriggerInfo } from "./triggers";
+
+function Placeholders({ names }: { names: string[] }) {
+  return (
+    <p className="text-xs text-slate-500">
+      {t("automations.placeholders")}{" "}
+      {names.map((name, i) => (
+        <span key={name}>
+          {i > 0 && " "}
+          <code className="rounded bg-slate-100 px-1 text-slate-700">{`{${name}}`}</code>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function RuleEditor({
+  info,
+  rule,
+  onChanged,
+}: {
+  info: TriggerInfo;
+  rule: ReminderRule;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [template, setTemplate] = useState(rule.template);
+  const [days, setDays] = useState(String(rule.days));
+  // Ticks at once; goes back if the save fails.
+  const [enabled, setEnabled] = useState(rule.enabled);
+  const [error, setError] = useState<string | null>(null);
+  const hasDays = info.min !== info.max;
+  const dirty = template !== rule.template || Number(days) !== rule.days;
+
+  async function save(patch: Partial<ReminderRule>, message: string) {
+    setError(null);
+    try {
+      await messagesApi.updateRule(rule.id, patch);
+      toast.success(message);
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+      if (patch.enabled !== undefined) setEnabled(!patch.enabled);
+    }
+  }
+
+  async function remove() {
+    const ok = await confirm({
+      title: t("automations.delete"),
+      message: t("automations.deleteConfirm", { when: when(rule.trigger, rule.days) }),
+      confirmLabel: t("automations.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await messagesApi.deleteRule(rule.id);
+      toast.success(t("automations.deleted"));
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-xl p-3 ring-1 ring-hairline">
+      <div className="flex items-center justify-between gap-2">
+        <Checkbox
+          label={when(rule.trigger, rule.days)}
+          hint={enabled ? t("automations.on") : t("automations.off")}
+          checked={enabled}
+          onChange={(on) => {
+            setEnabled(on);
+            void save(
+              { enabled: on },
+              on ? t("automations.turnedOn") : t("automations.turnedOff"),
+            );
+          }}
+        />
+        <Button variant="ghost" onClick={() => void remove()}>
+          <Trash2 className="size-4" aria-hidden />
+          <span className="sr-only sm:not-sr-only">{t("automations.delete")}</span>
+        </Button>
+      </div>
+      {hasDays && (
+        <div className="max-w-48">
+          <Field
+            label={t("automations.days")}
+            value={days}
+            onChange={setDays}
+            type="number"
+            inputMode="numeric"
+          />
+        </div>
+      )}
+      <TextArea
+        label={t("automations.wording")}
+        value={template}
+        onChange={setTemplate}
+        rows={3}
+      />
+      <SmsCounter text={template} />
+      {error && <Notice tone="error">{error}</Notice>}
+      {dirty && (
+        <Button
+          variant="secondary"
+          onClick={() =>
+            void save(
+              { template, ...(hasDays ? { days: Number(days) } : {}) },
+              t("common.saved"),
+            )
+          }
+        >
+          {t("common.save")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function AddRule({ info, onAdded }: { info: TriggerInfo; onAdded: () => void }) {
+  const toast = useToast();
+  const hasDays = info.min !== info.max;
+  const [open, setOpen] = useState(false);
+  const [days, setDays] = useState(String(info.min < 0 ? -1 : info.min));
+  const [template, setTemplate] = useState(t(info.example));
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open)
+    return (
+      <Button variant="ghost" onClick={() => setOpen(true)}>
+        <Plus className="size-4" aria-hidden />
+        {t("automations.add")}
+      </Button>
+    );
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setError(null);
+        try {
+          await messagesApi.createRule({
+            trigger: info.trigger,
+            days: Number(days),
+            template,
+            // A new one starts off: the gym turns it on when the wording is right.
+            enabled: false,
+          });
+          toast.success(t("automations.added"));
+          setOpen(false);
+          onAdded();
+        } catch (err) {
+          setError(errorMessage(err));
+        }
+      }}
+      className="space-y-2 rounded-xl border border-dashed border-slate-300 p-3"
+    >
+      <h3 className="text-sm font-semibold">{t("automations.add")}</h3>
+      {hasDays && (
+        <div className="max-w-48">
+          <Field
+            label={t("automations.days")}
+            value={days}
+            onChange={setDays}
+            type="number"
+            inputMode="numeric"
+            help={when(info.trigger, Number(days) || 0)}
+          />
+        </div>
+      )}
+      <TextArea
+        label={t("automations.wording")}
+        value={template}
+        onChange={setTemplate}
+        rows={3}
+        required
+      />
+      <SmsCounter text={template} />
+      {error && <Notice tone="error">{error}</Notice>}
+      <div className="flex gap-2">
+        <Button type="submit" variant="secondary">
+          {t("common.add")}
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+          {t("common.cancel")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** One trigger's automations: e.g. every "before it ends" reminder. */
+export function TriggerCard({
+  info,
+  rules,
+  onChanged,
+}: {
+  info: TriggerInfo;
+  rules: ReminderRule[];
+  onChanged: () => void;
+}) {
+  const hasDays = info.min !== info.max;
+  return (
+    <Card title={t(info.title)}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">{t(info.help)}</p>
+        {rules.map((rule) => (
+          <RuleEditor key={rule.id} info={info} rule={rule} onChanged={onChanged} />
+        ))}
+        <Placeholders names={info.placeholders} />
+        {(hasDays || rules.length === 0) && <AddRule info={info} onAdded={onChanged} />}
+      </div>
+    </Card>
+  );
+}

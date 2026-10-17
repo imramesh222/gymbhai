@@ -3,3 +3,5 @@ pytest==9.1.1
 # The TestClient transport; Starlette 1.x moved from httpx to httpx2.
 httpx2==2.13.0
 ruff==0.16.8
+# Reading receipt PDFs back in tests (PLAN.md §16.3, 8.4).
+pypdf==6.19.0

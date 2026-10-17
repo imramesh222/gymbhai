@@ -9,11 +9,53 @@ import { Money } from "@/components/ui/Money";
 import { t } from "@/i18n";
 import { errorMessage, type Plan } from "@/lib/api";
 import { formatDate } from "@/lib/dates";
+import { formatRs } from "@/lib/money";
 import { shrinkImage } from "@/lib/image";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
 import { useLive } from "@/lib/live";
+import { perMonth, savings } from "@/lib/planValue";
 import { useLoad } from "@/lib/useLoad";
+
+/** Plan → Pay → Send proof, with where they are (PLAN.md §16.3, 8.5). */
+function Steps({ at }: { at: 1 | 2 | 3 }) {
+  const steps = [
+    t("app.renew.step.plan"),
+    t("app.renew.step.pay"),
+    t("app.renew.step.proof"),
+  ];
+  return (
+    <ol
+      className="flex items-center gap-2 text-xs font-semibold"
+      aria-label={t("app.renew.steps")}
+    >
+      {steps.map((label, i) => {
+        const n = i + 1;
+        const state = n < at ? "done" : n === at ? "current" : "next";
+        return (
+          <li
+            key={label}
+            aria-current={state === "current" ? "step" : undefined}
+            className="flex flex-1 items-center gap-1.5"
+          >
+            <span
+              className={`flex size-6 shrink-0 items-center justify-center rounded-full ${
+                state === "next"
+                  ? "bg-slate-100 text-slate-500"
+                  : "bg-brand-600 text-white"
+              }`}
+            >
+              {state === "done" ? "✓" : n}
+            </span>
+            <span className={state === "next" ? "text-slate-500" : "text-slate-900"}>
+              {label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 /**
  * Plans -> the gym's payment QR -> transaction ID or screenshot -> waiting for
@@ -94,6 +136,7 @@ export default function RenewPage() {
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-5">
       <h1 className="text-xl font-semibold">{t("app.renew.title")}</h1>
+      <Steps at={!plan ? 1 : !methodId ? 2 : 3} />
       {lastRejected && (
         <Notice tone="warning">
           {t("app.renew.rejected", { reason: lastRejected.reject_reason ?? "" })}
@@ -109,26 +152,44 @@ export default function RenewPage() {
         <legend className="mb-1 text-sm font-semibold">
           {t("app.renew.choosePlan")}
         </legend>
-        {plans.map((p) => (
-          <label
-            key={p.id}
-            className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 ${
-              plan?.id === p.id
-                ? "border-brand-600 bg-brand-50"
-                : "border-transparent bg-white ring-1 ring-hairline"
-            }`}
-          >
-            <input
-              type="radio"
-              name="plan"
-              className="sr-only"
-              checked={plan?.id === p.id}
-              onChange={() => setPlan(p)}
-            />
-            <span className="font-medium">{p.name}</span>
-            <Money paisa={p.price} className="font-semibold" />
-          </label>
-        ))}
+        {plans.map((p) => {
+          const monthly = perMonth(p);
+          const saved = savings(p, plans);
+          return (
+            <label
+              key={p.id}
+              className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500 ${
+                plan?.id === p.id
+                  ? "border-brand-600 bg-brand-50"
+                  : "border-transparent bg-white ring-1 ring-hairline"
+              }`}
+            >
+              <input
+                type="radio"
+                name="plan"
+                className="sr-only"
+                checked={plan?.id === p.id}
+                onChange={() => setPlan(p)}
+              />
+              <span className="min-w-0">
+                <span className="block font-medium">{p.name}</span>
+                {monthly !== null && p.duration_months! > 1 && (
+                  <span className="block text-xs text-slate-500">
+                    {t("app.renew.perMonth", { amount: formatRs(monthly) })}
+                  </span>
+                )}
+              </span>
+              <span className="shrink-0 text-right">
+                <Money paisa={p.price} className="block font-semibold" />
+                {saved !== null && (
+                  <span className="mt-0.5 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200/70">
+                    {t("app.renew.save", { amount: formatRs(saved) })}
+                  </span>
+                )}
+              </span>
+            </label>
+          );
+        })}
       </fieldset>
 
       {plan && (

@@ -8,6 +8,7 @@ import { Card, PageHeader } from "@/components/ui/Card";
 import { t, type MessageKey } from "@/i18n";
 import { errorMessage, reportsApi, type ImportPreview } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 const EXPORTS = ["members", "memberships", "payments", "check-ins"] as const;
 const FIELDS = [
@@ -24,6 +25,7 @@ const FIELDS = [
 
 /** Import an existing register, and download everything (§7 Import / Export). */
 export default function DataPage() {
+  const confirm = useConfirm();
   const { can } = useAuth();
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [mapping, setMapping] = useState<Record<string, number | null>>({});
@@ -155,8 +157,12 @@ export default function DataPage() {
                 </table>
               </div>
               <Button
-                onClick={() =>
-                  window.confirm(t("data.commitConfirm", { count: preview.ready })) &&
+                onClick={async () =>
+                  (await confirm({
+                    title: t("data.import"),
+                    message: t("data.commitConfirm", { count: preview.ready }),
+                    confirmLabel: t("data.import"),
+                  })) &&
                   run(async () => {
                     const done = await reportsApi.commitRegister(preview.id, mapping);
                     setPreview(done);

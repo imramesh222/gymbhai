@@ -10,6 +10,7 @@ from app.api.deps import (
     current_device,
     current_member,
     current_staff,
+    require_owner,
     require_platform_admin,
 )
 from tests.routes import all_routes
@@ -20,15 +21,25 @@ PUBLIC = {
     ("GET", "/health/ready"),
     ("POST", "/api/v1/auth/register-gym"),
     ("POST", "/api/v1/auth/login"),
+    # The two-step token from the password step is the proof so far.
+    ("POST", "/api/v1/auth/login/two-step"),
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
+    # Forgot password: the code sent to the account's email or phone is the proof.
+    ("POST", "/api/v1/auth/password-reset"),
+    ("POST", "/api/v1/auth/password-reset/confirm"),
     # The signed, expiring link is the permission (app/services/storage.py).
     ("GET", "/api/v1/files/{key}"),
+    # Likewise a shared receipt (app/core/signed_links.py, §16.3 8.4).
+    ("GET", "/api/v1/receipts/{payment_id}.pdf"),
     # The member app before sign-in: gym name and logo, and sign-in codes.
     ("GET", "/api/v1/m/{slug}/gym"),
     ("GET", "/api/v1/m/{slug}/logo"),
     ("POST", "/api/v1/m/{slug}/otp/request"),
     ("POST", "/api/v1/m/{slug}/otp/verify"),
+    # The join form, while the gym has it on (§16.4, 9.5).
+    ("GET", "/api/v1/m/{slug}/join"),
+    ("POST", "/api/v1/m/{slug}/join"),
     ("POST", "/api/v1/m/auth/refresh"),
     ("POST", "/api/v1/m/auth/logout"),
 }
@@ -37,8 +48,24 @@ PUBLIC = {
 ANY_STAFF = {
     # Who am I — also used by platform admins, who have no gym.
     ("GET", "/api/v1/auth/me"),
+    # Your own language (§16.6).
+    ("PUT", "/api/v1/auth/me/language"),
+    # What's new in GymBhai: the same for everyone (§16.5, 10.4).
+    ("GET", "/api/v1/changelog"),
+    ("POST", "/api/v1/changelog/seen"),
     # Your own password; the current one is required.
     ("POST", "/api/v1/auth/password"),
+    # Your own two-step sign-in; the password is required to change it. These
+    # stay open to an account that must set it up and hasn't yet.
+    ("GET", "/api/v1/auth/two-step"),
+    ("POST", "/api/v1/auth/two-step/setup"),
+    ("POST", "/api/v1/auth/two-step/enable"),
+    ("POST", "/api/v1/auth/two-step/recovery-codes"),
+    ("POST", "/api/v1/auth/two-step/disable"),
+    # Your own signed-in devices; another account's are not found.
+    ("GET", "/api/v1/auth/sessions"),
+    ("POST", "/api/v1/auth/sessions/sign-out-others"),
+    ("POST", "/api/v1/auth/sessions/{session_id}/sign-out"),
     # Selling needs the plans and their prices.
     ("GET", "/api/v1/plans"),
     # The desk shows members the gym's own payment QR.
@@ -50,6 +77,15 @@ ANY_STAFF = {
     ("GET", "/api/v1/branches/{branch_id}"),
     # Live updates: each event is filtered by permission (app/services/live.py).
     ("GET", "/api/v1/live"),
+}
+
+
+# The owner only, whatever permissions are ticked (`require_owner`).
+OWNER_ONLY = {
+    # Requiring two-step sign-in for every staff account.
+    ("PATCH", "/api/v1/gym/security"),
+    # Erasing a member: it can't be undone.
+    ("POST", "/api/v1/members/{member_id}/erase"),
 }
 
 
@@ -91,6 +127,8 @@ def test_every_route_is_accounted_for() -> None:
             )
         elif key in ANY_STAFF:
             assert current_staff in calls, f"{method} {path} does not check sign-in"
+        elif key in OWNER_ONLY:
+            assert require_owner in calls, f"{method} {path} is not owner-only"
         else:
             assert any(required), (
                 f"{method} {path} checks no permission. Use require(Permission.X), "
@@ -102,6 +140,7 @@ def test_allow_lists_have_no_stale_entries() -> None:
     existing = {(method, path) for method, path, _ in _routes()}
     assert PUBLIC - existing == set()
     assert ANY_STAFF - existing == set()
+    assert OWNER_ONLY - existing == set()
 
 
 def test_the_walk_sees_everything_the_app_serves() -> None:

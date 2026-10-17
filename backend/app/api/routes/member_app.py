@@ -28,16 +28,20 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_member
 from app.api.presenters import payments_read
+from app.api.routes.freeze_requests import reads as freeze_reads
 from app.api.routes.payment_methods import read as method_read
 from app.api.routes.plans import branch_ids_for, plans_read
 from app.core import qr
 from app.core.config import settings
 from app.core.errors import AppError, not_found
+from app.core.phone import normalize_phone
+from app.core.push_keys import public_key
 from app.core.time import NEPAL, today_in_nepal, utcnow
 from app.db.session import get_db
+from app.models.activity import ACTOR_MEMBER
 from app.models.gym import GYM_ACTIVE, Branch, Gym
 from app.models.member import Member
-from app.models.member_app import LET_IN, CheckIn, PaymentRequest
+from app.models.member_app import LET_IN, CheckIn, FreezeRequest, PaymentRequest
 from app.models.messaging import Notice
 from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
@@ -45,24 +49,39 @@ from app.schemas.member_app import (
     CodeRequest,
     CodeRequested,
     CodeVerify,
+    EmailChangeIn,
+    EmailConfirmIn,
+    FreezeRequestIn,
+    FreezeRequestRead,
+    JoinIn,
+    JoinOptions,
+    JoinPlan,
     MemberChoice,
     MemberMe,
     MemberPayments,
     MemberSignIn,
     MemberState,
+    MyDetailsIn,
     PaymentRequestIn,
     PaymentRequestRead,
     PublicBranch,
     PublicGym,
+    PushEndpoint,
+    PushStatus,
+    PushSubscriptionIn,
     QrIdentity,
     RenewOptions,
     Visit,
 )
 from app.schemas.messaging import NoticeRead
-from app.services import live, member_auth, storage
+from app.schemas.money import ReceiptLink
+from app.services import activity, checkins, live, member_auth, receipts, storage
+from app.services import freeze_requests as freeze_service
+from app.services import leads as leads_service
 from app.services import members as members_service
 from app.services import memberships as ms
 from app.services import payment_requests as requests_service
+from app.services.push import service as push
 
 router = APIRouter(prefix="/m", tags=["member app"])
 
@@ -98,6 +117,7 @@ def public_gym(db: Session, gym: Gym) -> PublicGym:
         brand_color=gym.brand_color,
         date_display=gym.config.date_display,
         branches=[PublicBranch(id=b.id, name=b.name) for b in branches],
+        join_form=gym.config.join_form,
     )
 
 
@@ -167,6 +187,9 @@ def build_me(db: Session, member: Member) -> MemberMe:
             valid_until=state.valid_until,
             days_left=state.days_left,
             dues=state.dues,
+            visit_limit=state.visit_limit,
+            visits_left=state.visits_left,
+            access_hours=state.current.access_hours if state.current else None,
         ),
         qr=QrIdentity(
             member_hex=member.id.hex,
@@ -178,6 +201,13 @@ def build_me(db: Session, member: Member) -> MemberMe:
         visits_this_month=visits,
         streak_weeks=streak,
         latest_notice=NoticeRead.model_validate(latest) if latest else None,
+        emergency_contact=member.emergency_contact,
+        language=member.language or gym.config.language,
+        own_language=member.language,
+        digits=gym.config.digits,
+        busy=checkins.busyness(db, gym.id, member.home_branch_id)
+        if gym.config.show_busyness
+        else None,
     )
 
 
@@ -214,6 +244,54 @@ def gym_logo(slug: Slug, db: Session = Depends(get_db)) -> Response:
         media_type=storage.CONTENT_TYPES.get(extension, "image/png"),
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+# --- the public join form (PLAN.md §16.4, 9.5) ---
+
+
+def _joinable(db: Session, slug: str) -> Gym:
+    gym = _gym_by_slug(db, slug)
+    if not gym.config.join_form:
+        raise not_found("Not found.")
+    return gym
+
+
+@router.get("/{slug}/join", response_model=JoinOptions)
+def join_options(slug: Slug, db: Session = Depends(get_db)) -> JoinOptions:
+    """The plans to ask about. Not found while the gym has the form off."""
+    gym = _joinable(db, slug)
+    plans = db.scalars(
+        select(Plan)
+        .where(Plan.gym_id == gym.id, Plan.is_active)
+        .order_by(Plan.sort_order, Plan.name)
+    )
+    return JoinOptions(
+        plans=[JoinPlan(id=p.id, name=p.name, price=p.price) for p in plans]
+    )
+
+
+@router.post("/{slug}/join", status_code=status.HTTP_202_ACCEPTED)
+def ask_to_join(
+    slug: Slug, payload: JoinIn, request: Request, db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    gym = _joinable(db, slug)
+    try:
+        phone = normalize_phone(payload.phone)
+    except ValueError as exc:
+        raise AppError(422, "bad_phone", str(exc)) from exc
+    branch_id = payload.branch_id
+    if branch_id is not None:
+        branch = db.get(Branch, branch_id)
+        if branch is None or branch.gym_id != gym.id or not branch.is_active:
+            branch_id = None
+    leads_service.from_join_form(
+        db,
+        gym,
+        {**payload.model_dump(), "phone": phone, "branch_id": branch_id},
+        activity.client_ip(request),
+    )
+    db.commit()
+    return {"received": True}
 
 
 @router.post("/{slug}/otp/request", response_model=CodeRequested)
@@ -261,6 +339,18 @@ def verify_code(
         raise AppError(422, "not_on_this_number", "Choose one of the names shown.")
     row.consumed_at = utcnow()
     issued = member_auth.start_session(db, member, request)
+    if member_auth.is_master_code(payload.code):
+        # Who used the shared code, and from where (PLAN.md §11).
+        activity.record(
+            db,
+            gym_id=gym.id,
+            actor_type=ACTOR_MEMBER,
+            actor_id=member.id,
+            action="member.signed_in_with_master_code",
+            entity="member",
+            entity_id=member.id,
+            request=request,
+        )
     db.commit()
     return _signed_in(db, issued, response)
 
@@ -320,6 +410,191 @@ def my_live(
     )
 
 
+# --- their own details (PLAN.md §16.3, 8.5) ---
+
+
+@router.patch("/me", response_model=MemberMe)
+def update_me(
+    payload: MyDetailsIn,
+    request: Request,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> MemberMe:
+    changes = payload.model_dump(exclude_unset=True)
+    if "emergency_contact" in changes:
+        changes["emergency_contact"] = (
+            changes["emergency_contact"] or ""
+        ).strip() or None
+    members_service.update_by_member(db, member, changes, request=request)
+    db.commit()
+    return build_me(db, member)
+
+
+@router.post("/me/email", status_code=status.HTTP_204_NO_CONTENT)
+def change_email(
+    payload: EmailChangeIn,
+    request: Request,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> Response:
+    """A code to the new address; it is theirs once they type it."""
+    gym = db.get(Gym, member.gym_id)
+    assert gym is not None
+    member_auth.request_email_change(db, gym, member, str(payload.email), request)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/me/email/confirm", response_model=MemberMe)
+def confirm_email(
+    payload: EmailConfirmIn,
+    request: Request,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> MemberMe:
+    gym = db.get(Gym, member.gym_id)
+    assert gym is not None
+    address = member_auth.confirm_email_change(
+        db, gym, member, str(payload.email), payload.code
+    )
+    members_service.update_by_member(
+        db, member, {"email": address}, action="member.email_changed", request=request
+    )
+    db.commit()
+    return build_me(db, member)
+
+
+@router.post("/me/photo", response_model=MemberMe)
+async def change_my_photo(
+    request: Request,
+    file: UploadFile = File(...),
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> MemberMe:
+    """The face the desk checks against the card (§4.2): the member's own."""
+    data = await file.read(storage.MAX_BYTES + 1)
+    key = storage.put(
+        storage.new_key(member.gym_id, "members", storage.sniff_image(data)), data
+    )
+    old = member.photo_key
+    members_service.update_by_member(
+        db, member, {"photo_key": key}, action="member.photo_changed", request=request
+    )
+    db.commit()
+    storage.delete(old)
+    return build_me(db, member)
+
+
+# --- freeze requests (PLAN.md §16.3, 8.6) ---
+
+
+@router.get("/freeze-requests/latest", response_model=FreezeRequestRead | None)
+def my_freeze_request(
+    member: Member = Depends(current_member), db: Session = Depends(get_db)
+) -> FreezeRequestRead | None:
+    """Their newest: waiting, or the answer to it."""
+    row = freeze_service.latest(db, member.id)
+    return freeze_reads(db, [row])[0] if row else None
+
+
+@router.post(
+    "/freeze-requests",
+    response_model=FreezeRequestRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def ask_to_freeze(
+    payload: FreezeRequestIn,
+    request: Request,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> FreezeRequestRead:
+    row = freeze_service.create(
+        db,
+        member,
+        from_date=payload.from_date,
+        to_date=payload.to_date,
+        reason=payload.reason,
+        request=request,
+    )
+    db.commit()
+    return freeze_reads(db, [row])[0]
+
+
+@router.post(
+    "/freeze-requests/{freeze_request_id}/withdraw", response_model=FreezeRequestRead
+)
+def withdraw_freeze_request(
+    freeze_request_id: uuid.UUID,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> FreezeRequestRead:
+    row = db.scalars(
+        select(FreezeRequest)
+        .where(
+            FreezeRequest.id == freeze_request_id, FreezeRequest.member_id == member.id
+        )
+        .with_for_update()
+    ).first()
+    if row is None:
+        raise not_found("No such request.")
+    freeze_service.withdraw(db, member, row)
+    db.commit()
+    return freeze_reads(db, [row])[0]
+
+
+# --- push (PLAN.md §16.3, 8.3) ---
+
+
+@router.get("/me/push", response_model=PushStatus)
+def my_push(
+    endpoint: Annotated[str | None, Query(max_length=2000)] = None,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> PushStatus:
+    rows = push.live(db, member.id)
+    return PushStatus(
+        public_key=public_key(),
+        subscribed=any(endpoint is None or r.endpoint == endpoint for r in rows),
+    )
+
+
+@router.post("/me/push", response_model=PushStatus)
+def turn_push_on(
+    payload: PushSubscriptionIn,
+    request: Request,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> PushStatus:
+    """This phone takes reminders, notices and answers now, instead of SMS."""
+    if not push.available():
+        raise AppError(409, "push_unavailable", "Notifications aren't set up yet.")
+    row = push.subscribe(
+        db,
+        member,
+        endpoint=payload.endpoint,
+        p256dh=payload.keys.p256dh,
+        auth=payload.keys.auth,
+        user_agent=request.headers.get("user-agent"),
+    )
+    activity.member_action(
+        db, member, "push.subscribed", entity="push_subscription", entity_id=row.id
+    )
+    db.commit()
+    return PushStatus(public_key=public_key(), subscribed=True)
+
+
+@router.post("/me/push/off", response_model=PushStatus)
+def turn_push_off(
+    payload: PushEndpoint,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> PushStatus:
+    """This phone stops: on "Turn off", and on signing out."""
+    if push.unsubscribe(db, member, payload.endpoint):
+        activity.member_action(db, member, "push.unsubscribed")
+    db.commit()
+    return PushStatus(public_key=public_key(), subscribed=False)
+
+
 @router.get("/me/payments", response_model=MemberPayments)
 def my_payments(
     member: Member = Depends(current_member), db: Session = Depends(get_db)
@@ -340,6 +615,19 @@ def my_payments(
         payments=payments_read(db, list(payments)),
         requests=requests_read(db, requests),
     )
+
+
+@router.post("/me/payments/{payment_id}/receipt-link", response_model=ReceiptLink)
+def my_receipt_link(
+    payment_id: uuid.UUID,
+    member: Member = Depends(current_member),
+    db: Session = Depends(get_db),
+) -> ReceiptLink:
+    """Payments → Download receipt, for the member's own payments only."""
+    payment = db.get(Payment, payment_id)
+    if payment is None or payment.member_id != member.id:
+        raise not_found("Receipt not found.")
+    return receipts.share(receipts.build(db, payment))
 
 
 @router.get("/me/visits", response_model=list[Visit])

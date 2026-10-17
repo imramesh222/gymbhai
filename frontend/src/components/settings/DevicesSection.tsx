@@ -9,9 +9,11 @@ import { branchesApi, doorApi } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { useLoad } from "@/lib/useLoad";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 /** Door scanners, and the posters and cards that go with them (§4.1, §4.3). */
 export function DevicesSection() {
+  const confirm = useConfirm();
   const { display } = useGymCalendar();
   const devices = useLoad(() => doorApi.devices(), []);
   const branches = useLoad(() => branchesApi.list(), []).data ?? [];
@@ -39,7 +41,7 @@ export function DevicesSection() {
       <ul className="divide-y divide-hairline text-sm">
         {devices.data?.map((d) => (
           <li key={d.id} className="flex items-center justify-between py-2">
-            <span className={d.revoked_at ? "text-slate-400 line-through" : ""}>
+            <span className={d.revoked_at ? "text-slate-500 line-through" : ""}>
               {d.name} · {branches.find((b) => b.id === d.branch_id)?.name}
               <span className="block text-xs text-slate-500">
                 {d.last_seen_at
@@ -53,7 +55,13 @@ export function DevicesSection() {
               <Button
                 variant="ghost"
                 onClick={async () => {
-                  if (!window.confirm(t("devices.revokeConfirm"))) return;
+                  const yes = await confirm({
+                    title: t("devices.revoke"),
+                    message: t("devices.revokeConfirm"),
+                    confirmLabel: t("devices.revoke"),
+                    danger: true,
+                  });
+                  if (!yes) return;
                   await doorApi.revokeDevice(d.id);
                   devices.reload();
                 }}
