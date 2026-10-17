@@ -9,6 +9,7 @@ Multi-tenant gym membership software for gyms in Nepal: one product, many gyms. 
 - Backend: FastAPI (Python 3.13), SQLAlchemy 2, Alembic, Pydantic 2 — `backend/`
 - Frontend: Next.js (App Router), TypeScript, Tailwind CSS — `frontend/`
 - Shared with the phone app (PLAN.md §17): strings, the member QR, dates, money and the member API types — `shared/src/`, imported as `@shared/...` (the web app's `@/i18n`, `@/lib/dates` and similar re-export it)
+- Member phone app (PLAN.md §17): Expo (React Native, TypeScript), Expo Router — `mobile/`; runs outside Docker (`mobile/README.md`)
 - Database: PostgreSQL 16
 - Everything runs in Docker containers via Docker Compose: `db`, `api`, `worker`, `web`
 - Tests: pytest, Vitest + Testing Library, Playwright

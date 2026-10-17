@@ -801,16 +801,8 @@ export const freezeRequestsApi = {
 
 // --- enquiries (PLAN.md §16.4, 9.1, 9.2, 9.6) ---
 
-export const LEAD_SOURCES = [
-  "walk_in",
-  "phone",
-  "facebook",
-  "instagram",
-  "tiktok",
-  "referral",
-  "other",
-] as const;
-export type LeadSource = (typeof LEAD_SOURCES)[number];
+import { LEAD_SOURCES, type LeadSource } from "@shared/types";
+export { LEAD_SOURCES, type LeadSource };
 export const LEAD_STATUSES = ["new", "contacted", "trial", "joined", "lost"] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 

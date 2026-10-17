@@ -132,6 +132,8 @@ export interface MemberMe {
 export interface MemberSignIn {
   access_token: string | null;
   expires_in: number | null;
+  /** Only for the phone app, which keeps it in secure storage (§17.2). */
+  refresh_token?: string | null;
   me: MemberMe | null;
   choose: { id: string; name: string }[] | null;
 }
@@ -168,3 +170,53 @@ export interface ReceiptLink {
   text: string;
   expires_at: string;
 }
+
+/** What the member app's live updates say happened (§17.3). Ids only. */
+export type MemberLiveType =
+  | "member"
+  | "payment_request"
+  | "freeze_request"
+  | "check_in"
+  | "notice"
+  | "resync";
+
+export interface Visit {
+  at: string;
+  result: string;
+  branch_name: string | null;
+}
+
+export interface MemberPayments {
+  dues: number;
+  payments: Payment[];
+  requests: PaymentRequest[];
+}
+
+export interface RenewOptions {
+  plans: Plan[];
+  payment_methods: PaymentMethodAccount[];
+  renewal_starts_on: string;
+  first_membership: boolean;
+}
+
+export interface JoinOptions {
+  plans: { id: string; name: string; price: number | null }[];
+}
+
+export interface CodeSent {
+  channel: "sms" | "email";
+  sent_to: string;
+  expires_in: number;
+}
+
+/** Where people hear about a gym (§16.4, 9.1); "walk_in" is the desk's. */
+export const LEAD_SOURCES = [
+  "walk_in",
+  "phone",
+  "facebook",
+  "instagram",
+  "tiktok",
+  "referral",
+  "other",
+] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];

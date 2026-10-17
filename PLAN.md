@@ -666,7 +666,7 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M9 | Done 2026-10-17: enquiries (board, list, report by source, follow-ups on Today, convert to member), trial visits, visit packs and day passes counted at the door, off-peak plans enforced at the door, the join form behind the gym QR (off by default), and referrals with the top referrers. New permission **Enquiries**, in the *Front desk* starting point |
 | M10 | Done 2026-10-17: the /admin numbers and each gym's health and setup, setup nudges by SMS on trial days 3 and 10, Help (WhatsApp / Viber and guides), What's new with an unread dot, and gym referrals with a free month each. Before launch: `SUPPORT_WHATSAPP` in `.env.prod` |
 | M11 | Done 2026-10-17, **waiting on a native speaker's review**: `ne.json` with every string (a test keeps its keys and {placeholders} in step with `en.json`) and Nepali help guides; a language for each staff account and each member, the gym's as the default, chosen at sign-up and in Settings → Gym; English / नेपाली on every sign-in screen, kept in a cookie; Noto Sans Devanagari through `next/font`; Nepali month names, रु, and Nepali or Western digits (a gym setting); SMS wording seeded in the gym's language, and wording the gym never edited follows a change of language. The server renders English and the browser renders Nepali, so one request's language never leaks into another's. The legal pages and the receipt PDF stay English until a lawyer and the review sign them off |
-| M12 | In progress (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019) |
+| M12 | In progress (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019). 12.3–12.8 done 2026-10-18 — `mobile/` (Expo SDK 58): every screen of 17.5 but *signed-in devices*, checked on the iPhone simulator and an Android emulator: the QR it draws passes the door's check, offline too; three taps on *I've paid* made one request; a notice and an approval arrived with no tap; Nepali throughout. Jest covers double taps, the socket, the API client and links. Push needs `EAS_PROJECT_ID` (mobile/README.md) and is untested until then. Next: 12.9 |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -953,10 +953,11 @@ Everything the member web app does (§7), the same words:
 | **Renew** | Plan → Pay → Send proof; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
 | **Payments** | Payments and requests; receipts open as PDF and share through the phone's share sheet |
 | **Visits** | The month's calendar, live |
+| **Freeze** | From a day and for how many days, by stepping, not the phone's date picker: that only knows AD, and many gyms show BS |
 | **Notices** | Live; a notification opens the notice |
-| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, signed-in devices, sign out |
+| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, notices, switch gym, sign out. *Signed-in devices* waits for a member API that lists and ends their own sessions |
 | **Join** | The gym's join form (§16.4, 9.5), when it has it on |
-| Offline | A banner; the QR keeps working; actions wait for the connection and say so, rather than failing |
+| Offline | A banner (no answer from the server counts, whatever the phone's Wi-Fi says); the QR keeps working, drawn at the server's time saved from the last answer; actions wait for the connection and say so, rather than failing |
 
 Accessibility: every control labelled for screen readers, touch targets at least 44 points, text that grows with the phone's font size.
 
@@ -965,6 +966,7 @@ Accessibility: every control labelled for screen readers, touch targets at least
 - After the first sign-in, Home offers *Get reminders on this phone*; the phone's permission is asked only when they tap it.
 - The token is registered as an `expo` subscription (17.2, 6); everything M8 sends by push (reminders, notices, payment and freeze answers, renewals) reaches the app with no change to the rules, and SMS goes only where no push can.
 - Tapping a notification opens the right screen (renew, payments, notices, freeze).
+- Expo Go on Android has no push (removed in SDK 53): the app runs there with notifications off; the `.apk` and development builds have them. Push also needs the Expo project id (`EAS_PROJECT_ID`, mobile/README.md).
 - Android needs a free Firebase project for its credentials. iPhone push needs Apple's push key, which comes with the paid Apple account, so iPhone notifications are tested when publishing; Android notifications are tested on `.apk` builds before then.
 
 ### 17.7 Steps
