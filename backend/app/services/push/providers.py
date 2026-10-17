@@ -1,13 +1,17 @@
-"""Sending one Web Push message (PLAN.md §16.3, 8.3).
+"""Sending push messages (PLAN.md §16.3, 8.3; §17.6).
 
-`console` logs it and is what development and tests use; `webpush` encrypts
-it for the browser and signs it with our VAPID key (pywebpush).
+`console` logs them and is what development and tests use. Otherwise a
+browser subscription goes by Web Push, encrypted and signed with our VAPID key
+(pywebpush), and the phone app's token goes to Expo's push service, which
+hands it to Apple or Google.
 """
 
 import json
 import logging
 from dataclasses import dataclass
 from typing import Protocol
+
+import httpx
 
 from app.core.config import settings
 
@@ -25,9 +29,16 @@ class PushGone(PushError):
 
 @dataclass
 class Target:
-    endpoint: str
-    p256dh: str
-    auth: str
+    """A browser (endpoint and keys) or the phone app (expo_token)."""
+
+    endpoint: str | None = None
+    p256dh: str | None = None
+    auth: str | None = None
+    expo_token: str | None = None
+
+    @property
+    def is_expo(self) -> bool:
+        return self.expo_token is not None
 
 
 @dataclass
@@ -55,9 +66,8 @@ class ConsoleProvider:
         self.sent: list[tuple[Target, PushMessage]] = []
 
     def send(self, target: Target, message: PushMessage) -> None:
-        log.info(
-            "Push to %s…: %s — %s", target.endpoint[:40], message.title, message.body
-        )
+        to = target.expo_token or target.endpoint or ""
+        log.info("Push to %s…: %s — %s", to[:40], message.title, message.body)
         self.sent.append((target, message))
 
 
@@ -90,8 +100,67 @@ class WebPushProvider:
             raise PushError(str(exc)) from exc
 
 
+class ExpoProvider:
+    """The phone app (§17.6): one message to Expo's push service.
+
+    Expo answers each message with a "ticket"; DeviceNotRegistered there means
+    the app was removed or its token replaced. The later "receipts" can say
+    the same, but a gone token also fails the next send, so tickets suffice.
+    """
+
+    name = "expo"
+    URL = "https://exp.host/--/api/v2/push/send"
+
+    def __init__(self, client: httpx.Client | None = None) -> None:
+        self.client = client
+
+    def send(self, target: Target, message: PushMessage) -> None:
+        headers = {"accept": "application/json"}
+        if settings.expo_access_token:
+            headers["authorization"] = f"Bearer {settings.expo_access_token}"
+        body = {
+            "to": target.expo_token,
+            "title": message.title,
+            "body": message.body,
+            # The app opens this screen when the notification is tapped.
+            "data": {"url": message.url, "tag": message.tag},
+            "sound": "default",
+            "ttl": 24 * 60 * 60,
+        }
+        if message.tag:
+            body["collapseId"] = message.tag  # Android: replaces, as on the web
+        try:
+            client = self.client or httpx.Client(timeout=10)
+            try:
+                response = client.post(self.URL, json=body, headers=headers)
+            finally:
+                if self.client is None:
+                    client.close()
+        except httpx.HTTPError as exc:  # no answer at all: try again later
+            raise PushError(str(exc)) from exc
+        if response.status_code >= 400:
+            raise PushError(f"Expo answered {response.status_code}")
+        try:
+            ticket = response.json()["data"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise PushError("Expo's answer was unreadable") from exc
+        if isinstance(ticket, list):
+            ticket = ticket[0] if ticket else {}
+        if ticket.get("status") == "ok":
+            return
+        error = (ticket.get("details") or {}).get("error")
+        if error == "DeviceNotRegistered":
+            raise PushGone(ticket.get("message") or error)
+        raise PushError(ticket.get("message") or error or "Expo refused it")
+
+
 _console = ConsoleProvider()
 
 
-def get_provider() -> PushProvider:
-    return WebPushProvider() if settings.push_provider == "webpush" else _console
+def get_provider(target: Target | None = None) -> PushProvider:
+    """Console in development and tests; else Web Push or Expo by the target."""
+    if settings.push_provider == "console":
+        return _console
+    if target is not None and target.is_expo:
+        return ExpoProvider()
+    return WebPushProvider()

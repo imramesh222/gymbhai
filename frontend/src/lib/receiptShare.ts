@@ -1,16 +1,14 @@
 "use client";
 
+import type { ReceiptLink } from "@shared/types";
+
+export type { ReceiptLink };
+
 /**
  * A receipt as a PDF, from a signed link anyone can open for 30 days
  * (PLAN.md §16.3, 8.4): download it, or hand it to the phone's share sheet
  * (WhatsApp, Viber, Messenger). Without a share sheet, the link is copied.
  */
-export interface ReceiptLink {
-  url: string;
-  filename: string;
-  text: string;
-  expires_at: string;
-}
 
 export async function receiptFile(link: ReceiptLink): Promise<File> {
   const response = await fetch(link.url, { credentials: "omit" });

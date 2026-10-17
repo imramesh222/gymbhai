@@ -8,6 +8,7 @@ Multi-tenant gym membership software for gyms in Nepal: one product, many gyms. 
 
 - Backend: FastAPI (Python 3.13), SQLAlchemy 2, Alembic, Pydantic 2 — `backend/`
 - Frontend: Next.js (App Router), TypeScript, Tailwind CSS — `frontend/`
+- Shared with the phone app (PLAN.md §17): strings, the member QR, dates, money and the member API types — `shared/src/`, imported as `@shared/...` (the web app's `@/i18n`, `@/lib/dates` and similar re-export it)
 - Database: PostgreSQL 16
 - Everything runs in Docker containers via Docker Compose: `db`, `api`, `worker`, `web`
 - Tests: pytest, Vitest + Testing Library, Playwright
@@ -19,7 +20,7 @@ Multi-tenant gym membership software for gyms in Nepal: one product, many gyms. 
 - **Money never passes through us.** Members pay gyms directly (cash or the gym's own eSewa/Khalti/Fonepay/bank QR); we only record payments. Money is stored as integer paisa.
 - **Membership status is computed from dates**, never stored. Renewals are new rows; nothing is overwritten — every edit goes to `activity_log` with before/after.
 - **Dates:** stored in AD; each gym chooses AD or BS for counting plan months and AD/BS/both for display. Time zone Asia/Kathmandu.
-- **English and Nepali**: all UI text goes through `en.json` and `ne.json` (every key in both, same `{placeholders}`; a test checks). Long-form text lives in `*.en.ts` / `*.ne.ts`. Add strings to both files together.
+- **English and Nepali**: all UI text goes through `shared/src/i18n/en.json` and `ne.json` (every key in both, same `{placeholders}`; a test checks). Long-form text lives in `*.en.ts` / `*.ne.ts`. Add strings to both files together.
 - **SMS** goes through a provider interface (`console` in development; Sparrow and Aakash adapters). No provider is chosen yet.
 - **Pricing** of our plans lives in the database, edited from `/admin` — never hard-coded.
 - Check-in is source-agnostic so fingerprint/face readers can be added later.

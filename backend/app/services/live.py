@@ -45,6 +45,8 @@ CHANNEL = "gymbhai_live"
 
 CHECK_IN = "check_in"
 PAYMENT_REQUEST = "payment_request"
+# A notice published or removed: every member of the gym hears it (§17.3).
+NOTICE = "notice"
 # A member asked for a freeze, or one was answered (§16.3, 8.6).
 FREEZE_REQUEST = "freeze_request"
 # An enquiry added or moved along (§16.4, 9.1).
@@ -133,10 +135,28 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
     return accepts
 
 
-def member_filter(member_id: uuid.UUID) -> Callable[[Event], bool]:
-    """A member hears only about themselves."""
+def member_filter(
+    member_id: uuid.UUID,
+    gym_id: uuid.UUID | None = None,
+    branch_id: uuid.UUID | None = None,
+) -> Callable[[Event], bool]:
+    """A member hears about themselves, and their gym's notices (for every
+    branch, or their own)."""
     me = str(member_id)
-    return lambda event: event.get("member") == me
+    gym = str(gym_id) if gym_id else None
+    branch = str(branch_id) if branch_id else None
+
+    def accepts(event: Event) -> bool:
+        if event.get("member") == me:
+            return True
+        return (
+            event["type"] == NOTICE
+            and gym is not None
+            and event.get("gym") == gym
+            and event.get("branch") in (None, branch)
+        )
+
+    return accepts
 
 
 # --- one listener per process, many streams --------------------------------------

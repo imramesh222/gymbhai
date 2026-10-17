@@ -31,7 +31,7 @@ describe("the English catalog", () => {
   it("has no key twice: JSON keeps only the last one, silently", async () => {
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
-    const raw = readFileSync(resolve(process.cwd(), "src/i18n/en.json"), "utf8");
+    const raw = readFileSync(resolve(process.cwd(), "../shared/src/i18n/en.json"), "utf8");
     const keys = [...raw.matchAll(/^\s*"([^"]+)"\s*:/gm)].map((m) => m[1]);
     const seen = new Set<string>();
     const repeated = keys.filter((key) => seen.has(key) || !seen.add(key));
@@ -41,8 +41,8 @@ describe("the English catalog", () => {
 
 describe("the Nepali catalog", () => {
   it("has every English key, with the same placeholders", async () => {
-    const en = (await import("./en.json")).default as Record<string, string>;
-    const ne = (await import("./ne.json")).default as Record<string, string>;
+    const en = (await import("@shared/i18n/en.json")).default as Record<string, string>;
+    const ne = (await import("@shared/i18n/ne.json")).default as Record<string, string>;
     expect(Object.keys(ne).sort()).toEqual(Object.keys(en).sort());
     const slots = (text: string) =>
       [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();

@@ -17,15 +17,19 @@ the answer is saved in the same transaction as the payment:
                                  transaction rolled back): it runs again
 
 Without the header a request runs as it always did: scripts and tests.
+
+Members' actions from the phone app use it too (PLAN.md §17.4):
+`begin_member()`, whose keys only ever find that member's own answers.
 """
 
 import hashlib
 import re
+import uuid
 from dataclasses import dataclass
 
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -34,6 +38,7 @@ from sqlalchemy.orm import Session
 from app.api.tenancy import StaffContext
 from app.core.errors import AppError
 from app.models.idempotency import IdempotencyKey
+from app.models.member import Member
 
 HEADER = "Idempotency-Key"
 _VALID_KEY = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
@@ -48,13 +53,12 @@ class Replay(Exception):
         self.body = body
 
 
-def replay_handler(_: Request, exc: Exception) -> JSONResponse:
+def replay_handler(_: Request, exc: Exception) -> Response:
     assert isinstance(exc, Replay)
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=exc.body,
-        headers={"Idempotent-Replayed": "true"},
-    )
+    headers = {"Idempotent-Replayed": "true"}
+    if exc.status_code == 204:
+        return Response(status_code=204, headers=headers)
+    return JSONResponse(status_code=exc.status_code, content=exc.body, headers=headers)
 
 
 @dataclass
@@ -62,7 +66,7 @@ class Idempotency:
     row: IdempotencyKey | None
     status_code: int
 
-    def finish(self, answer: BaseModel) -> None:
+    def finish(self, answer: BaseModel | dict | None = None) -> None:
         """Keep the answer, in the transaction about to be committed."""
         if self.row is not None:
             self.row.status_code = self.status_code
@@ -86,6 +90,30 @@ def begin(
     db: Session, ctx: StaffContext, request: Request, payload: BaseModel
 ) -> Idempotency:
     """Claim the request's key, or raise Replay with the answer already given."""
+    return _begin(db, ctx.gym_id, None, request, payload)
+
+
+def begin_member(
+    db: Session, member: Member, request: Request, payload: BaseModel | None = None
+) -> Idempotency:
+    """The same, for a member's action from their app (PLAN.md §17.4)."""
+    return _begin(db, member.gym_id, member.id, request, payload)
+
+
+def begin_public(
+    db: Session, gym_id: uuid.UUID, request: Request, payload: BaseModel
+) -> Idempotency:
+    """The same, for the public join form: nobody signed in (§16.4, 9.5)."""
+    return _begin(db, gym_id, None, request, payload)
+
+
+def _begin(
+    db: Session,
+    gym_id: uuid.UUID,
+    member_id: uuid.UUID | None,
+    request: Request,
+    payload: BaseModel | None,
+) -> Idempotency:
     route_obj = request.scope.get("route")
     status_code = getattr(route_obj, "status_code", None) or 200
     key = request.headers.get(HEADER)
@@ -95,22 +123,35 @@ def begin(
         raise AppError(422, "bad_idempotency_key", "Invalid Idempotency-Key header.")
 
     route = f"{request.method} {request.url.path}"[:200]
-    request_hash = hashlib.sha256(
-        f"{route}\n{payload.model_dump_json()}".encode()
-    ).hexdigest()
+    body = payload.model_dump_json() if payload is not None else ""
+    request_hash = hashlib.sha256(f"{route}\n{body}".encode()).hexdigest()
 
     def existing() -> IdempotencyKey | None:
         return db.scalars(
             select(IdempotencyKey).where(
-                IdempotencyKey.gym_id == ctx.gym_id, IdempotencyKey.key == key
+                IdempotencyKey.gym_id == gym_id, IdempotencyKey.key == key
             )
         ).first()
 
+    def replay_or_refuse(found: IdempotencyKey) -> Replay:
+        # Someone else's key (another member's, or staff's): never their answer.
+        if found.member_id != member_id:
+            raise AppError(
+                409,
+                "idempotency_key_reused",
+                "That key was already used for a different request.",
+            )
+        return _replay_or_refuse(found, route, request_hash)
+
     found = existing()
     if found is not None:
-        raise _replay_or_refuse(found, route, request_hash)
+        raise replay_or_refuse(found)
     row = IdempotencyKey(
-        gym_id=ctx.gym_id, key=key, route=route, request_hash=request_hash
+        gym_id=gym_id,
+        member_id=member_id,
+        key=key,
+        route=route,
+        request_hash=request_hash,
     )
     try:
         # A savepoint: if the same key is being saved right now, this waits on
@@ -121,5 +162,5 @@ def begin(
         found = existing()
         if found is None:
             raise
-        raise _replay_or_refuse(found, route, request_hash) from None
+        raise replay_or_refuse(found) from None
     return Idempotency(row, status_code)

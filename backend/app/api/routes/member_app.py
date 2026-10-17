@@ -12,6 +12,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    Body,
     Cookie,
     Depends,
     File,
@@ -26,6 +27,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.api import idempotency
 from app.api.deps import current_member
 from app.api.presenters import payments_read
 from app.api.routes.freeze_requests import reads as freeze_reads
@@ -46,6 +48,8 @@ from app.models.messaging import Notice
 from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
 from app.schemas.member_app import (
+    AppPushIn,
+    AppSession,
     CodeRequest,
     CodeRequested,
     CodeVerify,
@@ -214,12 +218,16 @@ def build_me(db: Session, member: Member) -> MemberMe:
 def _signed_in(
     db: Session, issued: member_auth.Issued, response: Response
 ) -> MemberSignIn:
-    if issued.refresh_token:
+    """The web gets its refresh token as an httpOnly cookie; the phone app
+    (PLAN.md §17.2) in the answer, to keep in secure storage."""
+    app = issued.session.client == "app"
+    if issued.refresh_token and not app:
         _set_cookie(response, issued.refresh_token)
     return MemberSignIn(
         access_token=issued.access_token,
         expires_in=settings.access_token_minutes * 60,
         me=build_me(db, issued.member),
+        refresh_token=issued.refresh_token if app else None,
     )
 
 
@@ -275,6 +283,7 @@ def ask_to_join(
     slug: Slug, payload: JoinIn, request: Request, db: Session = Depends(get_db)
 ) -> dict[str, bool]:
     gym = _joinable(db, slug)
+    idem = idempotency.begin_public(db, gym.id, request, payload)
     try:
         phone = normalize_phone(payload.phone)
     except ValueError as exc:
@@ -290,8 +299,10 @@ def ask_to_join(
         {**payload.model_dump(), "phone": phone, "branch_id": branch_id},
         activity.client_ip(request),
     )
+    answer = {"received": True}
+    idem.finish(answer)
     db.commit()
-    return {"received": True}
+    return answer
 
 
 @router.post("/{slug}/otp/request", response_model=CodeRequested)
@@ -338,7 +349,7 @@ def verify_code(
     if member is None:
         raise AppError(422, "not_on_this_number", "Choose one of the names shown.")
     row.consumed_at = utcnow()
-    issued = member_auth.start_session(db, member, request)
+    issued = member_auth.start_session(db, member, request, payload.client)
     if member_auth.is_master_code(payload.code):
         # Who used the shared code, and from where (PLAN.md §11).
         activity.record(
@@ -358,10 +369,13 @@ def verify_code(
 @router.post("/auth/refresh", response_model=MemberSignIn)
 def refresh(
     response: Response,
+    payload: AppSession | None = Body(default=None),
     db: Session = Depends(get_db),
     gb_member_refresh: str | None = Cookie(default=None),
 ) -> MemberSignIn | JSONResponse:
-    issued = member_auth.refresh(db, gb_member_refresh)
+    """The web sends its cookie; the phone app its token in the body (§17.2)."""
+    raw = payload.refresh_token if payload else gb_member_refresh
+    issued = member_auth.refresh(db, raw)
     if issued is None:
         db.rollback()
         ended = JSONResponse(
@@ -376,10 +390,11 @@ def refresh(
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
+    payload: AppSession | None = Body(default=None),
     db: Session = Depends(get_db),
     gb_member_refresh: str | None = Cookie(default=None),
 ) -> Response:
-    member_auth.revoke(db, gb_member_refresh)
+    member_auth.revoke(db, payload.refresh_token if payload else gb_member_refresh)
     db.commit()
     done = Response(status_code=status.HTTP_204_NO_CONTENT)
     done.delete_cookie(REFRESH_COOKIE, path=REFRESH_PATH)
@@ -401,7 +416,7 @@ def my_live(
     member: Member = Depends(current_member), db: Session = Depends(get_db)
 ) -> StreamingResponse:
     """Updates to this member's own membership, payments and visits."""
-    accepts = live.member_filter(member.id)
+    accepts = live.member_filter(member.id, member.gym_id, member.home_branch_id)
     db.close()  # see app/api/routes/live.py
     return StreamingResponse(
         live.stream(accepts, seconds=settings.access_token_minutes * 60),
@@ -453,14 +468,17 @@ def confirm_email(
 ) -> MemberMe:
     gym = db.get(Gym, member.gym_id)
     assert gym is not None
+    idem = idempotency.begin_member(db, member, request, payload)
     address = member_auth.confirm_email_change(
         db, gym, member, str(payload.email), payload.code
     )
     members_service.update_by_member(
         db, member, {"email": address}, action="member.email_changed", request=request
     )
+    answer = build_me(db, member)
+    idem.finish(answer)
     db.commit()
-    return build_me(db, member)
+    return answer
 
 
 @router.post("/me/photo", response_model=MemberMe)
@@ -507,6 +525,7 @@ def ask_to_freeze(
     member: Member = Depends(current_member),
     db: Session = Depends(get_db),
 ) -> FreezeRequestRead:
+    idem = idempotency.begin_member(db, member, request, payload)
     row = freeze_service.create(
         db,
         member,
@@ -515,8 +534,10 @@ def ask_to_freeze(
         reason=payload.reason,
         request=request,
     )
+    answer = freeze_reads(db, [row])[0]
+    idem.finish(answer)
     db.commit()
-    return freeze_reads(db, [row])[0]
+    return answer
 
 
 @router.post(
@@ -524,9 +545,11 @@ def ask_to_freeze(
 )
 def withdraw_freeze_request(
     freeze_request_id: uuid.UUID,
+    request: Request,
     member: Member = Depends(current_member),
     db: Session = Depends(get_db),
 ) -> FreezeRequestRead:
+    idem = idempotency.begin_member(db, member, request)
     row = db.scalars(
         select(FreezeRequest)
         .where(
@@ -537,8 +560,10 @@ def withdraw_freeze_request(
     if row is None:
         raise not_found("No such request.")
     freeze_service.withdraw(db, member, row)
+    answer = freeze_reads(db, [row])[0]
+    idem.finish(answer)
     db.commit()
-    return freeze_reads(db, [row])[0]
+    return answer
 
 
 # --- push (PLAN.md §16.3, 8.3) ---
@@ -547,34 +572,46 @@ def withdraw_freeze_request(
 @router.get("/me/push", response_model=PushStatus)
 def my_push(
     endpoint: Annotated[str | None, Query(max_length=2000)] = None,
+    expo_token: Annotated[str | None, Query(max_length=255)] = None,
     member: Member = Depends(current_member),
     db: Session = Depends(get_db),
 ) -> PushStatus:
     rows = push.live(db, member.id)
-    return PushStatus(
-        public_key=public_key(),
-        subscribed=any(endpoint is None or r.endpoint == endpoint for r in rows),
-    )
+    if expo_token is not None:
+        subscribed = any(r.expo_token == expo_token for r in rows)
+    else:
+        subscribed = any(endpoint is None or r.endpoint == endpoint for r in rows)
+    return PushStatus(public_key=public_key(), subscribed=subscribed)
 
 
 @router.post("/me/push", response_model=PushStatus)
 def turn_push_on(
-    payload: PushSubscriptionIn,
+    payload: PushSubscriptionIn | AppPushIn,
     request: Request,
     member: Member = Depends(current_member),
     db: Session = Depends(get_db),
 ) -> PushStatus:
-    """This phone takes reminders, notices and answers now, instead of SMS."""
-    if not push.available():
-        raise AppError(409, "push_unavailable", "Notifications aren't set up yet.")
-    row = push.subscribe(
-        db,
-        member,
-        endpoint=payload.endpoint,
-        p256dh=payload.keys.p256dh,
-        auth=payload.keys.auth,
-        user_agent=request.headers.get("user-agent"),
-    )
+    """This phone takes reminders, notices and answers now, instead of SMS.
+
+    Asking twice (a double tap, a retry) is harmless: the same phone again
+    updates its row instead of adding one.
+    """
+    user_agent = request.headers.get("user-agent")
+    if isinstance(payload, AppPushIn):
+        row = push.subscribe_app(
+            db, member, expo_token=payload.expo_token, user_agent=user_agent
+        )
+    else:
+        if not push.available():
+            raise AppError(409, "push_unavailable", "Notifications aren't set up yet.")
+        row = push.subscribe(
+            db,
+            member,
+            endpoint=payload.endpoint,
+            p256dh=payload.keys.p256dh,
+            auth=payload.keys.auth,
+            user_agent=user_agent,
+        )
     activity.member_action(
         db, member, "push.subscribed", entity="push_subscription", entity_id=row.id
     )
@@ -589,7 +626,7 @@ def turn_push_off(
     db: Session = Depends(get_db),
 ) -> PushStatus:
     """This phone stops: on "Turn off", and on signing out."""
-    if push.unsubscribe(db, member, payload.endpoint):
+    if push.unsubscribe(db, member, payload.endpoint, payload.expo_token):
         activity.member_action(db, member, "push.unsubscribed")
     db.commit()
     return PushStatus(public_key=public_key(), subscribed=False)
@@ -748,10 +785,13 @@ def _own_request(db: Session, member: Member, request_id: uuid.UUID) -> PaymentR
 )
 def create_request(
     payload: PaymentRequestIn,
+    request: Request,
     member: Member = Depends(current_member),
     db: Session = Depends(get_db),
 ) -> PaymentRequestRead:
-    """ "I've paid" — waiting for the gym to confirm (§5.2)."""
+    """ "I've paid" — waiting for the gym to confirm (§5.2). With an
+    Idempotency-Key, sent twice is still one request (§17.4)."""
+    idem = idempotency.begin_member(db, member, request, payload)
     row = requests_service.create(
         db,
         member,
@@ -760,8 +800,10 @@ def create_request(
         amount=payload.amount,
         transaction_ref=payload.transaction_ref,
     )
+    answer = request_read(db, row)
+    idem.finish(answer)
     db.commit()
-    return request_read(db, row)
+    return answer
 
 
 @router.post(
@@ -796,10 +838,14 @@ async def upload_screenshot(
 )
 def withdraw_request(
     request_id: uuid.UUID,
+    request: Request,
     member: Member = Depends(current_member),
     db: Session = Depends(get_db),
 ) -> PaymentRequestRead:
+    idem = idempotency.begin_member(db, member, request)
     row = _own_request(db, member, request_id)
     requests_service.withdraw(db, row)
+    answer = request_read(db, row)
+    idem.finish(answer)
     db.commit()
-    return request_read(db, row)
+    return answer

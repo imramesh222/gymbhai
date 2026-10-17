@@ -1,6 +1,8 @@
 FROM node:24-slim
 
-WORKDIR /app
+# frontend/ and shared/ side by side, as in the repo (PLAN.md §17): the source
+# is mounted over these by docker-compose.yml.
+WORKDIR /work/frontend
 
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund

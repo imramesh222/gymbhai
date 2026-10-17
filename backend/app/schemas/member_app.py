@@ -2,7 +2,7 @@ import datetime as dt
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.schemas.auth import OptionalEmail, Strict
 from app.schemas.messaging import NoticeRead
@@ -43,6 +43,9 @@ class CodeVerify(CodeRequest):
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     # When several members share the phone: which one is signing in.
     member_id: uuid.UUID | None = None
+    # "app": the phone app (PLAN.md §17.2) gets its refresh token in the
+    # answer, to keep in secure storage; the web gets an httpOnly cookie.
+    client: Literal["web", "app"] = "web"
 
 
 class MemberChoice(BaseModel):
@@ -102,6 +105,15 @@ class MemberSignIn(BaseModel):
     expires_in: int | None = None
     me: MemberMe | None = None
     choose: list[MemberChoice] | None = None
+    # The phone app only (§17.2): a new one at every refresh, the old one
+    # then dead. Never sent to the web, which has the cookie.
+    refresh_token: str | None = None
+
+
+class AppSession(Strict):
+    """The phone app's refresh and sign-out (§17.2): the token in the body."""
+
+    refresh_token: str = Field(min_length=20, max_length=200)
 
 
 class Visit(BaseModel):
@@ -287,8 +299,27 @@ class PushSubscriptionIn(Strict):
     keys: PushKeys
 
 
+EXPO_TOKEN = r"^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,200}\]$"
+
+
+class AppPushIn(Strict):
+    """What the phone app's getExpoPushTokenAsync() gives (§17.6)."""
+
+    kind: Literal["expo"]
+    expo_token: str = Field(max_length=255, pattern=EXPO_TOKEN)
+
+
 class PushEndpoint(Strict):
-    endpoint: str = Field(min_length=10, max_length=2000)
+    """Which phone to turn off: a browser's endpoint or the app's token."""
+
+    endpoint: str | None = Field(default=None, min_length=10, max_length=2000)
+    expo_token: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def _one(self) -> "PushEndpoint":
+        if self.endpoint is None and self.expo_token is None:
+            raise ValueError("Give the endpoint or the app's token.")
+        return self
 
 
 class PushStatus(BaseModel):

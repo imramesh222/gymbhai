@@ -108,15 +108,36 @@ def _rate_limited(db: Session, where: Destination, ip: str | None) -> bool:
     return False
 
 
+RESEND_SECONDS = 30
+
+
+def _sent_just_now(db: Session, gym: Gym, where: Destination) -> bool:
+    return bool(
+        db.scalar(
+            select(OtpCode.id).where(
+                OtpCode.gym_id == gym.id,
+                OtpCode.channel == where.channel,
+                OtpCode.destination == where.value,
+                OtpCode.consumed_at.is_(None),
+                OtpCode.created_at >= utcnow() - dt.timedelta(seconds=RESEND_SECONDS),
+            )
+        )
+    )
+
+
 def request_code(
     db: Session, gym: Gym, where: Destination, request: Request | None = None
 ) -> None:
     ip = client_ip(request)
+    known = bool(members_at(db, gym, where))
+    if known and _sent_just_now(db, gym, where):
+        # A second tap, or the app retrying (PLAN.md §17.2): the code already
+        # on its way is the one to type. No second SMS, no limit used up.
+        return
     if _rate_limited(db, where, ip):
         raise AppError(
             429, "too_many_codes", "Too many codes asked for. Wait a few minutes."
         )
-    known = bool(members_at(db, gym, where))
     code = settings.otp_test_code or f"{secrets.randbelow(1_000_000):06d}"
     # Recorded even for an unknown number, so the limits also count guesses:
     # otherwise anyone could test numbers freely to learn who trains here.
@@ -213,6 +234,8 @@ def request_email_change(
     """
     where = Destination(VERIFY, new_email.strip().lower())
     ip = client_ip(request)
+    if _sent_just_now(db, gym, where):
+        return  # a second tap: the code on its way is the one (§17.4)
     if _rate_limited(db, where, ip):
         raise AppError(
             429, "too_many_codes", "Too many codes asked for. Wait a few minutes."
@@ -288,10 +311,13 @@ def _access_token(member: Member, session: MemberSession) -> str:
     )
 
 
-def start_session(db: Session, member: Member, request: Request | None) -> Issued:
+def start_session(
+    db: Session, member: Member, request: Request | None, client: str = "web"
+) -> Issued:
     raw = new_refresh_token()
     session = MemberSession(
         member_id=member.id,
+        client=client,
         refresh_token_hash=hash_refresh_token(raw),
         device_label=(request.headers.get("User-Agent", "")[:255] if request else None),
         expires_at=utcnow() + dt.timedelta(days=settings.member_refresh_days),
@@ -326,7 +352,12 @@ def refresh(db: Session, raw: str | None) -> Issued | None:
     if session.refresh_token_hash != token_hash:
         if session.rotated_at is None or now - session.rotated_at > ROTATION_GRACE:
             return None
-        return Issued(member, session, _access_token(member, session), None)
+        if session.client != "app":
+            # The web: another tab already has the new cookie.
+            return Issued(member, session, _access_token(member, session), None)
+        # The phone app (PLAN.md §17.2) holds its token alone: the previous
+        # one back within the grace means the answer was lost on the way.
+        # Its only copy of the new one is gone, so it gets another.
     fresh = new_refresh_token()
     session.previous_token_hash = token_hash
     session.refresh_token_hash = hash_refresh_token(fresh)

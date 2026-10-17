@@ -46,7 +46,7 @@ from app.schemas.messaging import (
     SmsTemplatesUpdate,
     check_days,
 )
-from app.services import activity, reminders
+from app.services import activity, live, reminders
 from app.services import members as members_service
 from app.services.push import service as push
 from app.services.sms import service as sms
@@ -524,6 +524,7 @@ def create_notice(
         },
         request=request,
     )
+    live.publish(db, gym_id=ctx.gym_id, kind=live.NOTICE, branch_id=notice.branch_id)
     db.commit()
     return notice
 
@@ -546,6 +547,7 @@ def delete_notice(
         changes={"title": notice.title},
         request=request,
     )
+    live.publish(db, gym_id=ctx.gym_id, kind=live.NOTICE, branch_id=notice.branch_id)
     db.delete(notice)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

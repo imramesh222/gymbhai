@@ -140,7 +140,7 @@ function Frame({ children }: { children: React.ReactNode }) {
 /** Days left, dues and visits change as soon as the desk or the door acts. */
 function RefreshOnChange() {
   const { refresh } = useMember();
-  useLive(["member", "check_in", "payment_request"], () => void refresh());
+  useLive(["member", "check_in", "payment_request", "notice"], () => void refresh());
   return null;
 }
 

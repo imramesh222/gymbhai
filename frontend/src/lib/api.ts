@@ -7,9 +7,29 @@
  * by calling refresh(), and a 401 mid-session triggers one refresh and retry.
  */
 import type { Digits, Locale } from "@/i18n";
-import type { AccessWindow } from "@/lib/accessHours";
-import type { ReceiptLink } from "@/lib/receiptShare";
 import { isMessageKey, t } from "@/i18n";
+import type {
+  AccessWindow,
+  FreezeRequest,
+  Method,
+  Notice,
+  Payment,
+  PaymentMethodAccount,
+  Plan,
+  ReceiptLink,
+} from "@shared/types";
+
+// The member-facing types live in shared/ (PLAN.md §17): one copy for the
+// web app and the phone app.
+export type {
+  AccountKind,
+  FreezeRequest,
+  Method,
+  Notice,
+  Payment,
+  PaymentMethodAccount,
+  Plan,
+} from "@shared/types";
 
 export class ApiError extends Error {
   constructor(
@@ -382,8 +402,6 @@ export const twoStepApi = {
 
 // --- M1: members and money ----------------------------------------------------
 
-export type Method = "cash" | "esewa" | "khalti" | "fonepay" | "bank";
-export type AccountKind = "esewa" | "khalti" | "fonepay" | "bank" | "other";
 export type MemberStatus = "active" | "frozen" | "upcoming" | "expired" | "none";
 export type MembershipStatus =
   "active" | "frozen" | "upcoming" | "expired" | "cancelled";
@@ -396,50 +414,8 @@ export interface Branch {
   is_active: boolean;
 }
 
-export interface Plan {
-  id: string;
-  name: string;
-  duration_months: number | null;
-  duration_days: number | null;
-  price: number | null;
-  admission_fee: number;
-  all_branches: boolean;
-  branch_ids: string[];
-  is_active: boolean;
-  sort_order: number;
-  /** A visit pack (§16.4, 9.3); null is unlimited. */
-  visit_limit: number | null;
-  /** Off-peak hours (9.4); null is any time. */
-  access_hours: AccessWindow[] | null;
-}
 
-export interface PaymentMethodAccount {
-  id: string;
-  kind: AccountKind;
-  label: string;
-  account_name: string | null;
-  account_number: string | null;
-  qr_image_url: string | null;
-  is_active: boolean;
-  sort_order: number;
-}
 
-export interface Payment {
-  id: string;
-  member_id: string;
-  membership_id: string | null;
-  kind: "payment" | "refund";
-  amount: number;
-  method: Method;
-  transaction_ref: string | null;
-  paid_at: string;
-  receipt_no: number;
-  received_by: string | null;
-  received_by_name: string | null;
-  note: string | null;
-  voided_at: string | null;
-  void_reason: string | null;
-}
 
 export interface PaymentListItem extends Payment {
   member_name: string;
@@ -809,23 +785,6 @@ export const paymentsApi = {
 };
 
 /** A member's "please freeze my membership" (PLAN.md §16.3, 8.6). */
-export interface FreezeRequest {
-  id: string;
-  member_id: string;
-  membership_id: string;
-  from_date: string;
-  to_date: string;
-  reason: string;
-  status: "pending" | "approved" | "rejected" | "withdrawn";
-  reject_reason: string | null;
-  created_at: string;
-  reviewed_at: string | null;
-  member_name: string | null;
-  member_code: string | null;
-  plan_name: string | null;
-  ends_on: string | null;
-  reviewed_by_name: string | null;
-}
 
 export const freezeRequestsApi = {
   list: (status: FreezeRequest["status"] = "pending") =>
@@ -985,16 +944,6 @@ export interface ReminderRule {
   enabled: boolean;
 }
 
-export interface Notice {
-  id: string;
-  branch_id: string | null;
-  title: string;
-  body: string;
-  published_at: string;
-  send_sms: boolean;
-  sms_count: number;
-  push_count: number;
-}
 
 export interface NoticeInput {
   title: string;

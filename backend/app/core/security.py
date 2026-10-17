@@ -138,6 +138,9 @@ class MemberClaims:
     member_id: uuid.UUID
     gym_id: uuid.UUID
     session_id: uuid.UUID
+    # When the token stops working: the phone app's socket ends then unless
+    # it was handed a fresh one (PLAN.md §17.3).
+    expires_at: dt.datetime | None = None
 
 
 def decode_member_token(token: str) -> MemberClaims:
@@ -154,6 +157,7 @@ def decode_member_token(token: str) -> MemberClaims:
             member_id=uuid.UUID(payload["sub"]),
             gym_id=uuid.UUID(payload["gym"]),
             session_id=uuid.UUID(payload["sid"]),
+            expires_at=dt.datetime.fromtimestamp(payload["exp"], dt.UTC),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise TokenError("invalid_token", "Invalid session token.") from exc

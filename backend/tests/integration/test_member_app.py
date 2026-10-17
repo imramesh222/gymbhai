@@ -96,9 +96,34 @@ def test_three_codes_per_quarter_hour(
     make_member(db, gym_a)
     for _ in range(3):
         assert ask(client, phone="9812345678").status_code == 200
+        a_minute_ago(db)  # past the 30-second resend wait
     response = ask(client, phone="9812345678")
     assert response.status_code == 429
     assert response.json()["code"] == "too_many_codes"
+
+
+def a_minute_ago(db: Session) -> None:
+    """The codes asked for so far: as if a minute had passed."""
+    from sqlalchemy import update
+
+    db.execute(
+        update(OtpCode).values(created_at=OtpCode.created_at - dt.timedelta(minutes=1))
+    )
+    db.commit()
+
+
+def test_a_second_tap_sends_no_second_code(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    """PLAN.md §17.2: within 30 seconds, the code on its way is the one."""
+    make_member(db, gym_a)
+    for _ in range(4):  # more than the limit of three: none of it counts
+        assert ask(client, phone="9812345678").status_code == 200
+    sent = db.scalars(select(SmsMessage).where(SmsMessage.kind == "otp")).all()
+    assert len(sent) == 1
+    assert len(db.scalars(select(OtpCode)).all()) == 1
+    # The code that was sent still signs in.
+    assert verify(client, phone="9812345678").status_code == 200
 
 
 def test_guessing_numbers_is_rate_limited_too(

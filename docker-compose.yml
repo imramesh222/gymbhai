@@ -75,9 +75,11 @@ services:
     depends_on:
       - api
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+      # frontend/ and shared/ side by side, as in the repo (PLAN.md §17).
+      - ./frontend:/work/frontend
+      - ./shared:/work/shared
+      - /work/frontend/node_modules
+      - /work/frontend/.next
 
 volumes:
   pgdata:

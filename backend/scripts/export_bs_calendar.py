@@ -1,6 +1,6 @@
 """Write the BS calendar table the frontend converts dates with.
 
-    python -m scripts.export_bs_calendar ../frontend/src/lib/bs-calendar.json
+    python -m scripts.export_bs_calendar ../shared/src/bs-calendar.json
 
 Both sides then convert from the same data, so a date never reads one way on
 a receipt and another on screen.

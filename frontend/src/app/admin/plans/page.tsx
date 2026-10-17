@@ -6,6 +6,7 @@ import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { Card, PageHeader } from "@/components/ui/Card";
+import { PageSkeleton } from "@/components/ui/Skeleton";
 import { Checkbox, MoneyInput } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import { adminApi, errorMessage, type PlatformPlan } from "@/lib/api";
@@ -17,10 +18,14 @@ export default function AdminPlansPage() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("admin.plans")} subtitle={t("admin.plansHelp")} />
-      {data?.map((plan) => (
-        <PlanEditor key={plan.id} plan={plan} onSaved={reload} />
-      ))}
+      {/* New plan first: adding one never means scrolling past every plan, and
+          the form stays put while the list loads and grows below it. */}
       <PlanEditor plan={null} onSaved={reload} />
+      {!data ? (
+        <PageSkeleton label={t("common.loading")} />
+      ) : (
+        data.map((plan) => <PlanEditor key={plan.id} plan={plan} onSaved={reload} />)
+      )}
     </div>
   );
 }
@@ -32,7 +37,7 @@ function PlanEditor({
   plan: PlatformPlan | null;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState({
+  const blank = () => ({
     name: plan?.name ?? "",
     max_active_members: plan?.max_active_members?.toString() ?? "",
     max_branches: plan?.max_branches?.toString() ?? "",
@@ -40,6 +45,7 @@ function PlanEditor({
     included_sms: plan?.included_sms?.toString() ?? "0",
     is_active: plan?.is_active ?? true,
   });
+  const [form, setForm] = useState(blank);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
     text: string;
@@ -58,7 +64,10 @@ function PlanEditor({
     };
     try {
       if (plan) await adminApi.updatePlan(plan.id, body);
-      else await adminApi.createPlan(body);
+      else {
+        await adminApi.createPlan(body);
+        setForm(blank()); // ready for the next one, not the same one twice
+      }
       setMessage({ tone: "success", text: t("common.saved") });
       onSaved();
     } catch (err) {

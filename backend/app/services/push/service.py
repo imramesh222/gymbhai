@@ -23,7 +23,7 @@ from app.core.time import utcnow
 from app.models.gym import Gym
 from app.models.member import Member
 from app.models.messaging import SmsMessage
-from app.models.push import PushSubscription
+from app.models.push import KIND_EXPO, KIND_WEB, PushSubscription
 from app.services.push.providers import (
     PushError,
     PushGone,
@@ -39,8 +39,17 @@ Channel = Literal["push", "sms", "both"]
 
 
 def available() -> bool:
-    """Push needs our VAPID key; without one, everything goes by SMS."""
+    """Web Push needs our VAPID key; without one, browsers get SMS instead.
+    The phone app's push (Expo) needs no key of ours, so it always works."""
     return public_key() is not None
+
+
+def _usable():
+    """Subscriptions we can send to now: the app's always, browsers' with a key."""
+    alive = PushSubscription.revoked_at.is_(None)
+    if available():
+        return alive
+    return alive & (PushSubscription.kind == KIND_EXPO)
 
 
 def live(db: Session, member_id: uuid.UUID) -> list[PushSubscription]:
@@ -57,15 +66,12 @@ def live(db: Session, member_id: uuid.UUID) -> list[PushSubscription]:
 def reachable(db: Session, member_ids: Iterable[uuid.UUID]) -> set[uuid.UUID]:
     """Which of these members have a phone that takes push: one query."""
     ids = list(member_ids)
-    if not ids or not available():
+    if not ids:
         return set()
     return set(
         db.scalars(
             select(PushSubscription.member_id)
-            .where(
-                PushSubscription.member_id.in_(ids),
-                PushSubscription.revoked_at.is_(None),
-            )
+            .where(PushSubscription.member_id.in_(ids), _usable())
             .distinct()
         )
     )
@@ -73,15 +79,10 @@ def reachable(db: Session, member_ids: Iterable[uuid.UUID]) -> set[uuid.UUID]:
 
 def reachable_in_gym(db: Session, gym_id: uuid.UUID) -> set[uuid.UUID]:
     """Every member of the gym who takes push: for the daily automations."""
-    if not available():
-        return set()
     return set(
         db.scalars(
             select(PushSubscription.member_id)
-            .where(
-                PushSubscription.gym_id == gym_id,
-                PushSubscription.revoked_at.is_(None),
-            )
+            .where(PushSubscription.gym_id == gym_id, _usable())
             .distinct()
         )
     )
@@ -108,6 +109,7 @@ def subscribe(
             gym_id=member.gym_id, member_id=member.id, endpoint=endpoint
         )
         db.add(row)
+    row.kind = KIND_WEB
     row.p256dh = p256dh
     row.auth = auth
     row.user_agent = (user_agent or "")[:300] or None
@@ -116,10 +118,44 @@ def subscribe(
     return row
 
 
-def unsubscribe(db: Session, member: Member, endpoint: str | None = None) -> int:
-    """Turn this phone off (or, with no endpoint, every phone). Returns how many."""
+def subscribe_app(
+    db: Session, member: Member, *, expo_token: str, user_agent: str | None
+) -> PushSubscription:
+    """The phone app takes notifications (§17.6). The same token again: no change."""
+    row = db.scalar(
+        select(PushSubscription).where(
+            PushSubscription.member_id == member.id,
+            PushSubscription.expo_token == expo_token,
+        )
+    )
+    if row is None:
+        row = PushSubscription(
+            gym_id=member.gym_id,
+            member_id=member.id,
+            kind=KIND_EXPO,
+            expo_token=expo_token,
+        )
+        db.add(row)
+    row.user_agent = (user_agent or "")[:300] or None
+    row.revoked_at = None
+    db.flush()
+    return row
+
+
+def unsubscribe(
+    db: Session,
+    member: Member,
+    endpoint: str | None = None,
+    expo_token: str | None = None,
+) -> int:
+    """Turn this phone off (or, with neither, every phone). Returns how many."""
+    everything = endpoint is None and expo_token is None
     rows = [
-        r for r in live(db, member.id) if endpoint is None or r.endpoint == endpoint
+        r
+        for r in live(db, member.id)
+        if everything
+        or (endpoint is not None and r.endpoint == endpoint)
+        or (expo_token is not None and r.expo_token == expo_token)
     ]
     for row in rows:
         row.revoked_at = utcnow()
@@ -213,7 +249,6 @@ def handle_send(db: Session, payload: dict) -> None:
     A push service that fails for now makes the job retry (unless a phone
     already took it); one that says the subscription is gone revokes it.
     """
-    provider = get_provider()
     message = PushMessage(
         title=payload["title"],
         body=payload["body"],
@@ -223,8 +258,11 @@ def handle_send(db: Session, payload: dict) -> None:
     delivered = False
     failed: PushError | None = None
     for row in live(db, uuid.UUID(payload["member_id"])):
+        if row.kind == KIND_WEB and not available():
+            continue
+        target = Target(row.endpoint, row.p256dh, row.auth, row.expo_token)
         try:
-            provider.send(Target(row.endpoint, row.p256dh, row.auth), message)
+            get_provider(target).send(target, message)
         except PushGone:
             row.revoked_at = utcnow()
         except PushError as exc:

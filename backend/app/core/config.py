@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     vapid_private_key: str | None = None
     # Who push services contact about our messages.
     vapid_subject: str = "mailto:support@gymbhai.com"
+    # The phone app's push goes through Expo (§17.6). A token is optional;
+    # with "enhanced push security" on in the Expo project, it is required.
+    expo_access_token: str | None = None
 
     # --- Member sign-in (§11) ---
     otp_minutes: int = 5

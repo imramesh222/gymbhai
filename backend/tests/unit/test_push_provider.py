@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from app.core.push_keys import public_key
 from app.services.push.providers import (
+    ExpoProvider,
     PushError,
     PushGone,
     PushMessage,
@@ -102,3 +103,83 @@ def test_a_failing_push_service(monkeypatch, phone) -> None:
     with pytest.raises(PushError) as caught:
         WebPushProvider().send(phone.target, PushMessage("t", "b", "/"))
     assert not isinstance(caught.value, PushGone)
+
+
+# --- the phone app, through Expo (§17.6) -------------------------------------------
+
+EXPO = Target(expo_token="ExponentPushToken[abcdefghij0123456789]")
+
+
+def expo(answer, status: int = 200):
+    import httpx
+
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if isinstance(answer, Exception):
+            raise answer
+        return httpx.Response(status, json=answer)
+
+    return ExpoProvider(httpx.Client(transport=httpx.MockTransport(handler))), calls
+
+
+def test_expo_gets_the_token_and_the_screen_to_open(monkeypatch) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "expo_access_token", "secret-token")
+    provider, calls = expo({"data": [{"status": "ok", "id": "abc"}]})
+    provider.send(EXPO, PushMessage("Paid", "Thanks!", "/home", tag="pay:1"))
+    [request] = calls
+    assert str(request.url) == ExpoProvider.URL
+    assert request.headers["authorization"] == "Bearer secret-token"
+    body = json.loads(request.content)
+    assert body["to"] == EXPO.expo_token
+    assert (body["title"], body["body"]) == ("Paid", "Thanks!")
+    assert body["data"] == {"url": "/home", "tag": "pay:1"}
+    assert body["collapseId"] == "pay:1"
+
+
+@pytest.mark.parametrize(
+    ("answer", "status", "error"),
+    [
+        (
+            {
+                "data": [
+                    {
+                        "status": "error",
+                        "message": "gone",
+                        "details": {"error": "DeviceNotRegistered"},
+                    }
+                ]
+            },
+            200,
+            PushGone,
+        ),  # fmt: skip
+        (
+            {
+                "data": [
+                    {"status": "error", "details": {"error": "MessageRateExceeded"}}
+                ]
+            },
+            200,
+            PushError,
+        ),
+        ({"errors": [{"code": "INTERNAL"}]}, 500, PushError),
+        ({"nothing": "useful"}, 200, PushError),
+    ],
+)
+def test_expo_failures(answer, status, error) -> None:
+    provider, _ = expo(answer, status)
+    with pytest.raises(error) as caught:
+        provider.send(EXPO, PushMessage("T", "B", "/"))
+    if error is PushError:
+        assert not isinstance(caught.value, PushGone), "only a gone token is revoked"
+
+
+def test_expo_unreachable_is_retried_later() -> None:
+    import httpx
+
+    provider, _ = expo(httpx.ConnectError("no network"))
+    with pytest.raises(PushError):
+        provider.send(EXPO, PushMessage("T", "B", "/"))

@@ -4,12 +4,15 @@ import { EmptyState } from "@/components/ui/Card";
 import { t } from "@/i18n";
 import { formatDateTime } from "@/lib/dates";
 import { memberApi } from "@/lib/memberApi";
+import { useLive } from "@/lib/live";
 import { useMember } from "@/lib/memberSession";
 import { useLoad } from "@/lib/useLoad";
 
 export default function MemberNotices() {
   const { me } = useMember();
-  const { data } = useLoad(() => memberApi.notices(), []);
+  const { data, reload } = useLoad(() => memberApi.notices(), []);
+  // Published or taken down at the desk: shown or gone at once.
+  useLive(["notice"], reload);
   if (!me) return null;
   return (
     <div className="space-y-3">

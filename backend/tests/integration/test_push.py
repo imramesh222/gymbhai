@@ -41,7 +41,7 @@ class FakePush:
 @pytest.fixture
 def provider(monkeypatch) -> FakePush:
     fake = FakePush()
-    monkeypatch.setattr(push, "get_provider", lambda: fake)
+    monkeypatch.setattr(push, "get_provider", lambda target=None: fake)
     return fake
 
 
@@ -209,7 +209,7 @@ def test_two_phones_one_works(db: Session, gym_a: GymFixture, monkeypatch) -> No
             super().send(target, message)
 
     one = OneGone()
-    monkeypatch.setattr(push, "get_provider", lambda: one)
+    monkeypatch.setattr(push, "get_provider", lambda target=None: one)
     reminders.run_daily(db)
     db.commit()
     run_jobs(db)
@@ -232,4 +232,115 @@ def test_erasing_a_member_deletes_their_phones(
             select(PushSubscription).where(PushSubscription.member_id == member.id)
         ).all()
         == []
+    )
+
+
+EXPO_TOKEN = "ExponentPushToken[abcdefghij0123456789]"
+
+
+def app_phone_for(db: Session, member, token: str = EXPO_TOKEN) -> PushSubscription:
+    row = push.subscribe_app(db, member, expo_token=token, user_agent="GymBhai app")
+    db.commit()
+    return row
+
+
+def test_the_phone_app_turns_push_on_and_off(
+    client: TestClient, db: Session, gym_a: GymFixture, monkeypatch
+) -> None:
+    member = member_with_month(db, gym_a, "9800000421")
+    issued = member_auth.start_session(db, member, None, "app")
+    db.commit()
+    client.headers["Authorization"] = f"Bearer {issued.access_token}"
+    # The app needs no VAPID key of ours.
+    monkeypatch.setattr(push, "available", lambda: False)
+
+    body = {"kind": "expo", "expo_token": EXPO_TOKEN}
+    assert client.post("/api/v1/m/me/push", json=body).json()["subscribed"] is True
+    # Twice (a double tap, a retry after a dropped answer): one row.
+    assert client.post("/api/v1/m/me/push", json=body).status_code == 200
+    [row] = push.live(db, member.id)
+    assert (row.kind, row.expo_token, row.endpoint) == ("expo", EXPO_TOKEN, None)
+    mine = client.get("/api/v1/m/me/push", params={"expo_token": EXPO_TOKEN})
+    assert mine.json()["subscribed"] is True
+    assert push.reachable(db, [member.id]) == {member.id}
+
+    for bad in (
+        {"kind": "expo", "expo_token": "not-a-token"},
+        {"kind": "expo"},
+        {"kind": "expo", "expo_token": EXPO_TOKEN, "endpoint": "https://x.y/z"},
+    ):
+        assert client.post("/api/v1/m/me/push", json=bad).status_code == 422
+    # Turning off needs to say which phone.
+    assert client.post("/api/v1/m/me/push/off", json={}).status_code == 422
+    off = client.post("/api/v1/m/me/push/off", json={"expo_token": EXPO_TOKEN})
+    assert off.json()["subscribed"] is False
+    assert push.live(db, member.id) == []
+
+
+def test_without_a_vapid_key_browsers_get_sms_but_the_app_still_gets_push(
+    client: TestClient, db: Session, gym_a: GymFixture, provider: FakePush, monkeypatch
+) -> None:
+    browser = member_with_month(db, gym_a, "9800000431")
+    app_user = member_with_month(db, gym_a, "9800000432")
+    phone_for(db, browser)
+    app_phone_for(db, app_user)
+    monkeypatch.setattr(push, "available", lambda: False)
+    assert push.reachable(db, [browser.id, app_user.id]) == {app_user.id}
+    assert push.reachable_in_gym(db, gym_a.gym.id) == {app_user.id}
+
+    sign_in(db, client, gym_a.owner)
+    notice = {"title": "Closed Saturday", "body": "For Tihar.", "send_sms": True}
+    created = client.post("/api/v1/notices", json=notice).json()
+    assert (created["push_count"], created["sms_count"]) == (1, 1)
+    run_jobs(db)
+    [(target, _)] = provider.sent
+    assert target.is_expo and target.expo_token == EXPO_TOKEN
+    assert len(sms_to(db, browser)) == 1 and sms_to(db, app_user) == []
+
+
+def test_an_app_and_a_browser_both_get_it_and_a_gone_app_is_revoked(
+    db: Session, gym_a: GymFixture, monkeypatch
+) -> None:
+    member = member_with_month(db, gym_a, "9800000441")
+    web = phone_for(db, member)
+    app = app_phone_for(db, member)
+    seen: list[Target] = []
+
+    class Split:
+        name = "split"
+
+        def send(self, target: Target, message: PushMessage) -> None:
+            seen.append(target)
+            if target.is_expo:
+                raise PushGone("DeviceNotRegistered")
+
+    monkeypatch.setattr(push, "get_provider", lambda target=None: Split())
+    push.handle_send(
+        db,
+        {"member_id": str(member.id), "title": "T", "body": "B", "url": "/x",
+         "fallback": None},
+    )  # fmt: skip
+    assert {t.is_expo for t in seen} == {True, False}
+    assert app.revoked_at is not None and web.revoked_at is None
+    assert web.last_ok_at is not None
+
+
+def test_a_notice_tells_open_apps(
+    client: TestClient, db: Session, gym_a: GymFixture, monkeypatch
+) -> None:
+    from app.services import live
+
+    told: list[dict] = []
+    monkeypatch.setattr(live, "publish", lambda db, **event: told.append(event))
+    sign_in(db, client, gym_a.owner)
+    created = client.post(
+        "/api/v1/notices", json={"title": "Hi", "body": "There", "send_sms": False}
+    ).json()
+    client.delete(f"/api/v1/notices/{created['id']}")
+    assert (
+        told
+        == [
+            {"gym_id": gym_a.gym.id, "kind": live.NOTICE, "branch_id": None},
+        ]
+        * 2
     )

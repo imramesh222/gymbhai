@@ -69,8 +69,9 @@ services:
 
   web:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
+      # The repo root: the image needs shared/ beside frontend/ (PLAN.md §17).
+      context: .
+      dockerfile: frontend/Dockerfile.prod
     restart: unless-stopped
     depends_on:
       - api

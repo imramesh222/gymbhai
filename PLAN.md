@@ -648,6 +648,7 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | **M9** | Win members | Enquiries and trials, day passes and visit packs, off-peak plans enforced at the door, join form, referrals (§16.4) | 1.5 weeks | Walk-ins followed through to joining |
 | **M10** | Our business | Admin numbers and gym health, onboarding nudges, support link, what's new, gym referrals (§16.5) | 1 week | We see which gyms will pay and which will leave |
 | **M11** | Nepali | Nepali for the staff dashboard, member app and SMS (§16.6) | 1 week + translation | Gyms and members can work in Nepali |
+| **M12** | Member phone app | Expo / React Native app for members on Android and iPhone: live updates over WebSocket, no double taps, offline QR, native notifications; shared code with the web app (§17) | 3 weeks | Members install a real app; published to the stores afterwards |
 
 **Progress**
 
@@ -665,6 +666,7 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M9 | Done 2026-10-17: enquiries (board, list, report by source, follow-ups on Today, convert to member), trial visits, visit packs and day passes counted at the door, off-peak plans enforced at the door, the join form behind the gym QR (off by default), and referrals with the top referrers. New permission **Enquiries**, in the *Front desk* starting point |
 | M10 | Done 2026-10-17: the /admin numbers and each gym's health and setup, setup nudges by SMS on trial days 3 and 10, Help (WhatsApp / Viber and guides), What's new with an unread dot, and gym referrals with a free month each. Before launch: `SUPPORT_WHATSAPP` in `.env.prod` |
 | M11 | Done 2026-10-17, **waiting on a native speaker's review**: `ne.json` with every string (a test keeps its keys and {placeholders} in step with `en.json`) and Nepali help guides; a language for each staff account and each member, the gym's as the default, chosen at sign-up and in Settings → Gym; English / नेपाली on every sign-in screen, kept in a cookie; Noto Sans Devanagari through `next/font`; Nepali month names, रु, and Nepali or Western digits (a gym setting); SMS wording seeded in the gym's language, and wording the gym never edited follows a change of language. The server renders English and the browser renders Nepali, so one request's language never leaks into another's. The legal pages and the receipt PDF stay English until a lawyer and the review sign them off |
+| M12 | In progress (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019) |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -700,7 +702,7 @@ The next milestones, M6–M11, are planned in §16 (self-service freeze requests
 8. Offline kiosk — queue scans and sync when the internet returns
 9. Progress tracking — weight, measurements, private photos, charts
 10. WhatsApp messages alongside SMS
-11. Branded app store app per gym (React Native / Expo, one codebase) — sold as an add-on
+11. Branded app store app per gym — sold as an add-on; the same code as M12's GymBhai app (§17) with each gym's name and icon
 12. Tax invoices from billing software approved by the Inland Revenue Department, for VAT-registered gyms — needs approval, so only if larger gyms ask
 
 ---
@@ -883,3 +885,110 @@ All of these can be changed later.
 | `check_ins.result` gains `denied_visits_used`, `denied_hours` | 9.3, 9.4 |
 | `changelog_entries`, `staff_users.changelog_seen_at` | 10.4 |
 | `gym_referrals` | 10.5 |
+
+---
+
+## 17. M12 — The member app for phones (React Native)
+
+The installable web app (§7, M3, M8) stays. M12 adds a native app for members on Android and iPhone, built with Expo, for what a store app does better: an app people find and trust, a camera-free QR that opens in one tap, notifications that work everywhere (iPhone without "Add to Home Screen"), and live updates that never stop. Members only: staff keep the web dashboard (§16, staff notifications on the web come separately).
+
+**One app, every gym.** One "GymBhai" app; the member chooses their gym by scanning its poster QR, typing its address, or a link from the welcome SMS, and the app takes on that gym's name, logo and colour. A branded app per gym (§14, 11) is the same code with a different name and icon, later.
+
+**Built and tested for free; published later.** Expo and React Native are free. Android test builds (`.apk`) are made on the Mac and shared with testers; iPhone testers use Expo Go. The store accounts (Google Play $25 once, Apple $99 a year) are bought only when publishing, after M12 is done.
+
+### 17.1 Decisions
+
+| Area | Choice | Why |
+|---|---|---|
+| Framework | Expo (React Native, TypeScript), **Expo Router**; the Expo SDK pinned to a release at least two weeks old when M12 starts | File-based screens like the web app; builds without Android Studio or Xcode projects to maintain |
+| Where | `mobile/` in this repo, beside `frontend/` | One repo, one CI |
+| Shared code | A `shared/` workspace package, used by `frontend/` and `mobile/`: the i18n catalogs and `t()`, the member QR code (`memberQr`, `hmac`), BS/AD dates and the BS calendar table, money formatting, access hours, plan value, and the member API types | The QR, dates and every string must be identical in the web and native apps; one copy, tested once |
+| Data | TanStack Query for loading and caching; its cache persisted on the phone | Screens show the last data at once, offline too, and refresh when told to (17.3) |
+| Session | Access token in memory; refresh token in the phone's secure storage (`expo-secure-store`) | The web keeps its httpOnly cookie; an app has no cookie jar to rely on (17.2) |
+| Live updates | **WebSocket**, always connected while the app is open (17.3) | Server-Sent Events are one-way and need a polyfill in React Native; a WebSocket is built in, and lets the app renew its token without reconnecting |
+| Notifications | Expo push (free), through Firebase on Android and Apple's service on iPhone | One API for both; the server sends with the same "push first, SMS for the rest" rules as M8 (17.6) |
+| Font and language | Inter and Noto Sans Devanagari bundled; English and Nepali from the shared catalogs; the gym's or member's language (§16.6), the phone's language before sign-in | Same words and rules as the web app |
+| Tests | Jest and React Native Testing Library; **Maestro** flows on an Android emulator (free); the backend's pytest for everything new on the server | |
+
+### 17.2 Server changes (`backend/`)
+
+1. **App sessions without cookies.** `POST /m/{slug}/otp/verify` and `POST /m/auth/refresh` take `"client": "app"`: the refresh token comes back in the body instead of a cookie, and refresh takes it in the body. Rotation and reuse detection stay exactly as they are (§11). `POST /m/auth/logout` takes it in the body too. Sessions record the app and phone model, shown in staff's *signed-in devices* for the member.
+2. **WebSocket `GET /api/v1/m/ws`** (17.3), on the same event hub as the SSE streams, with the same `member_filter`.
+3. **Notices reach the app live.** Publishing or removing a notice publishes a `notice` event that every member of the gym (in its branches) hears; today the member stream only hears events about the member themself.
+4. **No double requests from members** (17.4): the member routes that add something or move it along take an `Idempotency-Key` header, using the M6 store (`idempotency_keys.member_id` scopes a member's keys; another member's or staff's use of the same key is a 409): asking to renew (with its screenshot), withdrawing it, asking to freeze and withdrawing it, joining, and confirming an email change. The rest are idempotent by nature and need no key: the photo and profile changes set values, turning notifications on again updates the same row, and asking for an email-change code twice within 30 seconds sends one code (as in 5).
+5. **"Send me a code" twice in a row sends one code.** A second request for the same number within 30 seconds answers "sent" again without a second SMS (and without using up the limit of three); the app shows a countdown before *Send again*.
+6. **Native push subscriptions.** `push_subscriptions` gains `kind` (`web`, `expo`) and `expo_token`; `endpoint`, `p256dh` and `auth` become web-only. `POST /m/me/push` accepts either kind (`{"kind": "expo", "expo_token": "ExponentPushToken[…]"}`) and `/m/me/push/off` takes either the endpoint or the token. The Expo provider sends each phone its message and reads the ticket Expo answers with: `DeviceNotRegistered` revokes the subscription, as a 404/410 does for web push; anything else is retried by the worker. (A message goes to one member's few phones at a time, so batching and Expo's later receipts aren't needed yet; a gone token also fails its next send.) The app's push needs no VAPID key, so app users get push even where browsers fall back to SMS. `EXPO_ACCESS_TOKEN` is optional, needed only with Expo's enhanced push security on.
+7. **Clock skew.** Every response carries the server time (`Date`); the app corrects its QR window by the difference, so a phone set a few minutes wrong still shows a code the door accepts (today the door allows one window, 30 seconds, either side).
+
+### 17.3 Live updates over WebSocket
+
+- **Connect:** `wss://<domain>/api/v1/m/ws`. The first message must be `{"type": "auth", "token": "<access token>"}` within 5 seconds, or the server closes with 4401. Tokens never go in the URL, so they never reach a log.
+- **Then:** the server sends `{"type": "ready"}`, then events as they happen, `{"type": "member" | "payment_request" | "freeze_request" | "check_in" | "notice", ...ids}`. Events carry ids, never data: the app re-reads through the normal API, which checks permissions as always (§11, as for SSE).
+- **Staying signed in:** before the access token expires the app sends a fresh one in another `auth` message on the same connection. A token that expires without one closes the socket with 4401, and the app refreshes and reconnects. A revoked session (signed out by staff, erased member) stops receiving within the token's lifetime, as today.
+- **Alive:** a `ping` from the server every 25 seconds; the app answers `pong`. Nothing heard for 60 seconds: closed with 4408. A message that isn't JSON closes it with 1011. The app reconnects after any close; after 4401 it refreshes its token first.
+- **Reconnecting:** after a dropped connection, the phone waking or returning online, or the app coming back to the foreground, the app reconnects with backoff (1, 2, 5, 10, 30 seconds), and on `ready` re-reads every screen it has open (it may have missed events). A slow app whose queue overflows gets `{"type": "resync"}`.
+- **What updates live:** Home (days left, status, dues, *how busy*), a renewal request approved or rejected, a freeze answered, a visit appearing the moment the door lets them in, a new notice, a payment taken at the desk.
+- **Through the stack:** Caddy passes WebSocket upgrades as it is, routed with the SSE streams (no compression, kept open across a config reload); the app talks to the API directly, not through the Next.js proxy. The code is `backend/app/api/routes/member_socket.py`; the route-permission walk lists sockets in `tests/routes.py` `WEBSOCKETS`, since they sign in by message rather than a dependency.
+- The web member app keeps SSE for now (it works through the Next.js proxy); moving it to the same WebSocket later is a small change.
+
+### 17.4 No double taps, no double payments
+
+Three layers, so one tap is one action however the network behaves:
+
+1. **On screen.** Every button that changes something goes through one hook, `useAction`, that locks **synchronously** on the first tap (a ref, not React state, which updates a frame later) and ignores more taps until the request ends. The button shows a spinner and is disabled meanwhile; forms can't submit twice from the keyboard either. A lint rule refuses `onPress` handlers that call the API without it.
+2. **On the wire.** Each action gets an `Idempotency-Key` when it starts. If the network fails and the app retries, or the member taps again after an error, the same key goes again; a new key is made only after success, or when what they're sending changes.
+3. **On the server.** The keys (17.2, 4) mean a repeated request returns the first answer and changes nothing, even when two arrive at once. Rules that already exist stay: one waiting renewal and one waiting freeze per member, a transaction ID used once per gym, the limits on codes.
+
+Tested at each layer: a test taps every action button twice within 10 ms and expects one request; backend tests send each member action twice with one key, at once, and expect one row; a Maestro flow double-taps *I've paid* on a slow network.
+
+### 17.5 Screens
+
+Everything the member web app does (§7), the same words:
+
+| Screen | Native details |
+|---|---|
+| **Choose your gym** | Scan the gym's poster QR with the camera, type its address, or open from the welcome SMS link (deep link `gymbhai://<gym>`, and `https://<domain>/<gym>` once published). Remembers the gym; a member of two gyms can switch |
+| **Sign in** | Mobile number or email, then the code; the code is read from the SMS on Android where the phone allows. *Who are you?* for a shared phone |
+| **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*, latest notice; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
+| **Renew** | Plan → Pay → Send proof; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
+| **Payments** | Payments and requests; receipts open as PDF and share through the phone's share sheet |
+| **Visits** | The month's calendar, live |
+| **Notices** | Live; a notification opens the notice |
+| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, signed-in devices, sign out |
+| **Join** | The gym's join form (§16.4, 9.5), when it has it on |
+| Offline | A banner; the QR keeps working; actions wait for the connection and say so, rather than failing |
+
+Accessibility: every control labelled for screen readers, touch targets at least 44 points, text that grows with the phone's font size.
+
+### 17.6 Notifications
+
+- After the first sign-in, Home offers *Get reminders on this phone*; the phone's permission is asked only when they tap it.
+- The token is registered as an `expo` subscription (17.2, 6); everything M8 sends by push (reminders, notices, payment and freeze answers, renewals) reaches the app with no change to the rules, and SMS goes only where no push can.
+- Tapping a notification opens the right screen (renew, payments, notices, freeze).
+- Android needs a free Firebase project for its credentials. iPhone push needs Apple's push key, which comes with the paid Apple account, so iPhone notifications are tested when publishing; Android notifications are tested on `.apk` builds before then.
+
+### 17.7 Steps
+
+| # | Step | Estimate |
+|---|---|---|
+| 12.1 | `shared/` package: move the catalogs, QR, dates, money, access hours, plan value and API types out of `frontend/`; npm workspaces; the web app imports from it; its tests run in CI | 1 day |
+| 12.2 | Server: app sessions (17.2, 1), the WebSocket (17.3) with tests, notice events, idempotency on member routes, the code cooldown, Expo push subscriptions and provider, the server time | 3 days |
+| 12.3 | App skeleton: Expo Router, theme from the gym, fonts, `t()` and language, the API client (refresh, idempotency keys, retries), `useAction`, the WebSocket client, the persisted cache, offline banner | 2 days |
+| 12.4 | Choose your gym, sign in, *Who are you?*, sign out | 1 day |
+| 12.5 | Home and the QR (offline, brightness, clock skew) | 1 day |
+| 12.6 | Renew and pay, payment requests, payments, receipts | 2 days |
+| 12.7 | Visits, notices, freeze, Me, join | 2 days |
+| 12.8 | Notifications | 1 day |
+| 12.9 | Tests (unit, double-tap, Maestro flows), the `.apk` test build, an Expo Go guide for iPhone testers, PLAN and DEPLOY updated | 2 days |
+
+**About 3 weeks.** Done when: a member can install the test `.apk`, sign in, show a QR the kiosk accepts with the phone offline, renew and see the gym's approval arrive without touching anything, get a notification on Android, and no tap anywhere sends two requests.
+
+**Afterwards (not M12):** publishing to Google Play and the App Store (accounts, store listings and screenshots, privacy forms, app links), and the branded app per gym.
+
+### 17.8 What the data model gains
+
+| Table / column | Step |
+|---|---|
+| `push_subscriptions.kind`, `push_subscriptions.expo_token` (and `endpoint`, `p256dh`, `auth` nullable) | 12.2 |
+| `idempotency_keys` keyed by member as well as staff | 12.2 |
+| `member_sessions.client` (web, app) | 12.2 |

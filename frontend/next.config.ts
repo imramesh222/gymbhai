@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { NextConfig } from "next";
 
 // Where the Next.js server reaches FastAPI. The browser never calls the API
@@ -8,7 +10,14 @@ import type { NextConfig } from "next";
 // API_INTERNAL_URL set at build time, not only at start.
 const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 
+// shared/ sits beside frontend/ (PLAN.md §17): one copy of the strings, QR,
+// dates and types for the web and phone apps. The parent folder is the root
+// so the bundler may read it; the Docker images keep the same layout.
+const repoRoot = path.resolve(__dirname, "..");
+
 const nextConfig: NextConfig = {
+  turbopack: { root: repoRoot },
+  outputFileTracingRoot: repoRoot,
   reactStrictMode: true,
   // A self-contained server for the production image (Dockerfile.prod).
   output: "standalone",

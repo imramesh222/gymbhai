@@ -21,6 +21,7 @@ from app.api.tenancy import StaffContext
 from app.core.errors import AppError, unauthorized
 from app.core.permissions import Permission, effective_permissions
 from app.core.security import (
+    MemberClaims,
     TokenError,
     decode_access_token,
     decode_member_token,
@@ -174,8 +175,14 @@ def current_member(
     records (PLAN.md §11); every /m/ route takes the member from here."""
     if credentials is None:
         raise unauthorized()
+    return member_for_token(db, credentials.credentials)[0]
+
+
+def member_for_token(db: Session, token: str) -> tuple[Member, MemberClaims]:
+    """The member a token belongs to, while its session lives. Also used by
+    the phone app's socket, which sends its token in a message (§17.3)."""
     try:
-        claims = decode_member_token(credentials.credentials)
+        claims = decode_member_token(token)
     except TokenError as exc:
         raise unauthorized(exc.code, str(exc)) from exc
     session = db.get(MemberSession, claims.session_id)
@@ -189,7 +196,7 @@ def current_member(
     member = db.get(Member, claims.member_id)
     if member is None or not member.app_access or member.gym_id != claims.gym_id:
         raise unauthorized("session_ended", "You have been signed out.")
-    return member
+    return member, claims
 
 
 DEVICE_HEADER = "X-Device-Token"

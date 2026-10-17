@@ -4,12 +4,15 @@
 }
 
 {$APP_DOMAIN} {
-	# Live updates (backend/app/services/live.py) are a stream: never
+	# Live updates (backend/app/services/live.py) are a stream, and the
+	# phone app's a WebSocket (/api/v1/m/ws, PLAN.md §17.3): never
 	# compressed, which would hold small events back, and flushed at once.
-	@live path /api/v1/live /api/v1/m/live
+	# A config reload keeps them open a while instead of cutting them all.
+	@live path /api/v1/live /api/v1/m/live /api/v1/m/ws
 	handle @live {
 		reverse_proxy api:8000 {
 			flush_interval -1
+			stream_close_delay 5m
 		}
 	}
 	# The API directly, skipping the Next.js proxy: one hop fewer.
