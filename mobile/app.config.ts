@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
 /**
@@ -8,12 +10,14 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * default, the Mac's LAN address in development (see README.md).
  */
 const DOMAIN = "app.gymbhai.com";
+const EAS_PROJECT_ID = "f1c93320-114b-47df-b684-9870466dbb7e";
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? `https://${DOMAIN}`;
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "GymBhai",
-  slug: "gymbhai",
+  // The project's name on expo.dev; the app's own name and package are below.
+  slug: "mero-gym",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
@@ -38,6 +42,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       monochromeImage: "./assets/android-icon-monochrome.png",
     },
     predictiveBackGestureEnabled: false,
+    // Firebase's file for push on Android (docs/MOBILE.md §6), once added.
+    ...(existsSync("./google-services.json")
+      ? { googleServicesFile: "./google-services.json" }
+      : {}),
     intentFilters: [
       {
         action: "VIEW",
@@ -95,8 +103,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   ],
   experiments: { typedRoutes: true },
-  // Push needs the Expo project's id (`npx eas-cli init`; README.md).
-  extra: process.env.EAS_PROJECT_ID
-    ? { eas: { projectId: process.env.EAS_PROJECT_ID } }
-    : {},
+  // The Expo project (expo.dev): push tokens and EAS builds belong to it.
+  // Not a secret; EAS_PROJECT_ID overrides it for another account's project.
+  owner: process.env.EAS_OWNER ?? "mero-gym",
+  extra: {
+    eas: { projectId: process.env.EAS_PROJECT_ID ?? EAS_PROJECT_ID },
+  },
 });

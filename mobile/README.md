@@ -48,16 +48,11 @@ Go. How to build, send and install, step by step: `docs/MOBILE.md`.
 
 ## Notifications
 
-Push goes through Expo's service, which needs the app's Expo project id:
-
-1. A free Expo account, then `npx eas-cli init` here: it prints the project id.
-2. `EAS_PROJECT_ID=<that id>` in `.env.local` (read by `app.config.ts`).
-3. Android: a free Firebase project's `google-services.json`, uploaded with
-   `npx eas-cli credentials`. iPhone: Apple's push key, which needs the paid
-   Apple account, so iPhone notifications are tested at publishing time.
-
-Without a project id, "Turn on" says notifications aren't set up in this test
-build; everything else works, and the gym reaches the member by SMS.
+Push goes through Expo's service, for the Expo project `@mero-gym/mero-gym`
+(its ID is in `app.config.ts`). Android also needs Firebase's
+`google-services.json` here and its key uploaded to Expo: `docs/MOBILE.md` §6.
+Until then, "Turn on" says this phone can't get notifications; everything
+else works, and the gym reaches the member by SMS.
 
 ## How it fits together
 

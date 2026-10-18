@@ -5,8 +5,9 @@ running it on the Mac, its automatic tests, building a test `.apk` for Android
 testers, and letting iPhone testers try it in Expo Go. Publishing to Google
 Play and the App Store comes later (PLAN.md §17.7, "Afterwards").
 
-Everything here is free. The only accounts involved are a free Expo account
-(for iPhone testers, and later for push notifications).
+Everything here is free. The accounts involved: the Expo account that owns
+the project (`mero-gym`), a shared Expo account for iPhone testers, and later
+a free Firebase project for Android notifications.
 
 ---
 
@@ -174,19 +175,36 @@ What to know:
 
 ## 6. Notifications (when you are ready to test them)
 
-1. Free Expo account (the testers' one is fine), then in `mobile/`:
-   `npx eas-cli init`. It prints the project ID.
-2. Add it to `mobile/.env.local`: `EAS_PROJECT_ID=...`.
-3. Android: create a free Firebase project, add an Android app with package
-   `com.gymbhai.member`, download `google-services.json`, and upload it with
-   `npx eas-cli credentials` (Android → FCM V1).
-4. Rebuild the `.apk` (`make apk`). On a phone: Home → **Turn on**, then send
-   a notice from the dashboard with *Also send to their phones*: it arrives as
-   a notification, and tapping it opens Notices.
+The Expo project is set up: `@mero-gym/mero-gym`, its ID in
+`mobile/app.config.ts`. What's left is Android's push service, Firebase
+(free), done once:
+
+1. <https://console.firebase.google.com> → **Add project** (any name, e.g.
+   GymBhai; Analytics not needed).
+2. In it: **Add app → Android**, package name `com.gymbhai.member`. Download
+   `google-services.json` and put it at `mobile/google-services.json`. The
+   app config picks it up by itself.
+3. Firebase → ⚙ **Project settings → Service accounts → Generate new private
+   key**. That downloads a JSON key: it lets Expo send through your Firebase.
+   Keep it out of the repo.
+4. Give that key to Expo, from `mobile/`:
+   `npx eas-cli credentials -p android` → choose a build profile if asked →
+   **Google Service Account** → **Manage your Google Service Account Key for
+   Push Notifications (FCM V1)** → **Upload** → pick the JSON from step 3.
+5. `make apk`, install it on a real Android phone (an emulator with Play
+   Store images works too), sign in, Home → **Turn on**, allow notifications.
+6. From the staff dashboard, publish a notice with *Also send to their
+   phones*. It arrives as a notification; tapping it opens Notices. The
+   notice says *Notification to 1*.
 
 The server needs nothing more: it sends to the app through Expo with the same
-rules as the web app's push (`EXPO_ACCESS_TOKEN` in `.env.prod` only if you
-turn on Expo's "enhanced push security").
+rules as the web app's push (`EXPO_ACCESS_TOKEN` in `.env` only if you turn
+on Expo's "enhanced push security" for the project). In development the
+server only logs pushes unless `PUSH_PROVIDER=webpush` is set in `.env`
+(which also needs `VAPID_PRIVATE_KEY`, from `make vapid`).
+
+iPhone push needs Apple's push key, which comes with the paid Apple account:
+tested at publishing time.
 
 ## 7. When something goes wrong
 
@@ -195,7 +213,8 @@ turn on Expo's "enhanced push security").
 | "Can't reach GymBhai" on every screen | The phone can't reach `EXPO_PUBLIC_API_URL`: same Wi-Fi? `make up` running? Try the address in the phone's browser: `http://<ip>:8001/health` should say ok. |
 | Code never arrives | In development no SMS is sent: use `MASTER_OTP`. |
 | "Too many codes asked for" | At most three codes per number in 15 minutes, counted by number (a fresh `make seed-app` doesn't reset it): wait, or sign in as another test member. |
-| Expo Go: "Project is incompatible" | Expo Go was updated to a newer SDK; upgrade the app's SDK. |
+| Expo Go: "Project is incompatible", *requires a newer version* | The store's Expo Go is behind the app's SDK (the Play Store can lag weeks after a release). Android: install the test `.apk` instead, or Expo's own Expo Go for SDK 58 (`https://github.com/expo/expo-go-releases/releases`, `Expo-Go-58.0.4.apk`), or plug the phone in and press `a` in `npx expo start`, which installs the right one. |
+| Expo Go: "Project is incompatible", *requires an older version* | Expo Go moved on to a newer SDK: upgrade the app (`npx expo install expo@^59 --fix`). |
 | iPhone: "You need to be signed in to Expo Go and Expo CLI" | Section 5: same Expo account on both. |
 | Android build fails with SDK not found | `export ANDROID_HOME=~/Library/Android/sdk` |
 | A Maestro flow fails | Screenshots and a log in `~/.maestro/tests/<date>/`; rerun the one flow: `cd mobile && maestro test e2e/02-renew-once.yaml -e APP_ID=... -e CODE=...` |

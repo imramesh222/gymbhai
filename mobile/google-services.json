@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "264210254550",
+    "project_id": "gymbhai-69df8",
+    "storage_bucket": "gymbhai-69df8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:264210254550:android:89101a8fa7617199639777",
+        "android_client_info": {
+          "package_name": "com.gymbhai.member"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7ZWINDlApHY_CV2UwnVUcXmjH34YBPjI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

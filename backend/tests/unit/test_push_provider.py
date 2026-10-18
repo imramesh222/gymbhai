@@ -138,6 +138,7 @@ def test_expo_gets_the_token_and_the_screen_to_open(monkeypatch) -> None:
     assert (body["title"], body["body"]) == ("Paid", "Thanks!")
     assert body["data"] == {"url": "/home", "tag": "pay:1"}
     assert body["collapseId"] == "pay:1"
+    assert body["channelId"] == "default"
 
 
 @pytest.mark.parametrize(

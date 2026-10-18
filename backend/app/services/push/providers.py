@@ -125,6 +125,10 @@ class ExpoProvider:
             # The app opens this screen when the notification is tapped.
             "data": {"url": message.url, "tag": message.tag},
             "sound": "default",
+            # Android: the app's own "GymBhai" channel (mobile/src/lib/push.tsx),
+            # not Expo's fallback, so members see the right name in settings.
+            "channelId": "default",
+            "priority": "high",
             "ttl": 24 * 60 * 60,
         }
         if message.tag:

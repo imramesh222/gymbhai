@@ -39,3 +39,6 @@ media/
 
 # Playwright output (kept outside frontend/, which the dev server watches)
 /.e2e/
+
+# Firebase service account keys (docs/MOBILE.md §6): a password, never committed.
+*firebase-adminsdk*.json
