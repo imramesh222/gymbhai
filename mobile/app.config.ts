@@ -103,6 +103,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   ],
   experiments: { typedRoutes: true },
+  // EAS Update (docs/MOBILE.md §7): new JavaScript reaches installed apps
+  // without a new .apk. An update only goes to builds of the same app
+  // version, so bump "version" when native code changes.
+  runtimeVersion: { policy: "appVersion" },
+  updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
   // The Expo project (expo.dev): push tokens and EAS builds belong to it.
   // Not a secret; EAS_PROJECT_ID overrides it for another account's project.
   owner: process.env.EAS_OWNER ?? "mero-gym",

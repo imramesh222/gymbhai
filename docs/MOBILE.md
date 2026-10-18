@@ -52,6 +52,13 @@ make seed-app     # gym "e2e-app" ("App Test Gym"), made fresh each time
 The code is your `MASTER_OTP`. Every member has a paid month ending in 20 days;
 the gym has an eSewa account and the join form on.
 
+**On your own Android phone, use a development build** instead of Expo Go:
+`make apk-dev` makes `mobile/dist/gymbhai-1.0.0-dev.apk`. Install it once;
+it opens the code live from `npx expo start` (scan the QR, or it lists the
+Mac's server), has notifications, and never says "incompatible". Rebuild it
+only when a native module or permission is added. It replaces the test
+`.apk` on the phone (same app ID), and the other way round.
+
 **Expo Go's limits.** It runs everything except notifications on Android
 (Expo removed them from Expo Go in SDK 53). The app runs anyway, with "Turn on"
 saying this phone can't get notifications. The `.apk` has them.
@@ -206,7 +213,58 @@ server only logs pushes unless `PUSH_PROVIDER=webpush` is set in `.env`
 iPhone push needs Apple's push key, which comes with the paid Apple account:
 tested at publishing time.
 
-## 7. When something goes wrong
+## 7. Cloud builds and updates (EAS)
+
+Expo's servers can build the app (no Android SDK needed, iPhone builds
+possible) and send new JavaScript to installed apps without a new `.apk`.
+The project is `@mero-gym/mero-gym`; profiles are in `mobile/eas.json`.
+Expo's free plan allows a limited number of builds and update users each
+month (see expo.dev/pricing); local builds (`make apk`) cost nothing.
+
+Once: `npm install -g eas-cli`, then `eas login`, and run everything from `mobile/`.
+
+| Profile | What it makes | Talks to |
+|---|---|---|
+| `development` | A development build `.apk` (like `make apk-dev`): loads code live from `npx expo start` | your Mac's dev server |
+| `preview` | A test `.apk` for testers (like `make apk`), with a download link from Expo | `https://app.gymbhai.com` |
+| `production` | The Play Store bundle (`.aab`) / App Store build | `https://app.gymbhai.com` |
+
+`preview` and `production` point at the real domain: use them once the
+server is deployed (`docs/DEPLOY.md`). Before that, use `make apk` or the
+`development` profile.
+
+**Builds**
+
+```sh
+eas build -p android --profile development   # dev build .apk, link to install
+eas build -p android --profile preview       # tester .apk, link to share
+eas build -p android --profile production    # Play Store .aab (when publishing)
+eas build -p ios --profile production        # needs the paid Apple account
+eas build:list                               # your builds and their links
+```
+
+The build prints a link (and a QR) to the `.apk` on expo.dev: send that to
+testers instead of the file. The first Android build asks to generate a
+signing key on Expo's servers: say yes, and keep using it.
+
+**Updates** (new JavaScript, no reinstall)
+
+```sh
+eas update --channel preview --message "Fix renew screen"
+eas update --channel production --message "..."   # after publishing
+eas update:list                                   # what was sent
+eas update:republish --group <id>                 # roll back to an earlier one
+```
+
+An installed app on that channel picks the update up the next time it opens
+(and uses it the time after). It only works for builds from `eas build` with
+the same `version` in `app.config.ts`: a change in native code (a new Expo
+module, a permission, the icon) needs a new build, and then bump `version`.
+Updates use `EXPO_PUBLIC_API_URL` from your shell or `.env.local` when you run
+the command, so for `preview` run
+`EXPO_PUBLIC_API_URL=https://app.gymbhai.com eas update --channel preview ...`.
+
+## 8. When something goes wrong
 
 | Symptom | Fix |
 |---|---|

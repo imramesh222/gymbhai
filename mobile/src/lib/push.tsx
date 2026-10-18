@@ -25,7 +25,11 @@ const askedKey = (slug: string) => `gymbhai.pushAsked.${slug}`;
 export type PushProblem = "unsupported" | "blocked" | "not_configured";
 
 export class PushUnavailable extends Error {
-  constructor(readonly problem: PushProblem) {
+  constructor(
+    readonly problem: PushProblem,
+    /** What the phone said, for a tester to report (shown in small print). */
+    readonly detail?: string,
+  ) {
     super(problem);
   }
 }
@@ -70,7 +74,7 @@ function projectId(): string | undefined {
 
 /** This phone's Expo push token, asking permission if need be. */
 async function expoToken(ask: boolean): Promise<string> {
-  if (!Notifications) throw new PushUnavailable("unsupported");
+  if (!Notifications) throw new PushUnavailable("unsupported", "Expo Go on Android");
   let { status } = await Notifications.getPermissionsAsync();
   if (status !== "granted" && ask) {
     status = (await Notifications.requestPermissionsAsync()).status;
@@ -80,9 +84,12 @@ async function expoToken(ask: boolean): Promise<string> {
   if (!id) throw new PushUnavailable("not_configured");
   try {
     return (await Notifications.getExpoPushTokenAsync({ projectId: id })).data;
-  } catch {
-    // An emulator without Google Play services, or no push service at all.
-    throw new PushUnavailable("unsupported");
+  } catch (error) {
+    // No Google Play services, Firebase not reachable, or no push at all.
+    throw new PushUnavailable(
+      "unsupported",
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 

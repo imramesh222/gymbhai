@@ -344,3 +344,53 @@ def test_a_notice_tells_open_apps(
         ]
         * 2
     )
+
+
+def test_a_notice_without_sms_still_goes_by_push_and_costs_nothing(
+    client: TestClient, db: Session, gym_a: GymFixture, provider: FakePush
+) -> None:
+    """Push is free, so it never waits for the SMS tick; the tick is only
+    about SMS for the members push can't reach."""
+    with_app = member_with_month(db, gym_a, "9800000451")
+    without = member_with_month(db, gym_a, "9800000452")
+    phone_for(db, with_app)
+    sign_in(db, client, gym_a.owner)
+    created = client.post(
+        "/api/v1/notices", json={"title": "Closed Saturday", "body": "For Tihar."}
+    ).json()
+    assert (created["push_count"], created["sms_count"]) == (1, 0)
+    run_jobs(db)
+    [(target, message)] = provider.sent
+    assert target.endpoint.endswith(f"{with_app.id}/1")
+    assert message.title == "Closed Saturday"
+    assert sms_to(db, with_app) == [] and sms_to(db, without) == []
+
+
+def test_a_push_only_notice_sends_no_sms_when_the_push_fails(
+    client: TestClient, db: Session, gym_a: GymFixture, provider: FakePush
+) -> None:
+    member = member_with_month(db, gym_a, "9800000461")
+    phone_for(db, member)
+    provider.error = PushGone("unsubscribed")
+    sign_in(db, client, gym_a.owner)
+    client.post("/api/v1/notices", json={"title": "Hi", "body": "There"})
+    run_jobs(db)
+    assert sms_to(db, member) == []
+    assert push.live(db, member.id) == []  # the gone phone is forgotten
+
+
+def test_staff_who_cant_send_sms_can_still_notify_by_push(
+    client: TestClient,
+    db: Session,
+    gym_a: GymFixture,
+    provider: FakePush,
+    make_staff,
+) -> None:
+    member = member_with_month(db, gym_a, "9800000471")
+    phone_for(db, member)
+    desk = make_staff(gym_a.gym, permissions=["messages.notices"])
+    sign_in(db, client, desk)
+    notice = {"title": "Hi", "body": "There"}
+    assert client.post("/api/v1/notices", json=notice).json()["push_count"] == 1
+    refused = client.post("/api/v1/notices", json={**notice, "send_sms": True})
+    assert refused.status_code == 403

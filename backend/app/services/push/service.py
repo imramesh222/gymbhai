@@ -176,10 +176,13 @@ def notify(
     created_by: uuid.UUID | None = None,
     pushable: set[uuid.UUID] | None = None,
     flush: bool = True,
-) -> tuple[Channel, SmsMessage | None]:
+    sms_allowed: bool = True,
+) -> tuple[Channel | None, SmsMessage | None]:
     """Reach a member: push if they can take it, else (or also) SMS.
 
     `pushable` is `reachable(...)` worked out once for a bulk send.
+    `sms_allowed=False` is push only, which is free: a member without push
+    isn't reached (None), and a push that fails sends no SMS instead.
     Returns how, and the SMS queued now, if any.
     """
     from app.worker import enqueue
@@ -189,7 +192,9 @@ def notify(
         if pushable is not None
         else bool(reachable(db, [member.id]))
     )
-    also_sms = gym.config.also_sms
+    if not can_push and not sms_allowed:
+        return None, None
+    also_sms = gym.config.also_sms and sms_allowed
     message = None
     if not can_push or also_sms:
         message = sms.queue(
@@ -214,7 +219,7 @@ def notify(
                 "tag": tag,
                 # The SMS to send if no phone takes it; none if one went already.
                 "fallback": None
-                if message
+                if message or not sms_allowed
                 else {
                     "body": sms_body,
                     "kind": sms_kind,

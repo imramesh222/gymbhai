@@ -445,7 +445,8 @@ def notice_cost(
     ctx: StaffContext = Depends(NOTICES),
 ) -> NoticeCost:
     """What sending this notice would cost, before sending it (§7, §16.3 8.3):
-    members whose phone takes push get it free; the rest by SMS."""
+    members whose phone takes push get it free (always sent); with SMS
+    ticked, the rest by SMS."""
     gym = _gym(db, ctx)
     recipients = notice_recipients(db, ctx, payload.branch_id)
     by_push = len(push.reachable(db, [m.id for m in recipients]))
@@ -482,35 +483,40 @@ def create_notice(
     )
     db.add(notice)
     db.flush()
-    if payload.send_sms:
-        if not ctx.can(Permission.MESSAGES_SMS):
-            raise AppError(
-                403,
-                "permission_denied",
-                "You don't have permission to do this.",
-                permission=Permission.MESSAGES_SMS.value,
-            )
-        text = _notice_sms(gym, payload.title, payload.body)
-        recipients = notice_recipients(db, ctx, payload.branch_id)
-        pushable = push.reachable(db, [m.id for m in recipients])
-        for member in recipients:
-            channel, _ = push.notify(
-                db,
-                gym,
-                member,
-                title=payload.title,
-                body=payload.body,
-                url=f"/{gym.slug}/notices",
-                tag=f"notice:{notice.id}",
-                sms_body=text,
-                sms_kind=SMS_NOTICE,
-                created_by=ctx.staff.id,
-                pushable=pushable,
-                flush=False,
-            )
-            notice.push_count += channel != "sms"
-            notice.sms_count += channel != "push"
-        db.flush()
+    if payload.send_sms and not ctx.can(Permission.MESSAGES_SMS):
+        raise AppError(
+            403,
+            "permission_denied",
+            "You don't have permission to do this.",
+            permission=Permission.MESSAGES_SMS.value,
+        )
+    # Every notice goes by push to the members who turned notifications on:
+    # it's free. SMS, which uses credits, only when asked for, and only to
+    # the members push can't reach (or everyone, with the gym's "also SMS").
+    text = _notice_sms(gym, payload.title, payload.body)
+    recipients = notice_recipients(db, ctx, payload.branch_id)
+    pushable = push.reachable(db, [m.id for m in recipients])
+    for member in recipients:
+        if not payload.send_sms and member.id not in pushable:
+            continue
+        channel, _ = push.notify(
+            db,
+            gym,
+            member,
+            title=payload.title,
+            body=payload.body,
+            url=f"/{gym.slug}/notices",
+            tag=f"notice:{notice.id}",
+            sms_body=text,
+            sms_kind=SMS_NOTICE,
+            created_by=ctx.staff.id,
+            pushable=pushable,
+            flush=False,
+            sms_allowed=payload.send_sms,
+        )
+        notice.push_count += channel in ("push", "both")
+        notice.sms_count += channel in ("sms", "both")
+    db.flush()
     activity.staff_action(
         db,
         ctx.staff,

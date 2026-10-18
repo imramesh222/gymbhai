@@ -51,7 +51,7 @@ test("follow up, a reminder by SMS, and a notice with its cost shown first", asy
   await page.waitForURL("**/staff/notices");
   await page.getByLabel("Title").fill("Closed on Saturday");
   await page.getByLabel("Message").fill("The gym is closed for Tihar.");
-  await page.getByLabel("Also send to their phones").check();
+  await page.getByLabel("Also send SMS to members without notifications").check();
   await page.getByRole("button", { name: "Check the cost" }).click();
   await expect(
     page.getByText(/1 members: 0 by notification, 1 by SMS \(1 credits\)/),

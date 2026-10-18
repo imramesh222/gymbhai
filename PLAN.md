@@ -361,7 +361,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 |---|---|
 | `check_ins` | `gym_id`, `branch_id`, `member_id`, `membership_id`, `at`, `method` (app_qr, card_qr, manual; later fingerprint, face), `result` (allowed, warned, override, duplicate, denied_expired, denied_frozen, denied_branch, denied_dues, denied_visits_used, denied_hours), `device_id`, `staff_user_id`, `note` (the reason for an override) |
 | `devices` | `gym_id`, `branch_id`, `name`, `token_hash`, `last_seen_at`, `revoked_at` |
-| `notices` | `gym_id`, `branch_id` (null = all), `title`, `body`, `published_at`, `send_sms` (to their phones: push, else SMS), `sms_count`, `push_count` |
+| `notices` | `gym_id`, `branch_id` (null = all), `title`, `body`, `published_at`, `send_sms` (also SMS the members push can't reach; push to the rest goes with every notice, free), `sms_count`, `push_count` |
 | `push_subscriptions` | `gym_id`, `member_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, `last_ok_at`, `revoked_at` — one per browser per member (a shared phone has one each); revoked on turning off, signing out, or when the push service answers 404/410; deleted when the member is erased |
 | `reminder_rules` | `gym_id`, `trigger` (expiry · lapsed · dues · not_visiting · birthday), `days` (for expiry: from the chain's end, −7, −3, 0, +3…; lapsed: days since it ended; dues: days since the sale; not visiting: days without a visit; birthday: 0), `template`, `enabled`. Unique per gym, trigger and days |
 | `reminder_log` | `gym_id`, `rule_id`, `dedupe_key`, `member_id`, `membership_id` (null for not visiting and birthday), `sms_message_id` — unique per rule and `dedupe_key` (`membership:<id>`; `visit:<member>:<last visit date>`, once per spell away; `birthday:<member>:<year>`), so nothing is sent twice |
@@ -419,7 +419,7 @@ Staff screens are light and dense — read all day in a bright room, with white 
 | **Membership edit** | Every field in §5.6, plus **Extend everyone**, and a **History** tab showing each change, who made it, before and after |
 | **Attendance** | Last 7, 30 or 90 days; check-ins by day as bars; a weekday × hour heatmap of the busiest hours; denied scans |
 | **Reports** | Monthly: income by method, new members, renewals, lapsed, active count, renewal rate — each against the month before. Charts of the last 12 months: income, active members, new vs lapsed, renewal rate. Prints |
-| **Notices** | Write a notice, choose branches, optionally send by SMS (shows SMS cost first) |
+| **Notices** | Write a notice, choose branches. Every notice goes as a free notification to members who turned notifications on; optionally also by SMS to the rest (shows SMS cost first). Decided 2026-10-18: push used to wait for the SMS tick |
 | **Automations** | Messages → Automations: one card per trigger (before/on the day it ends · win back · money still owed · not visiting · birthday), each rule with an on/off tick, its days, its wording and SMS count; added ones start off. Also the desk SMS wording (welcome, membership sold). Was *Settings → Reminders*, which redirects |
 | **Staff** | Staff accounts: add, disable, reset password; permission checklist and branch access per person, with *Manager* / *Front desk* / *Blank* starting points |
 | **Subscription** | Their plan with us, days left, pay and submit transaction ID, SMS credit balance and top-up |

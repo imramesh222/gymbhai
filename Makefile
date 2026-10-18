@@ -21,7 +21,7 @@ E2E_ADMIN_PASSWORD ?= e2e-admin-password-123
 export
 
 .PHONY: help setup env deps db migrate migration migration-check up down logs ps vapid \
-        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app apk \
+        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app apk apk-dev \
         lint fmt admin shell psql
 
 help:  ## Show this help
@@ -125,8 +125,11 @@ e2e-mobile: seed-app  ## Maestro flows on the running simulator or emulator
 		$(if $(expo_url),-e EXPO_URL=$(expo_url)) \
 		$(if $(filter com.gymbhai.member,$(app)),,--exclude-tags installed-app)
 
-apk:  ## A test .apk of the phone app for Android testers (mobile/README.md)
+apk:  ## A test .apk of the phone app for Android testers (docs/MOBILE.md §4)
 	@cd mobile && npm run -s build:apk
+
+apk-dev:  ## A development build .apk: code live from `npx expo start` (docs/MOBILE.md §2)
+	@cd mobile && npm run -s build:apk -- dev
 
 vapid:  ## Print a new VAPID key for push notifications (paste into .env)
 	@cd backend && ../$(PY) -m scripts.vapid_keys

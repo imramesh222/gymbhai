@@ -55,11 +55,13 @@ export default function NoticesPage() {
       setCost(null);
       setMessage({
         tone: "success",
-        text: notice.send_sms
-          ? t("notices.publishedSms", {
-              count: notice.sms_count + notice.push_count,
-            })
-          : t("notices.published"),
+        // Notifications go out with every notice; SMS only when ticked.
+        text:
+          notice.sms_count + notice.push_count > 0
+            ? t("notices.publishedSms", {
+                count: notice.sms_count + notice.push_count,
+              })
+            : t("notices.published"),
       });
       notices.reload();
     } catch (err) {

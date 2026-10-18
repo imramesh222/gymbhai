@@ -27,9 +27,14 @@ import { ActionStatus, Button, Card, LinkButton, Notice, Txt } from "./ui";
 
 function problemText(error: unknown): string | null {
   if (!(error instanceof PushUnavailable)) return null;
-  if (error.problem === "blocked") return t("mobile.push.blocked");
-  if (error.problem === "not_configured") return t("mobile.push.notConfigured");
-  return t("mobile.push.unsupported");
+  const text =
+    error.problem === "blocked"
+      ? t("mobile.push.blocked")
+      : error.problem === "not_configured"
+        ? t("mobile.push.notConfigured")
+        : t("mobile.push.unsupported");
+  // The phone's own words, so a tester can tell us what went wrong.
+  return error.detail ? `${text}\n(${error.detail})` : text;
 }
 
 export function PushPrompt() {
