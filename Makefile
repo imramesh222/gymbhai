@@ -21,7 +21,7 @@ E2E_ADMIN_PASSWORD ?= e2e-admin-password-123
 export
 
 .PHONY: help setup env deps db migrate migration migration-check up down logs ps vapid \
-        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app apk apk-dev \
+        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app mobile-env apk apk-dev \
         lint fmt admin shell psql
 
 help:  ## Show this help
@@ -124,6 +124,12 @@ e2e-mobile: seed-app  ## Maestro flows on the running simulator or emulator
 	@cd mobile && maestro test e2e/ -e APP_ID=$(app) -e CODE=$(MASTER_OTP) \
 		$(if $(expo_url),-e EXPO_URL=$(expo_url)) \
 		$(if $(filter com.gymbhai.member,$(app)),,--exclude-tags installed-app)
+
+mobile-env:  ## Point the phone app at this Mac's current Wi-Fi address (after changing Wi-Fi)
+	@ip=$$(ipconfig getifaddr en0 || ipconfig getifaddr en1); \
+	test -n "$$ip" || { echo "No Wi-Fi address found: are you connected?"; exit 1; }; \
+	echo "EXPO_PUBLIC_API_URL=http://$$ip:8001" > mobile/.env.local; \
+	echo "mobile/.env.local -> http://$$ip:8001"
 
 apk:  ## A test .apk of the phone app for Android testers (docs/MOBILE.md §4)
 	@cd mobile && npm run -s build:apk

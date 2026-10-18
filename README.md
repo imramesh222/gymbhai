@@ -5,6 +5,8 @@ and QR check-ins, with an installable member app. One product, many gyms.
 
 - **[PLAN.md](PLAN.md)** — scope, data model, screens, API and build order
 - **[CLAUDE.md](CLAUDE.md)** — the rules that are easy to break
+- **[docs/LOCAL.md](docs/LOCAL.md)** — start, stop, and a new Wi-Fi on your Mac
+- **[docs/MOBILE.md](docs/MOBILE.md)** — the phone app: run, test, share with testers
 - **[docs/DEPLOY.md](docs/DEPLOY.md)** — putting it on a server, backups, updates
 - **[docs/PILOT.md](docs/PILOT.md)** — onboarding a pilot gym
 

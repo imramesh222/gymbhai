@@ -5,6 +5,8 @@ running it on the Mac, its automatic tests, building a test `.apk` for Android
 testers, and letting iPhone testers try it in Expo Go. Publishing to Google
 Play and the App Store comes later (PLAN.md §17.7, "Afterwards").
 
+Starting, stopping and changing Wi-Fi day to day: `docs/LOCAL.md`.
+
 Everything here is free. The accounts involved: the Expo account that owns
 the project (`mero-gym`), a shared Expo account for iPhone testers, and later
 a free Firebase project for Android notifications.
@@ -16,7 +18,9 @@ a free Firebase project for Android notifications.
 1. The backend running: `make up` at the repo root, with `MASTER_OTP` set in
    `.env` (any 6 digits; members of test gyms sign in with it).
 2. The app's packages: `cd mobile && npm install`.
-3. Tell the app where the API is. Find the Mac's Wi-Fi address
+3. Tell the app where the API is: `make mobile-env` writes this Mac's Wi-Fi
+   address into `mobile/.env.local` (run it again whenever you change Wi-Fi).
+   By hand: find the Mac's Wi-Fi address
    (System Settings → Wi-Fi → Details, or `ipconfig getifaddr en0`), then:
    ```sh
    echo "EXPO_PUBLIC_API_URL=http://192.168.1.20:8001" > mobile/.env.local
