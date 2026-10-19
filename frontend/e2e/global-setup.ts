@@ -30,6 +30,7 @@ const ROUTES = [
   "/staff/payment-requests",
   "/staff/freeze-requests",
   "/staff/payments",
+  "/staff/expenses",
   "/staff/attendance",
   "/staff/reports",
   "/staff/notices",

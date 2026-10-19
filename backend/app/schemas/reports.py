@@ -83,6 +83,8 @@ class TrendMonth(BaseModel):
     # False for months that ended before the gym joined: charts show a gap.
     started: bool
     income: int
+    expenses: int
+    profit: int
     new_members: int
     renewals: int
     lapsed: int
@@ -103,6 +105,10 @@ class MonthlyRead(BaseModel):
     last_day: dt.date
     income: int
     income_by_method: dict[str, int]
+    # Spent (§18.1), and income less spent: below zero in a bad month.
+    expenses: int
+    expenses_by_category: dict[str, int]
+    profit: int
     new_members: int
     new_memberships: int
     renewals: int

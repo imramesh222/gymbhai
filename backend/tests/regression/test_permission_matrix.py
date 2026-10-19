@@ -85,6 +85,12 @@ ACTIONS: dict[Permission, tuple] = {
         {"membership_id": "{membership}", "amount": 100, "method": "cash"},
     ),
     Permission.REPORTS_MONEY: ("GET", "/api/v1/payments", None),
+    Permission.EXPENSES_RECORD: (
+        "POST",
+        "/api/v1/expenses",
+        {"category": "rent", "amount": 100},
+    ),
+    Permission.EXPENSES_EDIT: ("PATCH", "/api/v1/expenses/{expense}", {"note": "x"}),
     Permission.SETUP_PLANS: (
         "POST",
         "/api/v1/plans",
@@ -146,15 +152,27 @@ def test_every_permission_is_covered_or_pending() -> None:
 
 @pytest.fixture
 def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
+    from app.models.expense import Expense
+
     member = make_member(db, gym_a)
     plan = priced_plan(db, gym_a.gym)
     membership, payment = sell(db, gym_a, member, plan=plan, paid=500_00)
+    expense = Expense(
+        gym_id=gym_a.gym.id,
+        category="rent",
+        amount=25_000_00,
+        spent_on=today_in_nepal(),
+        method="cash",
+    )
+    db.add(expense)
+    db.commit()
     return {
         "member": str(member.id),
         "plan": str(plan.id),
         "membership": str(membership.id),
         "payment": str(payment.id),
         "branch": str(gym_a.branch.id),
+        "expense": str(expense.id),
     }
 
 

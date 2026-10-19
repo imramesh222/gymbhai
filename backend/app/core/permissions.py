@@ -33,6 +33,9 @@ class Permission(StrEnum):
     PAYMENTS_VOID = "payments.void"
     PAYMENTS_REFUND = "payments.refund"
     REPORTS_MONEY = "reports.money"
+    # Expenses: money the gym spent (§18.1). Seeing them is REPORTS_MONEY.
+    EXPENSES_RECORD = "expenses.record"
+    EXPENSES_EDIT = "expenses.edit"
     # Door
     DOOR_CHECK_IN = "door.check_in"
     DOOR_OVERRIDE = "door.override"

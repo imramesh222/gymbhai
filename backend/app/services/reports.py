@@ -23,6 +23,7 @@ from app.models.member import Member
 from app.models.member_app import LET_IN, CheckIn
 from app.models.membership import Membership
 from app.models.payment import KIND_PAYMENT, Payment
+from app.services import expenses as expenses_service
 from app.services import members as members_service
 from app.services import memberships as ms
 
@@ -266,6 +267,9 @@ class Monthly:
     last_day: dt.date
     income: int
     income_by_method: dict[str, int]
+    # Money the gym spent (§18.1), voided expenses left out.
+    expenses: int
+    expenses_by_category: dict[str, int]
     new_members: int
     new_memberships: int
     renewals: int
@@ -279,6 +283,11 @@ class Monthly:
     @property
     def renewal_rate(self) -> float | None:
         return round(self.renewed / self.due_to_renew, 3) if self.due_to_renew else None
+
+    @property
+    def profit(self) -> int:
+        """Below zero in a month that spent more than came in."""
+        return self.income - self.expenses
 
 
 def months_back(month: str, count: int) -> list[str]:
@@ -303,6 +312,9 @@ def monthly(db: Session, ctx: StaffContext, month: str) -> Monthly:
     as_of = min(last, today)
 
     income, by_method = money_between(db, ctx.gym_id, start, end, ctx.branch_ids)
+    spent, spent_by_category = expenses_service.totals(
+        db, ctx.gym_id, first, last, ctx.branch_ids
+    )
     scope = members_service.search(ctx, today=as_of)
     member_ids = scope.with_only_columns(Member.id)
 
@@ -392,6 +404,8 @@ def monthly(db: Session, ctx: StaffContext, month: str) -> Monthly:
         last_day=last,
         income=income,
         income_by_method=by_method,
+        expenses=spent,
+        expenses_by_category=spent_by_category,
         new_members=new_members or 0,
         new_memberships=len(first_time),
         renewals=renewals,

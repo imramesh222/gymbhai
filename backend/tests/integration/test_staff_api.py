@@ -23,7 +23,8 @@ def test_owner_creates_front_desk_staff_from_the_preset(
 ) -> None:
     sign_in(db, client, gym_a.owner)
     catalog = client.get("/api/v1/staff/permissions").json()
-    assert len(catalog["permissions"]) == 30
+    assert len(catalog["permissions"]) == 32
+    assert {"key": "expenses.record", "area": "expenses"} in catalog["permissions"]
     front_desk = catalog["presets"]["front_desk"]
     response = create(client, permissions=front_desk)
     assert response.status_code == 201, response.text

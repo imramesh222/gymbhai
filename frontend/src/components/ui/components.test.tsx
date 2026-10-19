@@ -121,6 +121,15 @@ describe("Menu", () => {
     expect(print).toHaveBeenCalled();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+
+  it("in a list row: an icon, still named for screen readers", async () => {
+    const user = userEvent.setup();
+    render(<Menu compact items={[{ label: "Edit", onSelect: vi.fn() }]} />);
+    const button = screen.getByRole("button", { name: "More" });
+    expect(button).toHaveTextContent("");
+    await user.click(button);
+    expect(screen.getByRole("menuitem", { name: "Edit" })).toBeVisible();
+  });
 });
 
 describe("Tabs", () => {

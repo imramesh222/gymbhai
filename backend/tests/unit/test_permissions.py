@@ -33,8 +33,15 @@ def test_presets_are_starting_points_within_the_catalogue() -> None:
 
 
 def test_every_permission_in_plan_section_2_1_exists() -> None:
-    # Guards against a key being dropped by accident: 30 ticks on the form.
-    assert len(ALL_PERMISSIONS) == 30
+    # Guards against a key being dropped by accident: 32 ticks on the form.
+    assert len(ALL_PERMISSIONS) == 32
+
+
+def test_expenses_start_with_managers_not_the_front_desk() -> None:
+    """Salaries are among them (PLAN.md §18.1): the owner ticks the desk in."""
+    expenses = {Permission.EXPENSES_RECORD, Permission.EXPENSES_EDIT}
+    assert expenses <= PRESETS["manager"]
+    assert not expenses & PRESETS["front_desk"]
 
 
 def test_staff_can_only_grant_what_they_hold() -> None:

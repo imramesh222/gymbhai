@@ -414,9 +414,6 @@ export interface Branch {
   is_active: boolean;
 }
 
-
-
-
 export interface PaymentListItem extends Payment {
   member_name: string;
   member_code: string;
@@ -784,6 +781,72 @@ export const paymentsApi = {
     request<ReceiptLink>(`/api/v1/payments/${id}/receipt-link`, send("POST")),
 };
 
+/** Money the gym spent: rent, salaries, bills (PLAN.md §18.1). */
+export const EXPENSE_CATEGORIES = [
+  "rent",
+  "salaries",
+  "electricity",
+  "water",
+  "internet",
+  "equipment",
+  "repairs",
+  "cleaning",
+  "marketing",
+  "fees",
+  "other",
+] as const;
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
+export interface Expense {
+  id: string;
+  /** Null: the whole gym's, not one branch's. */
+  branch_id: string | null;
+  category: ExpenseCategory;
+  amount: number;
+  spent_on: string;
+  method: Method;
+  paid_to: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  voided_at: string | null;
+  void_reason: string | null;
+}
+
+export interface ExpenseInput {
+  category: ExpenseCategory;
+  amount: number;
+  spent_on: string;
+  method: Method;
+  paid_to: string | null;
+  note: string | null;
+  branch_id: string | null;
+}
+
+export interface ExpenseList {
+  /** A month of the gym's own calendar, "2083-06" (BS) or "2026-10" (AD). */
+  month: string;
+  calendar: "ad" | "bs";
+  first_day: string;
+  last_day: string;
+  items: Expense[];
+  /** Voided ones left out. */
+  sum_amount: number;
+  by_category: Partial<Record<ExpenseCategory, number>>;
+}
+
+export const expensesApi = {
+  list: (filters: { month?: string; category?: ExpenseCategory } = {}) =>
+    request<ExpenseList>(`/api/v1/expenses${query(filters)}`),
+  create: (body: ExpenseInput, key?: string) =>
+    request<Expense>("/api/v1/expenses", once(send("POST", body), key)),
+  update: (id: string, body: Partial<ExpenseInput> & { reason?: string | null }) =>
+    request<Expense>(`/api/v1/expenses/${id}`, send("PATCH", body)),
+  void: (id: string, reason: string) =>
+    request<Expense>(`/api/v1/expenses/${id}/void`, send("POST", { reason })),
+};
+
 /** A member's "please freeze my membership" (PLAN.md §16.3, 8.6). */
 
 export const freezeRequestsApi = {
@@ -935,7 +998,6 @@ export interface ReminderRule {
   template: string;
   enabled: boolean;
 }
-
 
 export interface NoticeInput {
   title: string;
@@ -1171,6 +1233,10 @@ export interface MonthlyReport {
   last_day: string;
   income: number;
   income_by_method: Record<string, number>;
+  /** Spent (§18.1), and income less spent: below zero in a bad month. */
+  expenses: number;
+  expenses_by_category: Partial<Record<ExpenseCategory, number>>;
+  profit: number;
   new_members: number;
   new_memberships: number;
   renewals: number;
@@ -1188,6 +1254,8 @@ export interface TrendMonth {
   /** False before the gym joined: a gap on the charts, not a zero. */
   started: boolean;
   income: number;
+  expenses: number;
+  profit: number;
   new_members: number;
   renewals: number;
   lapsed: number;
@@ -1315,6 +1383,9 @@ export const changelogApi = {
   seen: () => request<void>("/api/v1/changelog/seen", send("POST")),
 };
 
+export type ExportKind =
+  "members" | "memberships" | "payments" | "expenses" | "check-ins";
+
 export const reportsApi = {
   today: () => request<TodayData>("/api/v1/dashboard/today"),
   monthly: (month?: string) =>
@@ -1323,10 +1394,9 @@ export const reportsApi = {
     request<{ calendar: "ad" | "bs"; months: TrendMonth[] }>(
       `/api/v1/reports/trend${query({ end })}`,
     ),
-  exportUrl: (kind: "members" | "memberships" | "payments" | "check-ins") =>
-    `/api/v1/export/${kind}.xlsx`,
+  exportUrl: (kind: ExportKind) => `/api/v1/export/${kind}.xlsx`,
   /** Downloads through fetch, so the access token goes with it. */
-  download: async (kind: "members" | "memberships" | "payments" | "check-ins") => {
+  download: async (kind: ExportKind) => {
     const response = await fetch(`/api/v1/export/${kind}.xlsx`, {
       headers: staffAuthHeader(),
       credentials: "same-origin",

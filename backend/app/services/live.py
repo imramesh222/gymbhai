@@ -4,6 +4,7 @@
 * A member sends "I've paid"         -> the Payment requests badge and list
 * Staff approve or reject it         -> the member's app, other approvers
 * A sale, payment, freeze, edit, ... -> the member's page and their app
+* An expense recorded or voided      -> the Expenses screen
 * A staff account or the gym's sign-in -> every staff screen re-reads who is
   rules change                           signed in; the Staff page reloads
 
@@ -51,6 +52,8 @@ NOTICE = "notice"
 FREEZE_REQUEST = "freeze_request"
 # An enquiry added or moved along (§16.4, 9.1).
 LEAD = "lead"
+# An expense recorded, edited or voided (§18.1). No branch: the whole gym's.
+EXPENSE = "expense"
 MEMBER = "member"
 # A staff account (permissions, disabled, two-step sign-in, devices) or the
 # gym's rules for signing in changed. Carries nothing but the gym: each screen
@@ -114,6 +117,7 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
     approves = ctx.can(Permission.PAYMENTS_APPROVE_APP)
     freezes = ctx.can(Permission.MEMBERSHIPS_FREEZE)
     leads = ctx.can(Permission.LEADS_MANAGE)
+    money = ctx.can(Permission.REPORTS_MONEY)
 
     def accepts(event: Event) -> bool:
         if event.get("gym") != gym:
@@ -126,6 +130,8 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
             return freezes
         if event["type"] == LEAD:
             return leads and (branches is None or event.get("branch") in branches)
+        if event["type"] == EXPENSE:
+            return money and (branches is None or event.get("branch") in branches)
         if event["type"] in (CHECK_IN, MEMBER):
             return sees_members and (
                 branches is None or event.get("branch") in branches
