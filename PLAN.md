@@ -54,13 +54,14 @@ Automatic payment verification, progress tracking, workout and diet plans, class
 
 ### 2.1 Staff permissions
 
-There are no fixed roles. The owner creates each staff account — name, phone or email, password — then ticks exactly what that person may do and in which branches. To save time the form offers **starting points** the owner can then change: *Manager* (almost everything), *Front desk* (members, renewals, payments, check-in), *Blank*.
+There are no fixed roles. The owner creates each staff account — name, phone or email, password — then ticks exactly what that person may do and in which branches. To save time the form offers **starting points** the owner can then change: *Manager* (almost everything, but not training members: that makes someone a trainer), *Front desk* (members and their app access, renewals, selling personal training, payments, check-in), *Trainer* (train members, view members, check members in; §18.3), *Blank*.
 
 | Area | Permission |
 |---|---|
 | Members | View members · Add members · Edit member details · Archive members · Turn app access on/off |
 | Enquiries | Enquiries: add, follow up, convert (§16.4, 9.1; in the *Front desk* starting point) |
 | Memberships | Sell and renew · Edit dates, price, discount and plan · Extend days · **Extend everyone** · Freeze · Cancel · Delete |
+| Personal training | **Train members**: their own clients and sessions, and in the trainer list · **Sell personal training**, change and cancel it, and anyone's sessions (§18.3) |
 | Money | Collect payments · **Approve app payments** · Edit payments · Void payments · Record refunds · See money totals and reports |
 | Expenses | Record expenses · Edit and void expenses (§18.1) |
 | Door | Check members in · Let someone in despite an expired membership |
@@ -263,12 +264,14 @@ Safeguards: a transaction ID can only be used once per gym; if the amount doesn'
 - **One phone, several members:** a parent and children often share a number. Staff are warned when adding a phone that's already on file, but can go ahead. Signing in with that number asks *"Who are you?"* and lists the names; each keeps their own membership and QR.
 - The same person at two gyms is two separate members with two separate logins; each gym's link only knows its own members.
 - **Expired members can still sign in** — to see that they've expired and renew from the app — but their QR is refused at the door.
+- **Or at the desk, with no code** (§18.4): staff open the member's profile → *Sign in on their phone* and show a QR; the member scans it with the phone's camera, or with *Scan the QR at the desk* on the sign-in screen. No SMS, so it costs nothing and works before a gateway is set up.
 
 Controls on the member's profile:
 
 | Control | Effect |
 |---|---|
 | **App access** on / off | Off blocks sign-in and signs out their devices (e.g. a banned member) |
+| **Sign in on their phone** | A one-time QR at the desk, no SMS code (§18.4) |
 | **Change phone or email** | Old one stops working immediately; devices signed out |
 | **Resend welcome** | Sends the link again |
 | **Sign out all devices** | Lost phone |
@@ -340,7 +343,10 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `plan_branches` | `plan_id`, `branch_id` — the branches a plan covers when `all_branches` is false |
 | `memberships` | `gym_id`, `member_id`, `plan_id`, `plan_name` (copied at sale, like the price), `branch_id`, `start_date`, `end_date`, `price`, `discount`, `admission_fee`, `cancelled_at`, `cancel_reason`, `created_by`, `source` (desk, app_request, import); `visit_limit` and `access_hours` copied from the plan at sale. A visit pack with every visit used counts as ended, from the let-in check-ins on it |
 | `membership_freezes` | `gym_id`, `membership_id`, `from_date`, `to_date` (inclusive), `reason` — extends `end_date` by the frozen days; ending a freeze early gives the unused days back |
-| `payments` | `gym_id`, `member_id`, `membership_id`, `kind` (payment, refund), `amount`, `method` (cash, esewa, khalti, fonepay, bank), `transaction_ref` (unique per gym when set), `paid_at`, `receipt_no` (sequential per gym), `received_by`, `note`, `voided_at`, `voided_by`, `void_reason` — a payment can't exceed what is owed on its membership, nor a refund what was paid |
+| `payments` | `gym_id`, `member_id`, `membership_id` *or* `pt_package_id` (personal training, §18.3; never both), `kind` (payment, refund), `amount`, `method` (cash, esewa, khalti, fonepay, bank), `transaction_ref` (unique per gym when set), `paid_at`, `receipt_no` (sequential per gym), `received_by`, `note`, `voided_at`, `voided_by`, `void_reason` — a payment can't exceed what is owed on its membership or package, nor a refund what was paid |
+| `pt_plans` | `gym_id`, `name`, `kind` (monthly, sessions), `sessions` (a pack's size; null for monthly), `duration_months` *or* `duration_days`, `price`, `is_active`, `sort_order` — the gym's personal training plans (§18.3) |
+| `pt_packages` | `gym_id`, `member_id`, `plan_id`, `plan_name`, `kind`, `sessions` and `price` copied at sale, `discount`, `trainer_id` (a staff account), `branch_id` (the member's home branch unless chosen), `start_date`, `end_date`, `cancelled_at`, `cancel_reason`, `created_by` — personal training sold; status computed, never stored (§18.3) |
+| `pt_sessions` | `gym_id`, `package_id`, `trained_on` (a Nepal day within the package's dates), `trainer_id` (the package's trainer that day), `recorded_by`, `note` (cleared when the member is erased), `voided_at`, `voided_by`, `void_reason` — never more than a pack holds; never deleted, only voided (§18.3) |
 | `expenses` | `gym_id`, `branch_id` (null = the whole gym), `category` (rent, salaries, electricity, water, internet, equipment, repairs, cleaning, marketing, fees, other), `amount`, `spent_on` (a Nepal day, not after today), `method` (as payments), `paid_to`, `note`, `created_by`, `voided_at`, `voided_by`, `void_reason` — money the gym spent; never deleted, only voided (§18.1) |
 | `gym_payment_methods` | `gym_id`, `kind` (esewa, khalti, fonepay, bank, other), `label`, `account_name`, `account_number`, `qr_image_key`, `is_active`, `sort_order` — the gym's own accounts, shown to members |
 | `payment_requests` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `membership_id`, `payment_id` — a member's "I've paid" from the app (§5.4) |
@@ -381,6 +387,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `staff_recovery_codes` | `staff_user_id`, `code_hash`, `used_at` — ten single-use codes for a lost phone; only hashes kept |
 | `staff_sessions` | `staff_user_id`, `refresh_token_hash`, `previous_token_hash`, `rotated_at`, `user_agent`, `ip`, `expires_at`, `last_used_at`, `revoked_at` — one row per signed-in staff device; the refresh token rotates on every use (§11) |
 | `member_sessions` | `member_id`, `refresh_token_hash`, `previous_token_hash`, `rotated_at`, `device_label`, `expires_at`, `last_used_at`, `revoked_at` |
+| `member_sign_in_links` | `gym_id`, `member_id`, `token_hash` (unique), `created_by`, `expires_at`, `used_at` — the desk's sign-in QR (§18.4): once, for 5 minutes, only the newest per member; kept a day past expiry, deleted when the member is erased |
 | `activity_log` | `gym_id`, `actor_type`, `actor_id`, `action`, `entity`, `entity_id`, `changes` (JSON, before → after), `reason`, `ip`, `at` — powers the History tab (§5.6) |
 
 **Our billing (gyms paying us)**
@@ -411,9 +418,10 @@ Staff screens are light and dense — read all day in a bright room, with white 
 |---|---|
 | **Today** | Quick actions (Add member, Scan, Collect payment). A **setup checklist** for new gyms until done or hidden (plans priced, payment account, first member, QR poster, logo, a staff account). **To do**, each with its button: app payments to approve, who ends today (Call, Remind by SMS), who owes most (Collect), who was turned away. Check-ins and money collected compared with the same time yesterday, active members, dues owed; check-ins by hour today; who's probably inside (checked in within 2 hours — there's no check-out); money collected by method. **Enquiries to call back** today or overdue (with Enquiries permission) |
 | **Members** | Search by name, phone or code; filters with their counts (all, active, ending this week, expired, owe money, frozen, archived — `?filter=` in the address); a table on a laptop (member, plan, status, owes, last visit; sorted on the server by name, dues or last visit) and cards on a phone; pick members to send one SMS. **Add member**; More: **Extend everyone** (empty to start, says how many memberships first and that number is typed to confirm), Import / export |
-| **Member profile** | Header: photo, name, code, status, days left, dues; **Renew**, **Collect payment** (when owing), **Check in**, and **More** (edit, freeze, send SMS, print card, app access, resend welcome, sign out all devices, reissue QR and card, archive, erase). Tabs kept in the address: Overview, Memberships, Payments, **Visits** (a month calendar in the gym's calendar, turned-away days marked), Messages (SMS sent), History |
+| **Member profile** | Header: photo, name, code, status, days left, dues; **Renew**, **Collect payment** (when owing), **Check in**, and **More** (edit, freeze, send SMS, print card, app access, sign in on their phone with a QR (§18.4), resend welcome, sign out all devices, reissue QR and card, archive, erase). Overview shows when they last signed in to the app. Tabs kept in the address: Overview, Memberships, **Personal training** (§18.3; for staff who sell it, or when they have some), Payments (personal training's marked), **Visits** (a month calendar in the gym's calendar, turned-away days marked), Messages (SMS sent), History (personal training's too) |
 | **Add member / Renew** | One screen: member details → plan → discount → payment taken now (full or part) → save. Sends the welcome or renewal SMS and prints or shares the receipt |
-| **Follow up** | Tabs: **ending soon** (today, this week) · **lapsed** in the last 30 days · **owe money** · **not visiting** (active, no visit for the gym's N days, default 14; joined less than N days ago doesn't count). Each row shows the last visit, **Call** and **Send message**. Was *Expiring*; `/staff/expiring` redirects |
+| **Personal training** | §18.3: **My clients** for a trainer — upcoming and active packages, sessions left or so far, ends on, last session, **Record session** — and **All**, by trainer, for staff who sell it. Search (Ctrl K) has *Record a training session* for trainers |
+| **Follow up** | Tabs: **ending soon** (today, this week) · **lapsed** in the last 30 days · **owe money** · **not visiting** (active, no visit for the gym's N days, default 14; joined less than N days ago doesn't count). Each row shows the last visit, **Call**, **WhatsApp** (§18.5) and **Send message**. Was *Expiring*; `/staff/expiring` redirects |
 | **Enquiries** | A board by status (New · Contacted · Trial · Joined · Didn't join), a list, and a report by source (enquiries, trials, joined, joined %) with the members who sent the most people. **Add enquiry** warns when the number is already a member or asked before. Each enquiry: call, *Called them*, *Trial visit today*, call-back date and notes, *I'll follow up*, *Didn't join* with a reason, and **Convert to member**, which opens Add member filled in and links the two. Joined and lost ones leave the board after 90 days |
 | **Payment requests** | Members' app payments waiting for approval: amount, transaction ID, screenshot. **Approve** / **Reject** (§5.4). Red count in the menu |
 | **Freeze requests** | Members asking from the app to pause their membership (dates, reason), for staff with **Freeze**, with a count in the menu. **Approve** makes an ordinary freeze (the end date moves by those days); **Reject** with a reason the member sees. Pending / approved / rejected |
@@ -424,17 +432,17 @@ Staff screens are light and dense — read all day in a bright room, with white 
 | **Reports** | Monthly: income, **spent** and **profit** (income − spent), income by method, spent by category, new members, renewals, lapsed, active count, renewal rate — each against the month before. Charts of the last 12 months: money in and out, active members, new vs lapsed, renewal rate. Prints |
 | **Notices** | Write a notice, choose branches. Every notice goes as a free notification to members who turned notifications on; optionally also by SMS to the rest (shows SMS cost first). Decided 2026-10-18: push used to wait for the SMS tick |
 | **Automations** | Messages → Automations: one card per trigger (before/on the day it ends · win back · money still owed · not visiting · birthday), each rule with an on/off tick, its days, its wording and SMS count; added ones start off. Also the desk SMS wording (welcome, membership sold). Was *Settings → Reminders*, which redirects |
-| **Staff** | Staff accounts: add, disable, reset password; permission checklist and branch access per person, with *Manager* / *Front desk* / *Blank* starting points |
+| **Staff** | Staff accounts: add, disable, reset password; permission checklist and branch access per person, with *Manager* / *Front desk* / *Trainer* / *Blank* starting points |
 | **Subscription** | Their plan with us, days left, pay and submit transaction ID, SMS credit balance and top-up |
-| **Settings** | One page each, with a menu: gym profile and calendar (warns before leaving with unsaved changes), plans and prices, payment accounts and QR images, branches, check-in rules (including "not visiting" days), door scanners and the QR poster, security (owner). Plans can be visit packs (*Visits allowed*) and off-peak (*Only at certain hours*: days and times). Settings → Gym has *Let people ask to join from the gym QR* (off by default) |
+| **Settings** | One page each, with a menu: gym profile and calendar (warns before leaving with unsaved changes), plans and prices, personal training plans (§18.3), payment accounts and QR images, branches, check-in rules (including "not visiting" days), door scanners and the QR poster, security (owner). Plans can be visit packs (*Visits allowed*) and off-peak (*Only at certain hours*: days and times). Settings → Gym has *Let people ask to join from the gym QR* (off by default) |
 | **Import / Export** | Upload an Excel/CSV register, map columns, preview, import members with their current expiry dates. Download members, memberships, payments, expenses and check-ins as Excel. Dates in a register may be AD or BS (a year of 2050 or more is read as BS). Imported memberships carry no price — what members paid before GymBhai isn't income in GymBhai — and no SMS is sent until the gym chooses "Resend welcome" |
 
 ### Member app (`/<gym-slug>`)
 
 | Screen | What's on it |
 |---|---|
-| **Sign in** | Phone number (or email) → 6-digit code. If several members share that phone — a parent and their children — pick who you are |
-| **Home** | Days left (large ring), expiry date in the gym's calendar setting, **their QR code**, visit streak, latest notice. **Get reminders on this phone** (push), until turned on or put away with *Not now*; on an iPhone not opened from the Home Screen, how to add it first (iOS 16.4+). **Right now: Quiet / Normal / Busy** at their branch — the last two hours' visits against the same two hours on the same weekday over four weeks (hidden until there's enough history, or if the gym turns it off in Settings → Gym). **Add the app to your Home Screen**: Android's own install prompt, or the steps on an iPhone |
+| **Sign in** | Phone number (or email) → 6-digit code. If several members share that phone — a parent and their children — pick who you are. Or **Scan the QR at the desk**, with no code (§18.4); opening the desk's QR link with the phone's camera does the same |
+| **Home** | Days left (large ring), expiry date in the gym's calendar setting, **their QR code**, their **personal training** (plan, trainer, sessions or days left, anything owed on it; §18.3), visit streak, latest notice. **Get reminders on this phone** (push), until turned on or put away with *Not now*; on an iPhone not opened from the Home Screen, how to add it first (iOS 16.4+). **Right now: Quiet / Normal / Busy** at their branch — the last two hours' visits against the same two hours on the same weekday over four weeks (hidden until there's enough history, or if the gym turns it off in Settings → Gym). **Add the app to your Home Screen**: Android's own install prompt, or the steps on an iPhone |
 | **Renew** | Plans with prices → the gym's payment QR and account details → enter transaction ID or upload screenshot → *waiting for confirmation* → active, or the reason it was rejected. Steps shown at the top: Plan → Pay → Send proof. Plan cards show the price a month and *Save Rs X vs monthly* against the cheapest one-month plan |
 | **Payments** | Every payment and receipt (**Download receipt** as PDF), dues if any, pending requests |
 | **Visits** | Calendar of visits, count this month |
@@ -479,6 +487,7 @@ Auth
   POST /m/{slug}/otp/request         member: send code by SMS or email; unknown → 404 wording in §5.5
   POST /m/{slug}/otp/verify          member: returns session + QR secret, or the list of
                                      members on that phone to choose from
+  POST /m/{slug}/desk-sign-in        member: the desk's one-time QR instead of a code (§18.4)
 
 Setup
   GET|PATCH  /gym
@@ -510,7 +519,8 @@ Memberships & money
   POST  /memberships/extend-all       whole gym or one branch, N days + reason
   DELETE /memberships/{id}            only while it has no check-ins
   GET   /memberships/{id}/history
-  POST  /payments                     collect, incl. part payment of dues and refunds
+  POST  /payments                     collect, incl. part payment of dues and refunds;
+                                      `membership_id` or `pt_package_id` (§18.3)
   PATCH /payments/{id}
   POST  /payments/{id}/void           owner only by default
   CRUD  /payment-methods             the gym's own QR images and accounts
@@ -527,6 +537,18 @@ Memberships & money
   POST  /expenses
   PATCH /expenses/{id}
   POST  /expenses/{id}/void
+
+Personal training (§18.3)
+  GET   /pt/plans?include_hidden=     POST /pt/plans   PATCH /pt/plans/{id}
+  GET   /pt/trainers                  staff who train members, and the owner
+  GET   /pt/clients                   the caller's own, still to train (Train members)
+  GET   /pt/packages?trainer_id=      everyone's, still to train (Sell personal training)
+  GET   /members/{id}/pt              every package, with sessions and payments
+  POST  /members/{id}/pt              sell (+ optional payment), Idempotency-Key
+  PATCH /pt/packages/{id}             trainer, dates
+  POST  /pt/packages/{id}/cancel      reason, optional refund
+  POST  /pt/packages/{id}/sessions    record one, Idempotency-Key
+  POST  /pt/sessions/{id}/void        reason
 
 Check-in
   POST  /check-ins/scan               from kiosk (device token) or staff
@@ -545,6 +567,8 @@ Lists & reports
 Messages
   CRUD  /notices
   POST  /members/{id}/sms             one-off reminder
+  GET   /members/{id}/message?purpose=   the gym's wording filled in, for WhatsApp from
+                                         the desk's own phone; sends nothing (§18.5)
   GET   /sms                          log + credit balance
 
 Member app
@@ -558,6 +582,7 @@ Member app
 Member access (staff)
   PATCH /members/{id}/access          app access on/off
   POST  /members/{id}/resend-welcome
+  POST  /members/{id}/sign-in-link    the desk's QR: a link with a one-time token (§18.4)
   POST  /members/{id}/sign-out-all
 
 Live updates (Server-Sent Events; ids only, the screen reloads)
@@ -626,6 +651,7 @@ Platform admin
 - Signed-in devices: My account lists every device signed in to the account (browser, IP, last used) and signs out one or all the others; the owner (or a manager, for other staff) signs a colleague out everywhere from Staff. Another account's device is not found (404). Signed-out screens find out live and go to sign-in.
 - Master sign-in code: while no SMS gateway is set up (§15) sign-in codes reach only the log, so `MASTER_OTP` (6 digits, hard to guess, set in the environment) also signs a member in. Only after a code was asked for (the number must be registered, the limits apply), never for staff password resets, and every use is in the activity log (`member.signed_in_with_master_code`). The app refuses to start with it once `SMS_PROVIDER` is a real gateway.
 - OTP: 6 digits, valid 5 minutes, 5 attempts, max 3 requests per phone per 15 minutes and a per-IP limit — each OTP costs us an SMS (they're never charged to the gym's credits, §5.7).
+- Signing in at the desk (§18.4): the QR is the gym's address with a random token after `#desk=`. A fragment never leaves the browser, so no server or log sees it, and the member app takes it out of the address at once. Only its HMAC is stored; it works once, for 5 minutes, only the newest for a member, only at its own gym, and only while the member's app access is on. Making it needs *Turn app access on/off*; making and using it both go to the activity log.
 - A sign-in code is never left readable: the SMS log keeps "Sign-in code (hidden)", since staff with the SMS permission can read the log. For end-to-end tests `OTP_TEST_CODE` fixes the code; the app refuses to start with it outside local and test environments.
 - Member tokens are a separate type from staff tokens; neither is accepted in place of the other. Kiosks authenticate with a device token (`X-Device-Token`), stored hashed, and can only reach `/kiosk/*`.
 - Turning app access off, changing a member's phone or email, "Sign out all devices" and "Reissue QR" all revoke the member's sessions at once.
@@ -678,8 +704,9 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M11 | Done 2026-10-17, **waiting on a native speaker's review**: `ne.json` with every string (a test keeps its keys and {placeholders} in step with `en.json`) and Nepali help guides; a language for each staff account and each member, the gym's as the default, chosen at sign-up and in Settings → Gym; English / नेपाली on every sign-in screen, kept in a cookie; Noto Sans Devanagari through `next/font`; Nepali month names, रु, and Nepali or Western digits (a gym setting); SMS wording seeded in the gym's language, and wording the gym never edited follows a change of language. The server renders English and the browser renders Nepali, so one request's language never leaks into another's. The legal pages and the receipt PDF stay English until a lawyer and the review sign them off |
 | M12 | Done (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019). 12.3–12.8 done 2026-10-18 — `mobile/` (Expo SDK 58): every screen of 17.5 but *signed-in devices*, checked on the iPhone simulator and an Android emulator: the QR it draws passes the door's check, offline too; three taps on *I've paid* made one request; a notice and an approval arrived with no tap; Nepali throughout. Jest covers double taps, the socket, the API client and links. Push needs `EAS_PROJECT_ID` (mobile/README.md) and is untested until then. 12.9 done 2026-10-18 — 34 Jest tests, a lint rule that refuses API calls from a control without `useAction`, eight Maestro flows (`mobile/e2e/`, `make e2e-mobile`, on a fresh gym from `make seed-app`) passing on the iPhone simulator in Expo Go and on the Android emulator with the `.apk`, `make apk` (60 MB, 64- and 32-bit ARM, debug-signed, built on the Mac), the GymBhai icon, and `docs/MOBILE.md`: running, tests, sending the `.apk` to Android testers, and Expo Go for iPhone testers. Push set up 2026-10-18 (Expo project `@mero-gym/mero-gym`, Firebase `gymbhai-69df8`, FCM V1 key in Expo) and working end to end on the Play Store emulator: *Turn on*, a notice from the desk arrives as a notification, tapping it opens Notices. **Waiting on:** a real Android phone, real testers; iPhone push at publishing |
 | M13 | Done 2026-10-19, on the branch `rameshdev`: expenses by category in the gym's own months, with *Same again* and void with a reason; spent, profit and spent by category on Reports, and money in and out on its chart; `expenses.xlsx`; *Add an expense* in search; *Record expenses* and *Edit and void expenses* in an *Expenses* area of the staff form; an `expense` live event and a query-count test. Also fixed: the staff form never showed the *Enquiries* permission (its area was missing from the form's list); it now shows any area it doesn't know, at the end |
+| Pilot helpers | Done 2026-10-19: signing in at the desk with a QR (§18.4), WhatsApp buttons (§18.5) |
 | M14 | Waiting on the pilot gyms' reader models and one reader of each brand to test with (§18.2) |
-| M15 | Planned (§18.3) |
+| M15 | Done 2026-10-19 (§18.3): PT plans in Settings, monthly or a pack of sessions; *Train members* and *Sell personal training*, and a *Trainer* starting point; selling from the member's profile with a part payment; sessions recorded by the trainer or the desk, voided with a reason; PT payments as ordinary payments with their own dues and receipts; *My clients* and *All* in a Personal training screen; the member's Home on the web and the phone app; a `pt` live event; migration 0022 |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -961,7 +988,7 @@ Everything the member web app does (§7), the same words:
 | Screen | Native details |
 |---|---|
 | **Choose your gym** | Scan the gym's poster QR with the camera, type its address, or open from the welcome SMS link (deep link `gymbhai://<gym>`, and `https://<domain>/<gym>` once published). Remembers the gym; a member of two gyms can switch |
-| **Sign in** | Mobile number or email, then the code; the code is read from the SMS on Android where the phone allows. *Who are you?* for a shared phone |
+| **Sign in** | Mobile number or email, then the code; the code is read from the SMS on Android where the phone allows. *Who are you?* for a shared phone. Or *Scan the QR at the desk* (§18.4); the poster scan on *Choose your gym* signs in too when it finds a desk QR |
 | **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*, latest notice; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
 | **Renew** | Plan → Pay → Send proof; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
 | **Payments** | Payments and requests; receipts open as PDF and share through the phone's share sheet |
@@ -1022,7 +1049,7 @@ Accessibility: every control labelled for screen readers, touch targets at least
 | Expenses | Some gyms want to track them |
 | Supplements | Not asked for: they stay on the later list (§14) |
 
-**Order.** M13, expenses, first: it is small and nothing blocks it. M14, the door readers, as soon as we know the pilot gyms' models and have a reader of each brand to test with: for a gym whose door opens by fingerprint or face, it is what stops an expired member walking in. M15, personal training, after that. The small pilot helpers (signing in at the desk with a QR, WhatsApp buttons, notifications for staff, a demo gym) fit in between.
+**Order.** M13, expenses, first: it is small and nothing blocks it. M14, the door readers, as soon as we know the pilot gyms' models and have a reader of each brand to test with: for a gym whose door opens by fingerprint or face, it is what stops an expired member walking in. M15, personal training, was to follow; it was built first (2026-10-19), with the first two small pilot helpers, while M14 waits on hardware. The other helpers (notifications for staff, a demo gym) fit in between.
 
 v1's rules apply to every step, as in §16: the gym from the token and a cross-gym 404 test for every new route, one specific permission per endpoint with a 403 test, money in paisa, every change in `activity_log`, every string in `en.json` and `ne.json`, a live event and a query-count test for each new list.
 
@@ -1064,10 +1091,51 @@ The details of each protocol are confirmed on a real reader before a gym relies 
 
 ### 18.3 M15 — Personal training
 
-Designed after M14. What is known now: PT is sold both as a monthly fee and as packs of sessions; trainers are on a salary (an expense, 18.1), so there is no commission; a trainer is a staff account with the permissions the owner ticks (§2.1) and sees their own clients.
+Built before M14, which waits on hardware. From the pilot gyms: PT is sold both as a monthly fee and as packs of sessions; trainers are on a salary (an expense, 18.1), so there is no commission to work out.
 
-### 18.4 What the data model gains
+| | |
+|---|---|
+| PT plans | **Settings → Personal training**: the gym's own PT plans, like membership plans: a name, **Monthly** (training for the plan's length) or **Pack of sessions** (N sessions to use within the plan's length, e.g. 12 sessions in 2 months), the length in months or days, and the price. Hide one to stop selling it. *Plans and prices* permission to change them; staff who sell PT see them |
+| Trainers | A trainer is a staff account with the new permission **Train members** (`pt.train`): they appear in the trainer list, see their own clients and record their sessions. A new *Trainer* starting point: Train members, View members, Check members in. The owner, who has every permission, is in the list too. The *Manager* starting point leaves Train members out: it makes someone a trainer, which is a job, not a level of trust. A disabled account leaves the list; its packages keep it until changed |
+| Selling | Member profile → **Personal training** tab → **Sell personal training**: plan, trainer (the seller, if they train), start date (today), price and discount from the plan, payment taken now (full, part or nothing; needs *Collect payments*), with an `Idempotency-Key`. The end date comes from the plan's length in the gym's calendar, as for memberships. The branch is the member's home branch unless chosen (a gym with several): staff limited to some branches see the packages, and their payments, there. Not for an archived member. New permission **Sell personal training** (`pt.sell`): the sale, changing the trainer or dates, cancelling, and recording or voiding anyone's sessions; in the *Front desk* and *Manager* starting points |
+| A package | What was sold, its own row, with the plan's name, kind, sessions and price copied, so changing the plan later changes nothing sold. Status is computed, never stored: upcoming, active, **used up** (a pack with every session recorded), ended, cancelled. Dues: price − discount − payments + refunds. **Change trainer or dates**, with a reason, but never leaving a recorded session outside the dates. **Cancel** with a reason and an optional refund (*Record refunds*) |
+| Sessions | **Record a session** (a day, today unless changed, never in the future; a note staff see and the member doesn't): by its trainer, or anyone with *Sell personal training*. Within the package's dates, not on a cancelled package, never more than a pack holds (the package is locked while counting, so two at once can't both take the last). Each session keeps the trainer of that day. A mistake is voided with a reason, never deleted, which frees its place in a pack. A monthly package's sessions are the trainer's attendance record, with no limit. The note stays out of the activity log, and erasing the member clears it |
+| Money | PT payments are ordinary payments (`payments.pt_package_id` instead of `membership_id`, never both), with a receipt number; they show in Payments (marked *Personal training*), Today, Reports and the exports (a *For* column) like any other, and void and edit the same way. The receipt names the PT plan and its dates. *Collect payments* takes money towards a package, from its card. A membership's dues never count PT payments, nor the other way round. For now **Follow up → owe money** is memberships only; a package's dues show on its card, on the trainers' lists and on the member's Home |
+| Screens | **Personal training** in the Desk menu: **My clients** for a trainer (their upcoming and active packages: sessions left or so far, ends on, last session, Record session) and **All** for *Sell personal training*, by trainer, or one trainer. Used-up and ended packages leave the lists. The member's profile tab lists every package with its sessions, payments and actions; its History tab includes personal training. Search (Ctrl K) has *Record a training session* for trainers |
+| The member | The app's Home shows their personal training still to come or under way: plan, trainer, sessions left or days left, anything owed on it (web and phone app) |
+| Live | A `pt` event for the PT screens, heard by staff who train or sell at that branch; the member's own app and profile hear a `member` event |
+| API | §8, *Personal training* |
+| Not yet | PT reminders and automations; PT in Follow up and Reports figures (income already includes it); commission (no gym asked); workout and diet plans; class booking |
+
+### 18.4 Signing in at the desk with a QR
+
+The first of the small pilot helpers (§18). A member signs in on their phone with no SMS code: the pilot doesn't wait for an SMS gateway, sign-in costs nothing, and "I've a new phone" is solved at the desk.
+
+| | |
+|---|---|
+| At the desk | Member profile → More → **Sign in on their phone** (*Turn app access on/off*, now in the *Front desk* starting point). A QR, a countdown, and **Show a new QR** once it runs out. When their phone signs in, the profile hears it live and the dialog says *Signed in on their phone*. The profile's Overview shows when they last signed in to the app |
+| The member | Scans it with the phone's camera: the browser opens the member app, which signs in and takes the token out of the address. Or, inside the installed app — on an iPhone the Home Screen app doesn't share Safari's sign-in — **Scan the QR at the desk** on the sign-in screen, with the back camera. The phone app has the same button, and its poster scan signs in too when it finds a desk QR |
+| The QR | The gym's member address with `#desk=<token>`: random, HMAC-stored, once, 5 minutes, only the newest per member, only at its own gym, only while app access is on (§11). A family phone signed in as someone else is signed out of them first, notifications included |
+| API | `POST /members/{id}/sign-in-link` → `{url, made_at, expires_at}` · `POST /m/{slug}/desk-sign-in` `{token, client}` → the same answer as a code (web: cookie; app: refresh token) |
+| Table | `member_sign_in_links` (§6) |
+
+### 18.5 WhatsApp buttons
+
+The second pilot helper. Members in Nepal read WhatsApp; an SMS costs the gym a credit. So beside every **Call**, a **WhatsApp** that opens a chat with the member from the desk's own phone, the message already written. It goes when someone presses Send in WhatsApp: free, and nothing passes through us. No WhatsApp Business API, no account to set up (an API with templates and automatic sending stays on the later list, §14).
+
+| | |
+|---|---|
+| Where | **Follow up**, every row, its wording by tab: ending soon and lapsed → the renewal reminder, owe money → money owed, not visiting → we've missed you. **Today**: ending today, and enquiries to call back. **Member profile** → More → **Send on WhatsApp**. **Enquiry** dialog, beside the number |
+| The message | The gym's own wording, as its SMS would say it now, filled in for the member: the renewal reminder is the one Follow up's *Remind* sends (the nearest expiry rule), money owed and not visiting are the gym's automation wording (its default if it has none), and the welcome is the desk's welcome SMS with the app's link. The dialog lets the desk pick another and edit it before WhatsApp opens. From the profile it starts on the welcome for someone who has never signed in to the app, else the reminder. Enquiries aren't members yet: their button just opens the chat |
+| Permission | *View members*, like calling: no SMS permission, as no SMS is sent |
+| The link | `https://wa.me/977<number>?text=…`; WhatsApp opens on the phone or the computer |
+| API | `GET /members/{id}/message?purpose=reminder\|dues\|not_visiting\|welcome` → `{text, phone}`; sends nothing |
+| Not recorded | We can't know whether it was sent, so it isn't in the SMS log; a call isn't either |
+
+### 18.6 What the data model gains
 
 | Table / column | Step |
 |---|---|
 | `expenses` | M13 |
+| `member_sign_in_links` | 18.4 |
+| `pt_plans`, `pt_packages`, `pt_sessions`, `payments.pt_package_id` | M15 |

@@ -49,6 +49,12 @@ export const memberApi = {
       body: { ...body, client: "app" },
       auth: false,
     }),
+  /** The QR the desk showed (PLAN.md §18.4): signed in with no code. */
+  deskSignIn: (slug: string, token: string) =>
+    request<MemberSignIn>(gymPath(slug, "/desk-sign-in"), {
+      body: { token, client: "app" },
+      auth: false,
+    }),
   joinOptions: (slug: string) =>
     request<JoinOptions>(gymPath(slug, "/join"), { auth: false }),
   askToJoin: (

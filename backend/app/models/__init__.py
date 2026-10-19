@@ -11,6 +11,7 @@ from app.models.member_app import (
     Device,
     FreezeRequest,
     MemberSession,
+    MemberSignInLink,
     OtpCode,
     PaymentRequest,
 )
@@ -40,6 +41,7 @@ from app.models.staff import (
     StaffSession,
     StaffUser,
 )
+from app.models.training import PtPackage, PtPlan, PtSession
 
 __all__ = [
     "ActivityLog",
@@ -61,6 +63,7 @@ __all__ = [
     "Member",
     "MemberImport",
     "MemberSession",
+    "MemberSignInLink",
     "Membership",
     "MembershipFreeze",
     "Notice",
@@ -70,6 +73,9 @@ __all__ = [
     "Plan",
     "PlanBranch",
     "PlatformPlan",
+    "PtPackage",
+    "PtPlan",
+    "PtSession",
     "PushSubscription",
     "ReminderLog",
     "ReminderRule",

@@ -1,3 +1,5 @@
+import { deskToken } from "@shared/deskLink";
+
 import { parseGymLink } from "@/lib/gymLink";
 import { screenFor } from "@/lib/push";
 
@@ -23,6 +25,15 @@ test.each([
   "gb1.abc.123.sig",
 ])("%s is not a gym", (input) => {
   expect(parseGymLink(input)).toBeNull();
+});
+
+test("the desk's sign-in QR names its gym and carries a one-time token", () => {
+  const token = "Q2xlYW5fdG9rZW4tZm9yLXRlc3Rz";
+  const url = `https://app.gymbhai.com/fitness-zone#desk=${token}`;
+  expect(parseGymLink(url)).toEqual({ slug: "fitness-zone", rest: [] });
+  expect(deskToken(url)).toBe(token);
+  // The poster's QR has none: it only opens the gym.
+  expect(deskToken("https://app.gymbhai.com/fitness-zone?b=123")).toBeNull();
 });
 
 test("a notification opens the screen it's about", () => {

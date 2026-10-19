@@ -10,7 +10,14 @@ import type { Payment } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 
-export function PaymentsTable({ payments }: { payments: Payment[] }) {
+export function PaymentsTable({
+  payments,
+  showPurpose = true,
+}: {
+  payments: Payment[];
+  /** Mark money for personal training (§18.3); not where it's all PT. */
+  showPurpose?: boolean;
+}) {
   const { display } = useGymCalendar();
   if (payments.length === 0) {
     return <EmptyState title={t("payment.none")} />;
@@ -28,6 +35,11 @@ export function PaymentsTable({ payments }: { payments: Payment[] }) {
                 <span className="font-normal text-slate-500">
                   {" "}
                   · {p.transaction_ref}
+                </span>
+              )}
+              {showPurpose && p.pt_package_id && (
+                <span className="ml-1.5 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-800">
+                  {t("payment.forTraining")}
                 </span>
               )}
             </p>

@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import { areasOf } from "./permissionAreas";
 
 describe("the staff form's permission areas", () => {
-  it("has Enquiries and Expenses in their places", () => {
+  it("has Enquiries, Personal training and Expenses in their places", () => {
     const areas = areasOf({ permissions: [] });
     expect(areas.slice(0, 2)).toEqual(["members", "leads"]);
+    expect(areas.indexOf("pt")).toBe(areas.indexOf("memberships") + 1);
     expect(areas.indexOf("expenses")).toBe(areas.indexOf("payments") + 1);
   });
 

@@ -25,7 +25,7 @@ def test_unknown_stored_keys_are_ignored_not_fatal() -> None:
 
 
 def test_presets_are_starting_points_within_the_catalogue() -> None:
-    assert set(PRESETS) == {"manager", "front_desk", "blank"}
+    assert set(PRESETS) == {"manager", "front_desk", "trainer", "blank"}
     for preset in PRESETS.values():
         assert preset <= ALL_PERMISSIONS
     assert Permission.STAFF_MANAGE not in PRESETS["manager"]
@@ -33,8 +33,8 @@ def test_presets_are_starting_points_within_the_catalogue() -> None:
 
 
 def test_every_permission_in_plan_section_2_1_exists() -> None:
-    # Guards against a key being dropped by accident: 32 ticks on the form.
-    assert len(ALL_PERMISSIONS) == 32
+    # Guards against a key being dropped by accident: 34 ticks on the form.
+    assert len(ALL_PERMISSIONS) == 34
 
 
 def test_expenses_start_with_managers_not_the_front_desk() -> None:
@@ -42,6 +42,21 @@ def test_expenses_start_with_managers_not_the_front_desk() -> None:
     expenses = {Permission.EXPENSES_RECORD, Permission.EXPENSES_EDIT}
     assert expenses <= PRESETS["manager"]
     assert not expenses & PRESETS["front_desk"]
+
+
+def test_personal_training_starting_points() -> None:
+    """The desk sells it; a trainer trains, sees members and checks them in.
+    A manager isn't made a trainer, which would put them in the trainer list
+    (PLAN.md §18.3)."""
+    assert Permission.PT_SELL in PRESETS["front_desk"]
+    assert Permission.PT_TRAIN not in PRESETS["front_desk"]
+    assert Permission.PT_SELL in PRESETS["manager"]
+    assert Permission.PT_TRAIN not in PRESETS["manager"]
+    assert PRESETS["trainer"] == {
+        Permission.PT_TRAIN,
+        Permission.MEMBERS_VIEW,
+        Permission.DOOR_CHECK_IN,
+    }
 
 
 def test_staff_can_only_grant_what_they_hold() -> None:

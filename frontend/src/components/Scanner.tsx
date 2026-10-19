@@ -24,10 +24,18 @@ export function Scanner({
   onCode,
   paused = false,
   camera = true,
+  facing = "user",
+  keyboard = true,
 }: {
   onCode: (code: string) => void;
   paused?: boolean;
   camera?: boolean;
+  /** "user" at the door, facing the members; "environment" in a member's
+   * hand, pointed at the desk's screen (§18.4). */
+  facing?: "user" | "environment";
+  /** Listen for a USB scanner. Not on a member's phone, where the focused
+   * input would keep bringing up the keyboard. */
+  keyboard?: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const typed = useRef<HTMLInputElement>(null);
@@ -61,7 +69,7 @@ export function Scanner({
       try {
         if (window.BarcodeDetector) {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
+            video: { facingMode: facing },
           });
           if (stopped || !video.current) return;
           video.current.srcObject = stream;
@@ -100,17 +108,18 @@ export function Scanner({
       zxingControls?.stop();
       stream?.getTracks().forEach((track) => track.stop());
     };
-  }, [camera]);
+  }, [camera, facing]);
 
   // USB scanners type fast and end with Enter; keep focus on the input.
   useEffect(() => {
+    if (!keyboard) return;
     const keepFocus = () => {
       if (document.activeElement?.tagName !== "INPUT") typed.current?.focus();
     };
     keepFocus();
     const timer = setInterval(keepFocus, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [keyboard]);
 
   return (
     <div className="relative">
@@ -119,25 +128,30 @@ export function Scanner({
           ref={video}
           muted
           playsInline
-          className="aspect-square w-full rounded-2xl bg-black object-cover [transform:scaleX(-1)]"
+          // A mirror for the camera facing you, as it would look.
+          className={`aspect-square w-full rounded-2xl bg-black object-cover ${
+            facing === "user" ? "[transform:scaleX(-1)]" : ""
+          }`}
         />
       )}
       {cameraError && (
         <p className="mt-2 text-center text-sm text-amber-700">{cameraError}</p>
       )}
-      <input
-        ref={typed}
-        aria-label={t("scanner.typed")}
-        autoComplete="off"
-        className="absolute h-px w-px opacity-0"
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            const value = e.currentTarget.value.trim();
-            e.currentTarget.value = "";
-            if (value && !pausedRef.current) onCodeRef.current(value);
-          }
-        }}
-      />
+      {keyboard && (
+        <input
+          ref={typed}
+          aria-label={t("scanner.typed")}
+          autoComplete="off"
+          className="absolute h-px w-px opacity-0"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const value = e.currentTarget.value.trim();
+              e.currentTarget.value = "";
+              if (value && !pausedRef.current) onCodeRef.current(value);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

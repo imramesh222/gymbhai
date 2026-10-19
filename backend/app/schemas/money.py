@@ -2,7 +2,7 @@ import datetime as dt
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.auth import Strict
 
@@ -19,11 +19,20 @@ class PaymentIn(Strict):
 
 
 class PaymentCollect(PaymentIn):
-    membership_id: uuid.UUID
+    """Towards a membership, or towards personal training (§18.3): one of them."""
+
+    membership_id: uuid.UUID | None = None
+    pt_package_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def one_purpose(self) -> "PaymentCollect":
+        if (self.membership_id is None) == (self.pt_package_id is None):
+            raise ValueError("Give a membership or personal training, not both.")
+        return self
 
 
-class RefundCollect(PaymentIn):
-    membership_id: uuid.UUID
+class RefundCollect(PaymentCollect):
+    pass
 
 
 class PaymentUpdate(Strict):
@@ -45,6 +54,7 @@ class PaymentRead(BaseModel):
     id: uuid.UUID
     member_id: uuid.UUID
     membership_id: uuid.UUID | None
+    pt_package_id: uuid.UUID | None = None
     kind: str
     amount: int
     method: str
@@ -86,6 +96,8 @@ class Receipt(BaseModel):
     membership_total: int | None
     dues_after: int | None
     date_display: str
+    # For personal training (§18.3): the dates are its, not a membership's.
+    training: bool = False
 
 
 class ReceiptLink(BaseModel):

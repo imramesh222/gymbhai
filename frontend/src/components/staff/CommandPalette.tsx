@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Dumbbell,
   Receipt,
   ScanLine,
   Search,
@@ -55,6 +56,14 @@ const ACTIONS: Action[] = [
     href: "/staff/expenses?add=1",
     icon: Receipt,
     anyOf: ["expenses.record"],
+  },
+  {
+    // A trainer's clients, each with Record session (§18.3).
+    id: "pt",
+    label: "palette.pt",
+    href: "/staff/pt",
+    icon: Dumbbell,
+    anyOf: ["pt.train"],
   },
 ];
 

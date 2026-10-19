@@ -6,10 +6,11 @@ import { LiveQr } from "@/components/memberApp/LiveQr";
 import { InstallPrompt } from "@/components/memberApp/InstallPrompt";
 import { PushPrompt } from "@/components/memberApp/PushPrompt";
 import { Money } from "@/components/ui/Money";
-import { t, type MessageKey } from "@/i18n";
+import { plural, t, type MessageKey } from "@/i18n";
 import { describeHours } from "@/lib/accessHours";
-import { formatDate } from "@/lib/dates";
+import { formatDate, type DateDisplay } from "@/lib/dates";
 import { useMember } from "@/lib/memberSession";
+import type { MemberTraining } from "@shared/types";
 
 const RING = 2 * Math.PI * 52;
 
@@ -156,6 +157,10 @@ export default function MemberHome() {
         </div>
       )}
 
+      {(me.training ?? []).map((pt) => (
+        <Training key={pt.id} pt={pt} display={me.gym.date_display} />
+      ))}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline">
           <p className="text-3xl font-bold tracking-tight text-slate-900">
@@ -187,6 +192,51 @@ export default function MemberHome() {
           <p className="mt-1 font-semibold text-slate-900">{me.latest_notice.title}</p>
           <p className="line-clamp-2 text-sm text-slate-600">{me.latest_notice.body}</p>
         </Link>
+      )}
+    </div>
+  );
+}
+
+/** Their personal training: plan, trainer, sessions or days left (§18.3). */
+function Training({ pt, display }: { pt: MemberTraining; display: DateDisplay }) {
+  const until = formatDate(pt.end_date, display);
+  return (
+    <div className="rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline">
+      <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
+        {t("app.home.training")}
+      </p>
+      <p className="mt-1 font-semibold text-slate-900">{pt.plan_name}</p>
+      {pt.trainer_name && (
+        <p className="text-sm text-slate-600">
+          {t("app.home.trainer", { name: pt.trainer_name })}
+        </p>
+      )}
+      <p className="mt-0.5 text-sm font-medium text-slate-700">
+        {pt.status === "upcoming"
+          ? t("app.home.trainingStarts", { date: formatDate(pt.start_date, display) })
+          : pt.sessions !== null
+            ? t("app.home.sessionsLeft", {
+                left: pt.sessions_left ?? 0,
+                total: pt.sessions,
+              })
+            : plural(
+                pt.days_left,
+                "app.home.trainingDays.one",
+                "app.home.trainingDays.other",
+                {
+                  date: until,
+                },
+              )}
+      </p>
+      {pt.status === "active" && pt.sessions !== null && (
+        <p className="text-xs text-slate-500">
+          {t("app.home.until")} {until}
+        </p>
+      )}
+      {pt.dues > 0 && (
+        <p className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200/70">
+          {t("app.home.owes")} <Money paisa={pt.dues} className="ml-1" />
+        </p>
       )}
     </div>
   );

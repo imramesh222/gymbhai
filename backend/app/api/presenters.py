@@ -4,11 +4,12 @@ import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.time import today_in_nepal
 from app.models.member import Member
+from app.models.member_app import MemberSession
 from app.models.membership import Membership, MembershipFreeze
 from app.models.payment import Payment
 from app.models.staff import StaffUser
@@ -141,4 +142,9 @@ def member_detail(db: Session, member: Member) -> MemberDetail:
         payments=payments_read(db, all_payments),
         renewal_starts_on=ms.renewal_start(db, member),
         first_membership=ms.is_first_membership(db, member),
+        app_signed_in_at=db.scalar(
+            select(func.max(MemberSession.created_at)).where(
+                MemberSession.member_id == member.id
+            )
+        ),
     )

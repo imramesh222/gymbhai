@@ -39,6 +39,7 @@ from app.models.member_app import (
     LET_IN,
     CheckIn,
     MemberSession,
+    MemberSignInLink,
     OtpCode,
     PaymentRequest,
 )
@@ -47,6 +48,7 @@ from app.models.messaging import SmsMessage
 from app.models.payment import KIND_PAYMENT, Payment
 from app.models.platform import MemberImport
 from app.models.push import PushSubscription
+from app.models.training import PtPackage, PtSession
 from app.services import activity, counters, live
 from app.services import memberships as ms
 
@@ -616,10 +618,11 @@ def erase(
     Their name, phone, email, birthday, address, emergency contact, notes and
     photo go, here and on the enquiry they joined from; so do their sign-in
     codes and app sessions, the SMS sent to them, their payment screenshots,
-    the before-and-after values in their History, and their row in any
-    register imported. Their memberships,
-    payments and check-ins stay, as "Erased member": they are the gym's
-    accounts. Returns the stored files to delete once this is committed.
+    the notes on their personal training sessions, the before-and-after
+    values in their History, and their row in any register imported. Their
+    memberships, personal training, payments and check-ins stay, as "Erased
+    member": they are the gym's accounts. Returns the stored files to delete
+    once this is committed.
     """
     ensure_not_erased(member)
     phone, email = member.phone, member.email
@@ -649,6 +652,7 @@ def erase(
 
     # Deleted, not just revoked: the device details are theirs too.
     db.execute(delete(MemberSession).where(MemberSession.member_id == member.id))
+    db.execute(delete(MemberSignInLink).where(MemberSignInLink.member_id == member.id))
     # A push endpoint names their phone: gone as well.
     db.execute(delete(PushSubscription).where(PushSubscription.member_id == member.id))
     db.execute(
@@ -697,6 +701,17 @@ def erase(
             .where(Lead.id.in_(lead_ids))
             .values(name=ERASED_NAME, phone=None, email=None, notes=None)
         )
+    # A trainer's notes on their sessions are about them too (§18.3).
+    db.execute(
+        sql_update(PtSession)
+        .where(
+            PtSession.gym_id == member.gym_id,
+            PtSession.package_id.in_(
+                select(PtPackage.id).where(PtPackage.member_id == member.id)
+            ),
+        )
+        .values(note=None)
+    )
     # The History keeps what happened and when, not what the details were.
     db.execute(
         sql_update(ActivityLog)

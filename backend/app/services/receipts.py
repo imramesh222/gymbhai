@@ -21,6 +21,7 @@ from app.models.gym import Branch, Gym
 from app.models.member import Member
 from app.models.membership import Membership
 from app.models.payment import KIND_REFUND, Payment
+from app.models.training import PtPackage
 from app.schemas.money import Receipt, ReceiptLink
 from app.services import memberships as ms
 
@@ -36,6 +37,7 @@ TEXT = {
     "member": "Member",
     "plan": "Plan",
     "period": "Membership",
+    "training": "Personal training",
     "method": "Paid by",
     "refund_method": "Refunded by",
     "reference": "Transaction ID",
@@ -59,13 +61,22 @@ def build(db: Session, payment: Payment) -> Receipt:
     gym = db.get(Gym, payment.gym_id)
     member = db.get(Member, payment.member_id)
     assert gym is not None and member is not None
-    membership = (
-        db.get(Membership, payment.membership_id) if payment.membership_id else None
-    )
-    branch = db.get(Branch, membership.branch_id) if membership else None
+    # What it paid for: a membership, or personal training (§18.3).
+    bought: Membership | PtPackage | None = None
+    if payment.membership_id:
+        bought = db.get(Membership, payment.membership_id)
+    elif payment.pt_package_id:
+        bought = db.get(PtPackage, payment.pt_package_id)
+    branch = db.get(Branch, bought.branch_id) if bought else None
     dues_after = None
-    if membership is not None:
-        dues_after = ms.dues_of(membership, ms.payments_for(db, [membership.id]))
+    total = None
+    if bought is not None:
+        dues_after = ms.owed(bought, ms.payments_on(db, bought))
+        total = (
+            ms.amount_due(bought)
+            if isinstance(bought, Membership)
+            else bought.price - bought.discount
+        )
     return Receipt(
         payment=payments_read(db, [payment])[0],
         gym_name=gym.name,
@@ -75,12 +86,13 @@ def build(db: Session, payment: Payment) -> Receipt:
         member_name=member.name,
         member_code=member.member_code,
         member_phone=member.phone,
-        plan_name=membership.plan_name if membership else None,
-        start_date=membership.start_date if membership else None,
-        end_date=membership.end_date if membership else None,
-        membership_total=ms.amount_due(membership) if membership else None,
+        plan_name=bought.plan_name if bought else None,
+        start_date=bought.start_date if bought else None,
+        end_date=bought.end_date if bought else None,
+        membership_total=total,
         dues_after=dues_after,
         date_display=gym.config.date_display,
+        training=isinstance(bought, PtPackage),
     )
 
 
@@ -180,7 +192,7 @@ def pdf(receipt: Receipt) -> bytes:
     if receipt.start_date and receipt.end_date:
         rows.append(
             (
-                TEXT["period"],
+                TEXT["training" if receipt.training else "period"],
                 f"{format_date(receipt.start_date, display)} –\n"
                 f"{format_date(receipt.end_date, display)}",
             )

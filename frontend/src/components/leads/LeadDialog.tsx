@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { WhatsAppLink } from "@/components/member/WhatsApp";
 import { Notice } from "@/components/Notice";
 import { Dialog } from "@/components/ui/Dialog";
 import { Row } from "@/components/ui/Card";
@@ -61,13 +62,20 @@ export function LeadDialog({
           </Row>
           {lead.phone && (
             <Row label={t("member.phone")}>
-              <a
-                href={`tel:${lead.phone}`}
-                className="inline-flex items-center gap-1 font-medium text-brand-700"
-              >
-                <Phone className="size-3.5" aria-hidden />
-                {lead.phone}
-              </a>
+              <span className="inline-flex flex-wrap items-center gap-3">
+                <a
+                  href={`tel:${lead.phone}`}
+                  className="inline-flex items-center gap-1 font-medium text-brand-700"
+                >
+                  <Phone className="size-3.5" aria-hidden />
+                  {lead.phone}
+                </a>
+                <WhatsAppLink
+                  phone={lead.phone}
+                  className="inline-flex items-center gap-1 font-medium text-brand-700"
+                  iconClassName="size-3.5"
+                />
+              </span>
             </Row>
           )}
           {lead.email && <Row label={t("member.email")}>{lead.email}</Row>}

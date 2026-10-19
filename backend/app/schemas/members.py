@@ -170,6 +170,9 @@ class MemberDetail(MemberRead):
     payments: list[PaymentRead]
     renewal_starts_on: dt.date
     first_membership: bool
+    # Their newest app sign-in, still signed in or not: do they use the app?
+    # The desk's QR dialog watches it to say "signed in" (§18.4).
+    app_signed_in_at: dt.datetime | None = None
 
 
 class PhoneMatch(BaseModel):
@@ -183,6 +186,14 @@ class MemberCreated(BaseModel):
     membership_id: uuid.UUID | None = None
     payment_id: uuid.UUID | None = None
     same_phone: list[PhoneMatch] = []
+
+
+class SignInLink(BaseModel):
+    """The QR for signing in at the desk (PLAN.md §18.4): its link, once."""
+
+    url: str
+    made_at: dt.datetime
+    expires_at: dt.datetime
 
 
 class ArchiveIn(Strict):

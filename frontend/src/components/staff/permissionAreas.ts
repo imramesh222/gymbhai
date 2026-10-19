@@ -7,6 +7,7 @@ const AREAS = [
   "members",
   "leads",
   "memberships",
+  "pt",
   "payments",
   "expenses",
   "reports",

@@ -37,6 +37,24 @@ class OtpCode(IdMixin, TimestampMixin, GymOwned, Base):
     ip: Mapped[str | None] = mapped_column(String(64))
 
 
+class MemberSignInLink(IdMixin, TimestampMixin, GymOwned, Base):
+    """Signing in at the desk (PLAN.md §18.4): the QR staff show on a member's
+    profile. It works once, for a few minutes, and only the newest one for a
+    member works. Only its hash is kept."""
+
+    __tablename__ = "member_sign_in_links"
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class MemberSession(IdMixin, TimestampMixin, Base):
     """A member signed in on one device."""
 

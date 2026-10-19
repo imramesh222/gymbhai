@@ -8,6 +8,8 @@ The rules that matter (PLAN.md §5, §6):
 * Price, discount and admission fee are copied onto the membership at sale.
 * Dues = price − discount + admission fee − payments + refunds (voided
   payments count for nothing; a cancelled membership owes nothing more).
+* Payments are recorded here for personal training too (§18.3): the same
+  rules, against the package's own price, never a membership's dues.
 * Every change goes to activity_log with before and after.
 """
 
@@ -18,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import ColumnElement, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -34,6 +36,7 @@ from app.models.member_app import LET_IN, CheckIn
 from app.models.membership import SOURCE_DESK, Membership, MembershipFreeze
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
 from app.models.plan import Plan, PlanBranch
+from app.models.training import PtPackage
 from app.services import activity, counters, live
 
 ACTIVE = "active"
@@ -105,6 +108,16 @@ def dues_of(membership: Membership, payments: Iterable[Payment]) -> int:
     return amount_due(membership) - net_paid(payments)
 
 
+def owed(target: Membership | PtPackage, payments: Iterable[Payment]) -> int:
+    """Still to pay on a membership, or on personal training (§18.3): its
+    price less the discount, with no admission fee."""
+    if isinstance(target, Membership):
+        return dues_of(target, payments)
+    if target.cancelled_at is not None:
+        return 0
+    return target.price - target.discount - net_paid(payments)
+
+
 def snapshot(membership: Membership) -> dict[str, Any]:
     return {field: getattr(membership, field) for field in TRACKED}
 
@@ -146,6 +159,29 @@ def payments_for(db: Session, membership_ids: Sequence[uuid.UUID]) -> list[Payme
             .where(Payment.membership_id.in_(membership_ids))
             .order_by(Payment.paid_at)
         )
+    )
+
+
+def payments_on(db: Session, target: Membership | PtPackage) -> list[Payment]:
+    if isinstance(target, Membership):
+        column = Payment.membership_id
+    else:
+        column = Payment.pt_package_id
+    return list(
+        db.scalars(select(Payment).where(column == target.id).order_by(Payment.paid_at))
+    )
+
+
+def payments_in_branches(branches: Iterable[uuid.UUID]) -> ColumnElement[bool]:
+    """Payments for a membership, or for personal training, at these branches."""
+    branches = list(branches)
+    return or_(
+        Payment.membership_id.in_(
+            select(Membership.id).where(Membership.branch_id.in_(branches))
+        ),
+        Payment.pt_package_id.in_(
+            select(PtPackage.id).where(PtPackage.branch_id.in_(branches))
+        ),
     )
 
 
@@ -284,14 +320,15 @@ class PaymentIn:
 def record_payment(
     db: Session,
     ctx: StaffContext,
-    membership: Membership,
+    target: Membership | PtPackage,
     payment: PaymentIn,
     *,
     kind: str = KIND_PAYMENT,
     request: Request | None = None,
     check_permission: bool = True,
 ) -> Payment:
-    """Record money received for (or refunded on) a membership.
+    """Record money received for (or refunded on) a membership, or on
+    personal training (§18.3).
 
     `check_permission=False` is for approving an app payment, where the
     approver's own permission (Approve app payments) has been checked.
@@ -311,19 +348,26 @@ def record_payment(
     if payment.amount <= 0:
         raise AppError(422, "bad_amount", "The amount must be more than zero.")
 
+    training = isinstance(target, PtPackage)
     # Locked and re-read: two payments at once must not both fit in the dues.
-    db.refresh(membership, with_for_update=True)
-    existing = payments_for(db, [membership.id])
+    db.refresh(target, with_for_update=True)
+    existing = payments_on(db, target)
     if kind == KIND_PAYMENT:
-        if membership.cancelled_at is not None:
+        if target.cancelled_at is not None:
+            if training:
+                raise AppError(
+                    409, "pt_cancelled", "This personal training is cancelled."
+                )
             raise AppError(409, "membership_cancelled", "This membership is cancelled.")
-        owed = dues_of(membership, existing)
-        if payment.amount > owed:
+        due = owed(target, existing)
+        if payment.amount > due:
             raise AppError(
                 422,
                 "overpayment",
-                "That is more than is owed on this membership.",
-                owed=owed,
+                "That is more than is owed on this personal training."
+                if training
+                else "That is more than is owed on this membership.",
+                owed=due,
             )
     elif payment.amount > net_paid(existing):
         raise AppError(422, "refund_too_large", "You can't refund more than was paid.")
@@ -342,8 +386,9 @@ def record_payment(
 
     row = Payment(
         gym_id=ctx.gym_id,
-        member_id=membership.member_id,
-        membership_id=membership.id,
+        member_id=target.member_id,
+        membership_id=None if training else target.id,
+        pt_package_id=target.id if training else None,
         kind=kind,
         amount=payment.amount,
         method=payment.method,
@@ -362,7 +407,9 @@ def record_payment(
             409, "transaction_ref_used", "That transaction ID has already been used."
         ) from exc
 
-    live.member_changed(db, ctx.gym_id, membership.member_id, membership.branch_id)
+    live.member_changed(db, ctx.gym_id, target.member_id, target.branch_id)
+    if training:
+        live.publish(db, gym_id=ctx.gym_id, kind=live.PT, branch_id=target.branch_id)
     activity.staff_action(
         db,
         ctx.staff,
@@ -370,8 +417,8 @@ def record_payment(
         entity="payment",
         entity_id=row.id,
         changes={
-            "membership_id": membership.id,
-            "member_id": membership.member_id,
+            ("pt_package_id" if training else "membership_id"): target.id,
+            "member_id": target.member_id,
             "amount": row.amount,
             "method": row.method,
             "transaction_ref": row.transaction_ref,

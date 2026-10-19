@@ -24,7 +24,7 @@ import { useLoad } from "@/lib/useLoad";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 
-const PRESETS = ["manager", "front_desk", "blank"];
+const PRESETS = ["manager", "front_desk", "trainer", "blank"];
 
 /** Staff accounts: the owner ticks exactly what each person may do (§2.1). */
 export default function TeamPage() {

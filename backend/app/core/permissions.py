@@ -26,6 +26,11 @@ class Permission(StrEnum):
     MEMBERSHIPS_FREEZE = "memberships.freeze"
     MEMBERSHIPS_CANCEL = "memberships.cancel"
     MEMBERSHIPS_DELETE = "memberships.delete"
+    # Personal training (§18.3). Train: a trainer, in the trainer list, who
+    # records sessions on their own clients' packages. Sell: the sale,
+    # changing trainer or dates, cancelling, and anyone's sessions.
+    PT_TRAIN = "pt.train"
+    PT_SELL = "pt.sell"
     # Money
     PAYMENTS_COLLECT = "payments.collect"
     PAYMENTS_APPROVE_APP = "payments.approve_app"
@@ -63,23 +68,33 @@ OWNER_ONLY_GRANT = frozenset({Permission.STAFF_MANAGE})
 PRESETS: dict[str, frozenset[Permission]] = {
     # "Almost everything": not staff management, and not the two actions the
     # plan keeps with the owner by default — voiding payments and deleting
-    # memberships.
+    # memberships. Nor training members: that makes them a trainer, in the
+    # trainer list, which is a job rather than a level of trust (§18.3).
     "manager": ALL_PERMISSIONS
     - {
         Permission.STAFF_MANAGE,
         Permission.PAYMENTS_VOID,
         Permission.MEMBERSHIPS_DELETE,
+        Permission.PT_TRAIN,
     },
     "front_desk": frozenset(
         {
             Permission.MEMBERS_VIEW,
             Permission.MEMBERS_ADD,
             Permission.MEMBERS_EDIT,
+            # The desk signs members in with a QR, and signs a lost phone
+            # out (§18.4).
+            Permission.MEMBERS_APP_ACCESS,
             Permission.MEMBERSHIPS_SELL,
+            Permission.PT_SELL,
             Permission.PAYMENTS_COLLECT,
             Permission.DOOR_CHECK_IN,
             Permission.LEADS_MANAGE,
         }
+    ),
+    # Their own clients and sessions, and the door (§18.3).
+    "trainer": frozenset(
+        {Permission.PT_TRAIN, Permission.MEMBERS_VIEW, Permission.DOOR_CHECK_IN}
     ),
     "blank": frozenset(),
 }

@@ -34,6 +34,8 @@ export interface Payment {
   id: string;
   member_id: string;
   membership_id: string | null;
+  /** Money for personal training (§18.3), not a membership. */
+  pt_package_id: string | null;
   kind: "payment" | "refund";
   amount: number;
   method: Method;
@@ -97,6 +99,23 @@ export interface PublicGym {
   join_form: boolean;
 }
 
+/** Personal training on the member's Home (§18.3): upcoming or under way. */
+export interface MemberTraining {
+  id: string;
+  plan_name: string;
+  kind: "monthly" | "sessions";
+  status: "active" | "upcoming";
+  trainer_name: string | null;
+  start_date: string;
+  end_date: string;
+  /** A pack's size; null for monthly training. */
+  sessions: number | null;
+  sessions_left: number | null;
+  days_left: number;
+  /** Still to pay for it: its own, never in the membership's dues. */
+  dues: number;
+}
+
 export interface MemberMe {
   id: string;
   name: string;
@@ -127,6 +146,8 @@ export interface MemberMe {
   language: Locale;
   own_language: Locale | null;
   digits: Digits;
+  /** Missing from a copy the phone app saved before personal training. */
+  training?: MemberTraining[];
 }
 
 export interface MemberSignIn {

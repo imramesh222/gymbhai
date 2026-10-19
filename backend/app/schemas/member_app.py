@@ -8,6 +8,7 @@ from app.schemas.auth import OptionalEmail, Strict
 from app.schemas.messaging import NoticeRead
 from app.schemas.money import PaymentMethodRead, PaymentRead
 from app.schemas.plans import PlanRead
+from app.schemas.training import MemberTraining
 
 
 class PublicBranch(BaseModel):
@@ -45,6 +46,13 @@ class CodeVerify(CodeRequest):
     member_id: uuid.UUID | None = None
     # "app": the phone app (PLAN.md §17.2) gets its refresh token in the
     # answer, to keep in secure storage; the web gets an httpOnly cookie.
+    client: Literal["web", "app"] = "web"
+
+
+class DeskSignIn(Strict):
+    """The QR shown at the desk (PLAN.md §18.4), instead of a code."""
+
+    token: str = Field(min_length=16, max_length=64)
     client: Literal["web", "app"] = "web"
 
 
@@ -96,6 +104,8 @@ class MemberMe(BaseModel):
     language: Literal["en", "ne"] = "en"
     own_language: Literal["en", "ne"] | None = None
     digits: Literal["nepali", "western"] = "western"
+    # Personal training still to come or under way, soonest first (§18.3).
+    training: list[MemberTraining] = []
 
 
 class MemberSignIn(BaseModel):

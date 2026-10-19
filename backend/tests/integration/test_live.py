@@ -96,6 +96,17 @@ def test_expenses_are_heard_by_staff_who_see_money() -> None:
     assert not one_branch(event(live.EXPENSE, branch=None))
 
 
+def test_personal_training_is_heard_by_trainers_and_sellers() -> None:
+    """The Personal training screens (PLAN.md §18.3). A member's page hears
+    the member event sent with each change."""
+    assert live.staff_filter(staff(Permission.PT_TRAIN))(event(live.PT))
+    assert live.staff_filter(staff(Permission.PT_SELL))(event(live.PT))
+    assert not live.staff_filter(staff(Permission.MEMBERS_VIEW))(event(live.PT))
+    one_branch = live.staff_filter(staff(Permission.PT_SELL, branches=[BRANCH]))
+    assert one_branch(event(live.PT))
+    assert not one_branch(event(live.PT, branch=OTHER_BRANCH))
+
+
 def test_a_member_hears_only_about_themselves() -> None:
     accepts = live.member_filter(MEMBER)
     assert accepts(event(live.CHECK_IN))

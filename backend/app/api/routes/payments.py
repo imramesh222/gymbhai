@@ -22,6 +22,7 @@ from app.db.session import get_db
 from app.models.member import Member
 from app.models.membership import Membership
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
+from app.models.training import PtPackage
 from app.schemas.money import (
     PaymentCollect,
     PaymentList,
@@ -33,7 +34,7 @@ from app.schemas.money import (
     RefundCollect,
     VoidIn,
 )
-from app.services import activity, live, receipts
+from app.services import activity, live, receipts, training
 from app.services import memberships as ms
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -41,15 +42,22 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 FIELDS = ("amount", "method", "transaction_ref", "paid_at", "note")
 
 
-def _membership(db: Session, ctx: StaffContext, membership_id: uuid.UUID) -> Membership:
+def _target(db: Session, ctx: StaffContext, payload: PaymentCollect):
+    """The membership, or the personal training (§18.3), the money is for."""
+    if payload.pt_package_id is not None:
+        return training.load(db, ctx, payload.pt_package_id)
+    assert payload.membership_id is not None
     return get_in_gym(
         db,
         Membership,
-        membership_id,
+        payload.membership_id,
         ctx,
         branch_column=Membership.branch_id,
         message="No such membership.",
     )
+
+
+EXCLUDED = {"membership_id", "pt_package_id"}
 
 
 def _payment(
@@ -61,13 +69,16 @@ def _payment(
 
 
 def _member_changed(db: Session, payment: Payment) -> None:
-    branch_id = (
-        db.scalar(
+    branch_id = None
+    if payment.membership_id:
+        branch_id = db.scalar(
             select(Membership.branch_id).where(Membership.id == payment.membership_id)
         )
-        if payment.membership_id
-        else None
-    )
+    elif payment.pt_package_id:
+        branch_id = db.scalar(
+            select(PtPackage.branch_id).where(PtPackage.id == payment.pt_package_id)
+        )
+        live.publish(db, gym_id=payment.gym_id, kind=live.PT, branch_id=branch_id)
     live.publish(
         db,
         gym_id=payment.gym_id,
@@ -77,6 +88,12 @@ def _member_changed(db: Session, payment: Payment) -> None:
     )
 
 
+def _purpose(payment: Payment) -> dict[str, uuid.UUID | None]:
+    if payment.pt_package_id:
+        return {"pt_package_id": payment.pt_package_id}
+    return {"membership_id": payment.membership_id}
+
+
 @router.post("", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
 def collect(
     payload: PaymentCollect,
@@ -84,14 +101,14 @@ def collect(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.PAYMENTS_COLLECT)),
 ) -> PaymentRead:
-    """Money towards a membership: part payments of dues are normal (§6)."""
+    """Money towards a membership or personal training: part payments of dues
+    are normal (§6, §18.3)."""
     idem = idempotency.begin(db, ctx, request, payload)
-    membership = _membership(db, ctx, payload.membership_id)
     payment = ms.record_payment(
         db,
         ctx,
-        membership,
-        ms.PaymentIn(**payload.model_dump(exclude={"membership_id"})),
+        _target(db, ctx, payload),
+        ms.PaymentIn(**payload.model_dump(exclude=EXCLUDED)),
         request=request,
     )
     answer = payment_read(payment, {ctx.staff.id: ctx.staff.name})
@@ -110,12 +127,11 @@ def refund(
     ctx: StaffContext = Depends(require(Permission.PAYMENTS_REFUND)),
 ) -> PaymentRead:
     idem = idempotency.begin(db, ctx, request, payload)
-    membership = _membership(db, ctx, payload.membership_id)
     payment = ms.record_payment(
         db,
         ctx,
-        membership,
-        ms.PaymentIn(**payload.model_dump(exclude={"membership_id"})),
+        _target(db, ctx, payload),
+        ms.PaymentIn(**payload.model_dump(exclude=EXCLUDED)),
         kind=KIND_REFUND,
         request=request,
     )
@@ -156,11 +172,7 @@ def list_payments(
     if received_by:
         conditions.append(Payment.received_by == received_by)
     if ctx.branch_ids is not None:
-        conditions.append(
-            Payment.membership_id.in_(
-                select(Membership.id).where(Membership.branch_id.in_(ctx.branch_ids))
-            )
-        )
+        conditions.append(ms.payments_in_branches(ctx.branch_ids))
     listed = list(conditions)
     if not include_voided:
         listed.append(Payment.voided_at.is_(None))
@@ -240,7 +252,7 @@ def update_payment(
             "payment.updated",
             entity="payment",
             entity_id=payment.id,
-            changes={**diff, "membership_id": payment.membership_id},
+            changes={**diff, **_purpose(payment)},
             reason=payload.reason,
             request=request,
         )
@@ -269,7 +281,7 @@ def void_payment(
         "payment.voided",
         entity="payment",
         entity_id=payment.id,
-        changes={"amount": payment.amount, "membership_id": payment.membership_id},
+        changes={"amount": payment.amount, **_purpose(payment)},
         reason=payload.reason,
         request=request,
     )

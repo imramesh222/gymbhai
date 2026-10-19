@@ -4,6 +4,7 @@ import {
   CalendarClock,
   ClipboardList,
   CreditCard,
+  Dumbbell,
   FileSpreadsheet,
   Inbox,
   LifeBuoy,
@@ -74,6 +75,13 @@ export const NAV: NavGroup[] = [
         label: "nav.followUp",
         icon: CalendarClock,
         anyOf: ["members.view"],
+      },
+      {
+        // A trainer's own clients; everyone's for staff who sell it (§18.3).
+        href: "/staff/pt",
+        label: "nav.pt",
+        icon: Dumbbell,
+        anyOf: ["pt.train", "pt.sell"],
       },
       {
         href: "/staff/payment-requests",

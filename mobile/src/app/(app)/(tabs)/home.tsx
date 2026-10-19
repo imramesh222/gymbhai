@@ -1,6 +1,6 @@
 /**
  * Home (PLAN.md §7, §17.5): days left, the QR for the door, how busy it is,
- * visits, the latest notice. Everything here works from the saved copy with
+ * personal training (§18.3), visits, the latest notice. Everything here works from the saved copy with
  * no signal; the QR above all.
  */
 import { router } from "expo-router";
@@ -8,8 +8,9 @@ import { Pressable, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { describeHours } from "@shared/accessHours";
-import { formatDate } from "@shared/dates";
-import { t, type MessageKey } from "@shared/i18n";
+import { formatDate, type DateDisplay } from "@shared/dates";
+import { plural, t, type MessageKey } from "@shared/i18n";
+import type { MemberTraining } from "@shared/types";
 
 import { useBrand } from "@/components/brand";
 import { LiveQr } from "@/components/LiveQr";
@@ -227,6 +228,11 @@ export default function Home() {
         </Card>
       ) : null}
 
+      {/* Missing from a copy saved before personal training: nothing to show. */}
+      {(me.data.training ?? []).map((pt) => (
+        <Training key={pt.id} pt={pt} display={gym.date_display} />
+      ))}
+
       <View style={{ flexDirection: "row", gap: space(3) }}>
         <Card style={{ flex: 1 }}>
           <Txt weight="bold" size={28} color={colors.ink}>
@@ -271,5 +277,64 @@ export default function Home() {
         </Pressable>
       ) : null}
     </Screen>
+  );
+}
+
+/** Their personal training: plan, trainer, sessions or days left (§18.3). */
+function Training({ pt, display }: { pt: MemberTraining; display: DateDisplay }) {
+  const until = formatDate(pt.end_date, display);
+  return (
+    <Card style={{ gap: space(0.5) }}>
+      <Label>{t("app.home.training")}</Label>
+      <Txt weight="semibold" color={colors.ink}>
+        {pt.plan_name}
+      </Txt>
+      {pt.trainer_name ? (
+        <Txt size={14} color={colors.muted}>
+          {t("app.home.trainer", { name: pt.trainer_name })}
+        </Txt>
+      ) : null}
+      <Txt size={14} weight="medium">
+        {pt.status === "upcoming"
+          ? t("app.home.trainingStarts", { date: formatDate(pt.start_date, display) })
+          : pt.sessions !== null
+            ? t("app.home.sessionsLeft", {
+                left: pt.sessions_left ?? 0,
+                total: pt.sessions,
+              })
+            : plural(
+                pt.days_left,
+                "app.home.trainingDays.one",
+                "app.home.trainingDays.other",
+                {
+                  date: until,
+                },
+              )}
+      </Txt>
+      {pt.status === "active" && pt.sessions !== null ? (
+        <Txt size={13} color={colors.faint}>
+          {t("app.home.until")} {until}
+        </Txt>
+      ) : null}
+      {pt.dues > 0 ? (
+        <View
+          style={{
+            alignSelf: "flex-start",
+            flexDirection: "row",
+            gap: space(1),
+            marginTop: space(1),
+            backgroundColor: colors.amberBg,
+            borderRadius: 999,
+            paddingHorizontal: space(2.5),
+            paddingVertical: space(1),
+          }}
+        >
+          <Txt size={13} weight="semibold" color={colors.amberInk}>
+            {t("app.home.owes")}
+          </Txt>
+          <Money paisa={pt.dues} size={13} weight="semibold" color={colors.amberInk} />
+        </View>
+      ) : null}
+    </Card>
   );
 }
