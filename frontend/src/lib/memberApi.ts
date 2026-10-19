@@ -23,10 +23,6 @@ export type {
   PushStatus,
 } from "@shared/types";
 
-
-
-
-
 const client = createClient<MemberSignIn>({ refreshPath: "/api/v1/m/auth/refresh" });
 export const memberClient = client;
 const { request } = client;
@@ -35,7 +31,6 @@ const post = (body?: unknown): RequestInit => ({
   method: "POST",
   body: body === undefined ? undefined : JSON.stringify(body),
 });
-
 
 export const memberApi = {
   gym: (slug: string) =>
@@ -52,6 +47,12 @@ export const memberApi = {
     request<MemberSignIn>(
       `/api/v1/m/${encodeURIComponent(slug)}/otp/verify`,
       post(body),
+    ),
+  /** The QR the desk showed (PLAN.md §18.4): signed in with no code. */
+  deskSignIn: (slug: string, token: string) =>
+    request<MemberSignIn>(
+      `/api/v1/m/${encodeURIComponent(slug)}/desk-sign-in`,
+      post({ token }),
     ),
   joinOptions: (slug: string) =>
     request<{ plans: { id: string; name: string; price: number | null }[] }>(

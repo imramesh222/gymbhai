@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.api import idempotency
 from app.api.deps import current_member
-from app.api.presenters import payments_read
+from app.api.presenters import payments_read, staff_names
 from app.api.routes.freeze_requests import reads as freeze_reads
 from app.api.routes.payment_methods import read as method_read
 from app.api.routes.plans import branch_ids_for, plans_read
@@ -53,6 +53,7 @@ from app.schemas.member_app import (
     CodeRequest,
     CodeRequested,
     CodeVerify,
+    DeskSignIn,
     EmailChangeIn,
     EmailConfirmIn,
     FreezeRequestIn,
@@ -79,7 +80,16 @@ from app.schemas.member_app import (
 )
 from app.schemas.messaging import NoticeRead
 from app.schemas.money import ReceiptLink
-from app.services import activity, checkins, live, member_auth, receipts, storage
+from app.schemas.training import MemberTraining
+from app.services import (
+    activity,
+    checkins,
+    live,
+    member_auth,
+    receipts,
+    storage,
+    training,
+)
 from app.services import freeze_requests as freeze_service
 from app.services import leads as leads_service
 from app.services import members as members_service
@@ -169,6 +179,38 @@ def member_notices(db: Session, member: Member):
     )
 
 
+def member_training(db: Session, member: Member) -> list[MemberTraining]:
+    """Their personal training on Home: upcoming and under way (§18.3)."""
+    packages = training.of_member(db, member)
+    if not packages:
+        return []
+    counts = training.tallies(db, packages)
+    names = staff_names(db, [p.trainer_id for p in packages])
+    today = today_in_nepal()
+    shown = []
+    for package in sorted(packages, key=lambda p: (p.start_date, p.created_at)):
+        tally = counts[package.id]
+        status = training.status_of(package, tally.used, today)
+        if status not in training.CURRENT:
+            continue
+        shown.append(
+            MemberTraining(
+                id=package.id,
+                plan_name=package.plan_name,
+                kind=package.kind,  # type: ignore[arg-type]
+                status=status,
+                trainer_name=names.get(package.trainer_id),
+                start_date=package.start_date,
+                end_date=package.end_date,
+                sessions=package.sessions,
+                sessions_left=training.sessions_left(package, tally.used),
+                days_left=training.days_left(package, today),
+                dues=tally.dues,
+            )
+        )
+    return shown
+
+
 def build_me(db: Session, member: Member) -> MemberMe:
     gym = db.get(Gym, member.gym_id)
     assert gym is not None
@@ -212,6 +254,7 @@ def build_me(db: Session, member: Member) -> MemberMe:
         busy=checkins.busyness(db, gym.id, member.home_branch_id)
         if gym.config.show_busyness
         else None,
+        training=member_training(db, member),
     )
 
 
@@ -362,6 +405,31 @@ def verify_code(
             entity_id=member.id,
             request=request,
         )
+    db.commit()
+    return _signed_in(db, issued, response)
+
+
+@router.post("/{slug}/desk-sign-in", response_model=MemberSignIn)
+def desk_sign_in(
+    slug: Slug,
+    payload: DeskSignIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> MemberSignIn:
+    """The QR staff showed at the desk (§18.4): signed in, no code needed."""
+    gym = _gym_by_slug(db, slug)
+    member, shown_by = member_auth.use_sign_in_link(db, gym, payload.token)
+    issued = member_auth.start_session(db, member, request, payload.client)
+    activity.member_action(
+        db,
+        member,
+        "member.signed_in_at_desk",
+        changes={"shown_by": shown_by},
+        request=request,
+    )
+    # The profile behind the desk's QR dialog sees the new device.
+    live.member_changed(db, gym.id, member.id, member.home_branch_id)
     db.commit()
     return _signed_in(db, issued, response)
 

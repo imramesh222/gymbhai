@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 
 import { BarChart } from "@/components/charts/BarChart";
+import { WhatsAppButton, WhatsAppLink } from "@/components/member/WhatsApp";
 import { methodLabel } from "@/components/money/PaymentFields";
 import { Notice } from "@/components/Notice";
 import { Delta } from "@/components/today/Delta";
@@ -130,10 +131,17 @@ function ToDo({ data }: { data: TodayData }) {
                       {l.name}
                     </span>
                     {l.phone && (
-                      <a href={`tel:${l.phone}`} className={button}>
-                        <Phone className="size-3.5" aria-hidden />
-                        {t("today.call")}
-                      </a>
+                      <span className="flex shrink-0">
+                        <a href={`tel:${l.phone}`} className={button}>
+                          <Phone className="size-3.5" aria-hidden />
+                          {t("today.call")}
+                        </a>
+                        <WhatsAppLink
+                          phone={l.phone}
+                          className={button}
+                          iconClassName="size-3.5"
+                        />
+                      </span>
                     )}
                   </li>
                 ))}
@@ -175,6 +183,12 @@ function ToDo({ data }: { data: TodayData }) {
                         <Phone className="size-3.5" aria-hidden />
                         {t("today.call")}
                       </a>
+                      <WhatsAppButton
+                        memberId={m.member_id}
+                        purpose="reminder"
+                        className={button}
+                        iconClassName="size-3.5"
+                      />
                       {can("messages.sms") && (
                         <button
                           type="button"

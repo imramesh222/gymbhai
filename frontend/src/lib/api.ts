@@ -506,6 +506,15 @@ export interface MemberDetail extends Member {
   payments: Payment[];
   renewal_starts_on: string;
   first_membership: boolean;
+  /** Their newest app sign-in, still signed in or not. */
+  app_signed_in_at: string | null;
+}
+
+/** The QR for signing in at the desk (PLAN.md §18.4). */
+export interface SignInLink {
+  url: string;
+  made_at: string;
+  expires_at: string;
 }
 
 export interface PhoneMatch {
@@ -573,6 +582,8 @@ export interface Receipt {
   membership_total: number | null;
   dues_after: number | null;
   date_display: DateDisplay;
+  /** For personal training (§18.3): the dates are its, not a membership's. */
+  training: boolean;
 }
 
 export interface StaffMember {
@@ -847,6 +858,146 @@ export const expensesApi = {
     request<Expense>(`/api/v1/expenses/${id}/void`, send("POST", { reason })),
 };
 
+// --- personal training (PLAN.md §18.3) ---
+
+export type PtKind = "monthly" | "sessions";
+export type PtStatus = "active" | "upcoming" | "used_up" | "ended" | "cancelled";
+
+export interface PtPlan {
+  id: string;
+  name: string;
+  kind: PtKind;
+  /** A pack's size; null for monthly training. */
+  sessions: number | null;
+  duration_months: number | null;
+  duration_days: number | null;
+  price: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export type PtPlanInput = Omit<PtPlan, "id" | "is_active" | "sort_order"> & {
+  is_active?: boolean;
+};
+
+export interface Trainer {
+  id: string;
+  name: string;
+}
+
+export interface PtSession {
+  id: string;
+  package_id: string;
+  trained_on: string;
+  trainer_id: string;
+  trainer_name: string | null;
+  recorded_by_name: string | null;
+  note: string | null;
+  created_at: string;
+  voided_at: string | null;
+  void_reason: string | null;
+}
+
+export interface PtPackage {
+  id: string;
+  member_id: string;
+  member_name: string;
+  member_code: string;
+  plan_id: string | null;
+  plan_name: string;
+  kind: PtKind;
+  sessions: number | null;
+  trainer_id: string;
+  trainer_name: string | null;
+  branch_id: string;
+  start_date: string;
+  end_date: string;
+  price: number;
+  discount: number;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  created_at: string;
+  status: PtStatus;
+  sessions_used: number;
+  sessions_left: number | null;
+  days_left: number;
+  last_session_on: string | null;
+  total: number;
+  paid: number;
+  dues: number;
+}
+
+/** On the member's profile: every session, voided too, and the money. */
+export interface PtPackageDetail extends PtPackage {
+  session_log: PtSession[];
+  payments: Payment[];
+}
+
+export interface PtSaleInput {
+  plan_id: string;
+  trainer_id: string;
+  branch_id?: string | null;
+  start_date: string;
+  end_date: string;
+  price: number | null;
+  discount: number;
+  payment: PaymentInput | null;
+}
+
+export const ptApi = {
+  plans: (includeHidden = false) =>
+    request<PtPlan[]>(
+      `/api/v1/pt/plans${includeHidden ? "?include_hidden=true" : ""}`,
+    ),
+  createPlan: (body: PtPlanInput) =>
+    request<PtPlan>("/api/v1/pt/plans", send("POST", body)),
+  updatePlan: (id: string, body: Partial<PtPlanInput>) =>
+    request<PtPlan>(`/api/v1/pt/plans/${id}`, send("PATCH", body)),
+  trainers: () => request<Trainer[]>("/api/v1/pt/trainers"),
+  /** The signed-in trainer's own clients still to train. */
+  clients: () => request<PtPackage[]>("/api/v1/pt/clients"),
+  /** Every trainer's clients still to train, or one trainer's. */
+  all: (trainerId?: string) =>
+    request<PtPackage[]>(`/api/v1/pt/packages${query({ trainer_id: trainerId })}`),
+  ofMember: (memberId: string) =>
+    request<PtPackageDetail[]>(`/api/v1/members/${memberId}/pt`),
+  sell: (memberId: string, body: PtSaleInput, key?: string) =>
+    request<{ package: PtPackageDetail; payment: Payment | null }>(
+      `/api/v1/members/${memberId}/pt`,
+      once(send("POST", body), key),
+    ),
+  update: (
+    id: string,
+    body: {
+      trainer_id?: string;
+      start_date?: string;
+      end_date?: string;
+      reason?: string | null;
+    },
+  ) => request<PtPackageDetail>(`/api/v1/pt/packages/${id}`, send("PATCH", body)),
+  cancel: (id: string, reason: string, refund: PaymentInput | null) =>
+    request<PtPackageDetail>(
+      `/api/v1/pt/packages/${id}/cancel`,
+      send("POST", { reason, refund }),
+    ),
+  record: (id: string, body: { trained_on: string; note: string | null }, key?: string) =>
+    request<PtPackageDetail>(
+      `/api/v1/pt/packages/${id}/sessions`,
+      once(send("POST", body), key),
+    ),
+  voidSession: (sessionId: string, reason: string) =>
+    request<PtPackageDetail>(
+      `/api/v1/pt/sessions/${sessionId}/void`,
+      send("POST", { reason }),
+    ),
+  /** Money towards it: an ordinary payment, with its own receipt. */
+  collect: (packageId: string, payment: PaymentInput, key?: string) =>
+    request<Payment>(
+      "/api/v1/payments",
+      once(send("POST", { pt_package_id: packageId, ...payment }), key),
+    ),
+};
+
 /** A member's "please freeze my membership" (PLAN.md §16.3, 8.6). */
 
 export const freezeRequestsApi = {
@@ -1018,6 +1169,15 @@ export interface FollowUpLists {
   not_visiting_days: number;
 }
 
+/** What a WhatsApp message from the desk is about (§18.5). */
+export const MESSAGE_PURPOSES = [
+  "reminder",
+  "dues",
+  "not_visiting",
+  "welcome",
+] as const;
+export type MessagePurpose = (typeof MESSAGE_PURPOSES)[number];
+
 export const messagesApi = {
   followUp: () => request<FollowUpLists>("/api/v1/lists/follow-up"),
   smsLog: (memberId?: string) =>
@@ -1026,6 +1186,11 @@ export const messagesApi = {
     ),
   smsMember: (memberId: string, body: { reminder?: boolean; body?: string }) =>
     request<SmsMessage>(`/api/v1/members/${memberId}/sms`, send("POST", body)),
+  /** The gym's wording for this member, to send on WhatsApp (§18.5). */
+  memberMessage: (memberId: string, purpose: MessagePurpose) =>
+    request<{ text: string; phone: string }>(
+      `/api/v1/members/${memberId}/message${query({ purpose })}`,
+    ),
   rules: () => request<ReminderRule[]>("/api/v1/reminder-rules"),
   createRule: (body: Omit<ReminderRule, "id">) =>
     request<ReminderRule>("/api/v1/reminder-rules", send("POST", body)),
@@ -1177,6 +1342,8 @@ export const accessApi = {
     request<MemberDetail>(`/api/v1/members/${id}/resend-welcome`, send("POST")),
   reissueQr: (id: string) =>
     request<MemberDetail>(`/api/v1/members/${id}/qr/reissue`, send("POST")),
+  signInLink: (id: string) =>
+    request<SignInLink>(`/api/v1/members/${id}/sign-in-link`, send("POST")),
   card: (id: string) => request<CardInfo>(`/api/v1/members/${id}/card`),
   reissueCard: (id: string) =>
     request<CardInfo>(`/api/v1/members/${id}/card/reissue`, send("POST")),

@@ -4,6 +4,7 @@ Adding a member at the desk is what gives them app access; the same screen can
 sell their first membership and take payment in one step.
 """
 
+import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -29,6 +30,8 @@ from app.models.activity import ActivityLog
 from app.models.gym import Gym
 from app.models.lead import Lead
 from app.models.member import Member
+from app.models.payment import Payment
+from app.models.training import PtPackage
 from app.schemas.member_app import AccessIn, CardRead
 from app.schemas.members import (
     ArchiveIn,
@@ -42,6 +45,7 @@ from app.schemas.members import (
     PhoneMatch,
     SaleFields,
     SaleResult,
+    SignInLink,
 )
 from app.services import activity, live, member_auth, reminders, storage
 from app.services import leads as leads_service
@@ -377,7 +381,18 @@ def member_history(
     ctx: StaffContext = Depends(VIEW),
 ) -> list[HistoryEntry]:
     member = load_member(db, ctx, member_id)
-    return history_for(db, ctx.gym_id, [ActivityLog.entity_id == member.id])
+    # Personal training has no page of its own: its history is here (§18.3).
+    packages = select(PtPackage.id).where(PtPackage.member_id == member.id)
+    pt_payments = select(Payment.id).where(Payment.pt_package_id.in_(packages))
+    return history_for(
+        db,
+        ctx.gym_id,
+        [
+            ActivityLog.entity_id == member.id,
+            ActivityLog.entity_id.in_(packages),
+            ActivityLog.entity_id.in_(pt_payments),
+        ],
+    )
 
 
 # --- app access (PLAN.md §5.5) ----------------------------------------------------
@@ -468,6 +483,41 @@ def resend_welcome(
     reminders.welcome(db, gym, member, ctx.staff.id)
     db.commit()
     return member_detail(db, member)
+
+
+@router.post("/{member_id}/sign-in-link", response_model=SignInLink)
+def sign_in_link(
+    member_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(ACCESS),
+) -> SignInLink:
+    """A QR for the member to scan at the desk: their phone is signed in with
+    no SMS code. It works once, for a few minutes (§18.4)."""
+    member = load_member(db, ctx, member_id)
+    members_service.ensure_not_erased(member)
+    if not member_auth.can_sign_in(member):
+        raise AppError(
+            409, "no_app_access", "Turn their app access on, or restore them, first."
+        )
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    token, expires_at = member_auth.make_sign_in_link(db, member, ctx.staff)
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "member.sign_in_link_made",
+        entity="member",
+        entity_id=member.id,
+        request=request,
+    )
+    db.commit()
+    # After "#": a fragment never reaches a server, so no log ever holds it.
+    return SignInLink(
+        url=f"{reminders.member_link(gym)}#desk={token}",
+        made_at=expires_at - dt.timedelta(minutes=member_auth.DESK_LINK_MINUTES),
+        expires_at=expires_at,
+    )
 
 
 @router.post("/{member_id}/qr/reissue", response_model=MemberDetail)

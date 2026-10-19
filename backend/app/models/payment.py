@@ -35,6 +35,10 @@ class Payment(IdMixin, TimestampMixin, GymOwned, Base):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("amount > 0", name="amount"),
+        # Money for a membership or for personal training (§18.3), not both.
+        CheckConstraint(
+            "membership_id IS NULL OR pt_package_id IS NULL", name="one_purpose"
+        ),
         # One transaction ID pays for one thing, per gym (§5.4).
         Index(
             "uq_payments_gym_ref",
@@ -54,6 +58,10 @@ class Payment(IdMixin, TimestampMixin, GymOwned, Base):
         UUID(as_uuid=True),
         ForeignKey("memberships.id", ondelete="SET NULL"),
         index=True,
+    )
+    # Personal training (§18.3): its own dues, never a membership's.
+    pt_package_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pt_packages.id"), index=True
     )
     kind: Mapped[str] = mapped_column(String(16), default=KIND_PAYMENT)
     # Always positive; `kind` says which way the money went.

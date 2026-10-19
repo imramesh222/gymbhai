@@ -6,10 +6,12 @@ import {
   IdCard,
   KeyRound,
   LogOut,
+  MessageCircle,
   MessageSquare,
   Pencil,
   QrCode,
   Send,
+  Smartphone,
   Snowflake,
   Trash2,
 } from "lucide-react";
@@ -25,7 +27,10 @@ import { EraseMember } from "@/components/member/EraseMember";
 import { History } from "@/components/member/History";
 import { PaymentsTable } from "@/components/member/PaymentsTable";
 import { SendSms } from "@/components/member/SendSms";
+import { SignInQr } from "@/components/member/SignInQr";
+import { WhatsAppDialog } from "@/components/member/WhatsApp";
 import { VisitsCalendar } from "@/components/member/VisitsCalendar";
+import { TrainingTab } from "@/components/training/TrainingTab";
 import { Avatar } from "@/components/ui/Avatar";
 import { Card, EmptyState, Row } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -43,6 +48,7 @@ import {
   errorMessage,
   membersApi,
   messagesApi,
+  ptApi,
   type MemberDetail,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -52,7 +58,7 @@ import { shrinkImage } from "@/lib/image";
 import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
-type DialogName = "pay" | "edit" | "sms" | "erase" | null;
+type DialogName = "pay" | "edit" | "sms" | "erase" | "signIn" | "whatsapp" | null;
 
 function MembershipsList({ member }: { member: MemberDetail }) {
   const { date } = useGymCalendar();
@@ -141,8 +147,17 @@ export default function MemberPage() {
     reload,
     setData,
   } = useLoad(() => membersApi.get(id), [id]);
-  // Another desk took a payment, the door let them in, or they renewed in the app.
-  useLive(["member", "check_in"], reload, { match: (event) => event.member === id });
+  // Personal training (PLAN.md §18.3): its own tab, its own money.
+  const training = useLoad(() => ptApi.ofMember(id), [id]);
+  const reloadAll = () => {
+    reload();
+    training.reload();
+  };
+  // Another desk took a payment, the door let them in, they renewed in the
+  // app, or their trainer recorded a session.
+  useLive(["member", "check_in"], reloadAll, {
+    match: (event) => event.member === id,
+  });
   const branches = useLoad(() => branchesApi.list(), []).data ?? [];
   const [dialog, setDialog] = useState<DialogName>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -154,6 +169,9 @@ export default function MemberPage() {
       label: t("member.memberships"),
       count: member?.memberships.length,
     },
+    ...(can("pt.sell") || (training.data?.length ?? 0) > 0
+      ? [{ id: "training", label: t("pt.title"), count: training.data?.length }]
+      : []),
     { id: "payments", label: t("member.payments"), count: member?.payments.length },
     { id: "visits", label: t("member.tab.visits") },
     ...(can("messages.sms")
@@ -219,6 +237,12 @@ export default function MemberPage() {
       hidden: !can("memberships.freeze") || !current,
     },
     {
+      label: t("whatsapp.title"),
+      icon: MessageCircle,
+      onSelect: () => setDialog("whatsapp"),
+      hidden: erased,
+    },
+    {
       label: t("sms.send"),
       icon: MessageSquare,
       onSelect: () => setDialog("sms"),
@@ -250,6 +274,16 @@ export default function MemberPage() {
           "common.saved",
         );
       },
+    },
+    {
+      label: t("access.signInPhone"),
+      icon: Smartphone,
+      hidden:
+        !can("members.app_access") ||
+        !member.app_access ||
+        member.is_archived ||
+        erased,
+      onSelect: () => setDialog("signIn"),
     },
     {
       label: t("access.resendWelcome"),
@@ -461,6 +495,13 @@ export default function MemberPage() {
                   {member.app_access
                     ? t("member.accessOnShort")
                     : t("member.accessOffShort")}
+                  {member.app_signed_in_at && (
+                    <span className="block text-xs font-normal text-slate-500">
+                      {t("access.lastSignedIn", {
+                        when: formatDateTime(member.app_signed_in_at, display),
+                      })}
+                    </span>
+                  )}
                 </Row>
               </dl>
               {member.notes && (
@@ -476,6 +517,21 @@ export default function MemberPage() {
             <MembershipsList member={member} />
           </Card>
         )}
+        {tab === "training" &&
+          (training.error ? (
+            <Notice tone="error">{training.error}</Notice>
+          ) : training.data ? (
+            <TrainingTab
+              memberId={member.id}
+              homeBranchId={member.home_branch_id}
+              branches={branches}
+              packages={training.data}
+              canSell={!member.is_archived && !erased}
+              onChanged={reloadAll}
+            />
+          ) : (
+            <ListSkeleton rows={2} />
+          ))}
         {tab === "payments" && (
           <Card>
             <PaymentsTable payments={member.payments} />
@@ -511,6 +567,22 @@ export default function MemberPage() {
             toast.success(t("payment.recorded", { number: payment.receipt_no }));
             reload();
           }}
+        />
+      )}
+      {dialog === "whatsapp" && (
+        <WhatsAppDialog
+          memberId={member.id}
+          // Never in the app yet: the welcome, with its link.
+          purpose={member.app_signed_in_at ? "reminder" : "welcome"}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === "signIn" && (
+        <SignInQr
+          memberId={member.id}
+          name={member.name}
+          signedInAt={member.app_signed_in_at}
+          onClose={() => setDialog(null)}
         />
       )}
       {dialog === "sms" && (

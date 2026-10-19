@@ -160,6 +160,28 @@ def require(
     return dependency
 
 
+def require_any(*permissions: Permission) -> Callable[..., StaffContext]:
+    """A dependency that admits staff holding at least one of `permissions`,
+    for actions either allows: a trainer on their own clients, the desk on
+    anyone's (§18.3). The route then checks which applies. A refusal names
+    the first."""
+    assert len(permissions) > 1, "one permission: use require()"
+
+    def dependency(ctx: StaffContext = Depends(require())) -> StaffContext:
+        if not any(ctx.can(p) for p in permissions):
+            raise AppError(
+                403,
+                "permission_denied",
+                "You don't have permission to do this.",
+                permission=permissions[0].value,
+            )
+        return ctx
+
+    dependency.required_permissions = frozenset(permissions)  # type: ignore[attr-defined]
+    dependency.__name__ = "require_any_" + "_".join(p.value for p in permissions)
+    return dependency
+
+
 def require_owner(ctx: StaffContext = Depends(require())) -> StaffContext:
     """For the few settings only the owner may change, whatever is ticked."""
     if not ctx.staff.is_owner:

@@ -11,7 +11,7 @@ import { Checkbox, MoneyInput, Select } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
 import { AccessHoursEditor } from "@/components/settings/AccessHoursEditor";
 import { describeHours, type AccessWindow } from "@/lib/accessHours";
-import { t, type MessageKey } from "@/i18n";
+import { plural, t, type MessageKey } from "@/i18n";
 import {
   branchesApi,
   errorMessage,
@@ -26,8 +26,9 @@ import { shrinkImage } from "@/lib/image";
 import { useLoad } from "@/lib/useLoad";
 
 function duration(plan: Pick<Plan, "duration_months" | "duration_days">): string {
-  if (plan.duration_months) return t("plans.months", { count: plan.duration_months });
-  return t("plans.days", { count: plan.duration_days ?? 0 });
+  if (plan.duration_months)
+    return plural(plan.duration_months, "plans.months.one", "plans.months.other");
+  return plural(plan.duration_days ?? 0, "plans.days.one", "plans.days.other");
 }
 
 export function BranchesSection() {

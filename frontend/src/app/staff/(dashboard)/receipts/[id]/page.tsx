@@ -104,7 +104,7 @@ export default function ReceiptPage() {
           </Row>
           {r.plan_name && <Row label={t("sale.plan")}>{r.plan_name}</Row>}
           {r.start_date && (
-            <Row label={t("receipt.period")}>
+            <Row label={r.training ? t("receipt.training") : t("receipt.period")}>
               {date(r.start_date)} → {date(r.end_date)}
             </Row>
           )}

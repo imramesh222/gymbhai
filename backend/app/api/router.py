@@ -33,6 +33,7 @@ from app.api.routes import (
     receipts,
     staff,
     subscription,
+    training,
 )
 from app.core.config import settings
 
@@ -51,6 +52,7 @@ ROUTERS: list[tuple[str, APIRouter]] = [
     (settings.api_v1_prefix, memberships.router),
     (settings.api_v1_prefix, payments.router),
     (settings.api_v1_prefix, expenses.router),
+    (settings.api_v1_prefix, training.router),
     (settings.api_v1_prefix, messaging.router),
     (settings.api_v1_prefix, data.router),
     (settings.api_v1_prefix, door.router),

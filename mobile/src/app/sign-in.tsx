@@ -114,6 +114,13 @@ export default function SignIn() {
               setWho("");
             }}
           />
+          {/* No code at all: the desk shows a QR (§18.4). */}
+          <Button
+            variant="secondary"
+            label={t("app.signIn.scanDesk")}
+            onPress={() => router.push("/scan-desk")}
+            testID="scan-desk"
+          />
         </Card>
       ) : choose ? (
         <Card style={{ gap: space(3) }}>

@@ -359,3 +359,41 @@ def test_leads(engine, client: TestClient, db: Session, gym_a) -> None:
 
     add(90)
     same_cost(engine, client, "/api/v1/leads", add)
+
+
+def test_personal_training(engine, client: TestClient, db: Session, gym_a) -> None:
+    """Sessions, money and names come in a few queries, however many packages
+    and sessions (PLAN.md §18.3): the trainers' lists and the member's tab."""
+    from app.models.training import PtPlan
+
+    member = make_member(db, gym_a)
+    plan = PtPlan(
+        gym_id=gym_a.gym.id,
+        name="12 sessions",
+        kind="sessions",
+        sessions=12,
+        duration_months=2,
+        price=12_000_00,
+    )
+    db.add(plan)
+    db.commit()
+    sign_in(db, client, gym_a.owner)
+
+    def add(n: int) -> None:
+        sold = client.post(
+            f"/api/v1/members/{member.id}/pt",
+            json={
+                "plan_id": str(plan.id),
+                "trainer_id": str(gym_a.owner.id),
+                "payment": {"amount": (n + 1) * 100_00, "method": "cash"},
+            },
+        )
+        assert sold.status_code == 201, sold.text
+        package = sold.json()["package"]["id"]
+        for _ in range(2):
+            recorded = client.post(f"/api/v1/pt/packages/{package}/sessions", json={})
+            assert recorded.status_code == 201, recorded.text
+
+    add(90)
+    same_cost(engine, client, "/api/v1/pt/packages", add)
+    same_cost(engine, client, f"/api/v1/members/{member.id}/pt", add)

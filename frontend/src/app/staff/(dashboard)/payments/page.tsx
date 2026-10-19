@@ -102,6 +102,7 @@ export default function PaymentsPage() {
                     </Link>
                     <p className="text-xs text-slate-500">
                       #{p.receipt_no} · {methodLabel(p.method)}
+                      {p.pt_package_id && ` · ${t("payment.forTraining")}`}
                       {p.transaction_ref && ` · ${p.transaction_ref}`} ·{" "}
                       {formatDateTime(p.paid_at, display)}
                       {p.received_by_name && ` · ${p.received_by_name}`}

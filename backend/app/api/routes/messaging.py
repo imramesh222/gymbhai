@@ -33,7 +33,9 @@ from app.schemas.messaging import (
     BulkSmsIn,
     BulkSmsResult,
     FollowUpLists,
+    MemberMessage,
     MemberSmsIn,
+    MessagePurpose,
     NoticeCost,
     NoticeIn,
     NoticeRead,
@@ -159,6 +161,25 @@ def sms_log(
     return SmsLog(
         balance=sms.balance(db, ctx.gym_id),
         items=[SmsRead.model_validate(r) for r in rows],
+    )
+
+
+@router.get("/members/{member_id}/message", response_model=MemberMessage)
+def member_message(
+    member_id: uuid.UUID,
+    purpose: MessagePurpose = "reminder",
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
+) -> MemberMessage:
+    """The gym's own wording for this member, for WhatsApp from the desk's
+    phone (§18.5). Free, sent by the person tapping Send: nothing goes from
+    here, and no SMS credit is used. Anyone who can see the member and call
+    them can message them."""
+    member = load_member(db, ctx, member_id)
+    members_service.ensure_not_erased(member)
+    gym = _gym(db, ctx)
+    return MemberMessage(
+        text=reminders.message_text(db, gym, member, purpose), phone=member.phone
     )
 
 

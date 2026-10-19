@@ -1,5 +1,6 @@
 "use client";
 
+import { ScanLine } from "lucide-react";
 import Link from "next/link";
 
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -8,16 +9,21 @@ import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { Scanner } from "@/components/Scanner";
 import { t } from "@/i18n";
 import { errorMessage } from "@/lib/api";
+import { deskToken } from "@/lib/deskLink";
 import { memberApi, type PublicGym } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
 import { useLoad } from "@/lib/useLoad";
 import { LegalLinks } from "@/components/legal/LegalLinks";
 
-/** Phone or email -> 6-digit code -> (shared phone) who are you? (§7) */
+/**
+ * Phone or email -> 6-digit code -> (shared phone) who are you? (§7)
+ * Or the QR staff show at the desk, with no code at all (§18.4).
+ */
 export function SignIn() {
-  const { slug, signedIn } = useMember();
+  const { slug, signedIn, deskError, signInAtDesk } = useMember();
   const gym = useLoad(() => memberApi.gym(slug), [slug]);
   const [who, setWho] = useState("");
   const [code, setCode] = useState("");
@@ -25,6 +31,17 @@ export function SignIn() {
   const [choose, setChoose] = useState<{ id: string; name: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [scanning, setScanning] = useState(false);
+
+  function scanned(text: string) {
+    if (pending) return;
+    const token = deskToken(text);
+    if (!token) {
+      setError(t("app.signIn.notDeskQr"));
+      return;
+    }
+    void run(() => signInAtDesk(token));
+  }
 
   const target = () =>
     who.includes("@") ? { email: who.trim() } : { phone: who.trim() };
@@ -56,31 +73,71 @@ export function SignIn() {
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(75%_45%_at_50%_28%,var(--color-brand-200),transparent)] opacity-80"
       />
       <GymHeader gym={gym.data} />
-      {!sentTo ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              const result = await memberApi.requestCode(slug, target());
-              setSentTo(result.sent_to);
-            });
-          }}
-          className="mt-7 space-y-4 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline"
-        >
-          <Field
-            label={t("app.signIn.who")}
-            value={who}
-            onChange={setWho}
-            inputMode="tel"
-            autoComplete="tel"
-            required
-            help={t("app.signIn.whoHelp")}
+      {deskError && !scanning && (
+        <div className="mt-6">
+          <Notice tone="error">{deskError}</Notice>
+        </div>
+      )}
+      {scanning ? (
+        <div className="mt-7 space-y-4 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline">
+          <p className="text-sm text-slate-600">{t("app.signIn.scanDeskHelp")}</p>
+          <Scanner
+            onCode={scanned}
+            paused={pending}
+            facing="environment"
+            keyboard={false}
           />
           {error && <Notice tone="error">{error}</Notice>}
-          <Button type="submit" size="lg" block disabled={pending}>
-            {t("app.signIn.sendCode")}
+          <Button
+            variant="secondary"
+            block
+            onClick={() => {
+              setScanning(false);
+              setError(null);
+            }}
+          >
+            {t("common.cancel")}
           </Button>
-        </form>
+        </div>
+      ) : !sentTo ? (
+        <>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const result = await memberApi.requestCode(slug, target());
+                setSentTo(result.sent_to);
+              });
+            }}
+            className="mt-7 space-y-4 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline"
+          >
+            <Field
+              label={t("app.signIn.who")}
+              value={who}
+              onChange={setWho}
+              inputMode="tel"
+              autoComplete="tel"
+              required
+              help={t("app.signIn.whoHelp")}
+            />
+            {error && <Notice tone="error">{error}</Notice>}
+            <Button type="submit" size="lg" block disabled={pending}>
+              {t("app.signIn.sendCode")}
+            </Button>
+          </form>
+          <Button
+            variant="secondary"
+            block
+            className="mt-3"
+            onClick={() => {
+              setScanning(true);
+              setError(null);
+            }}
+          >
+            <ScanLine className="size-4" aria-hidden />
+            {t("app.signIn.scanDesk")}
+          </Button>
+        </>
       ) : choose ? (
         <div className="mt-7 space-y-3 rounded-2xl bg-surface p-5 shadow-raised ring-1 ring-hairline">
           <p className="font-medium">{t("app.signIn.whoAreYou")}</p>

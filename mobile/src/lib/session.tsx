@@ -50,6 +50,8 @@ interface Session {
   /** Back to "choose your gym", keeping the list. */
   closeGym: () => Promise<void>;
   signedInWith: (result: MemberSignIn) => Promise<void>;
+  /** The QR the desk shows (PLAN.md §18.4): that gym opens, signed in. */
+  signInAtDesk: (slug: string, token: string) => Promise<void>;
   /** Called before signing out: turn this phone's notifications off. */
   setBeforeSignOut: (fn: (() => Promise<void>) | null) => void;
   signOut: () => Promise<void>;
@@ -148,6 +150,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [slug, rememberGym],
   );
 
+  const signInAtDesk = useCallback(
+    async (gymSlug: string, token: string) => {
+      const result = await memberApi.deskSignIn(gymSlug, token);
+      if (!result.me) return;
+      // Kept first, so the gym opens signed in rather than at "sign in".
+      await keepSession(gymSlug, result);
+      queryClient.setQueryData(keys.me(gymSlug), result.me);
+      await openGym(saved(result.me.gym));
+    },
+    [openGym],
+  );
+
   const signOut = useCallback(async () => {
     if (!slug) return;
     // A shared phone: the next member must not get this one's reminders.
@@ -169,12 +183,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       openGym,
       closeGym,
       signedInWith,
+      signInAtDesk,
       setBeforeSignOut: (fn) => {
         beforeSignOut.current = fn;
       },
       signOut,
     }),
-    [ready, gyms, slug, signedIn, openGym, closeGym, signedInWith, signOut],
+    [
+      ready,
+      gyms,
+      slug,
+      signedIn,
+      openGym,
+      closeGym,
+      signedInWith,
+      signInAtDesk,
+      signOut,
+    ],
   );
 
   return <Context.Provider value={value}>{children}</Context.Provider>;

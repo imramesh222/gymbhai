@@ -139,6 +139,13 @@ ACTIONS: dict[Permission, tuple] = {
         [Permission.DOOR_CHECK_IN],
     ),
     Permission.SETUP_DEVICES: ("GET", "/api/v1/devices", None),
+    # Personal training (§18.3): a trainer's own clients, and selling it.
+    Permission.PT_TRAIN: ("GET", "/api/v1/pt/clients", None),
+    Permission.PT_SELL: (
+        "POST",
+        "/api/v1/members/{member}/pt",
+        {"plan_id": "{pt_plan}", "trainer_id": "{trainer}"},
+    ),
 }
 
 # Their screens arrive later (PLAN.md §12). Remove each when it gets a route.
@@ -153,6 +160,7 @@ def test_every_permission_is_covered_or_pending() -> None:
 @pytest.fixture
 def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
     from app.models.expense import Expense
+    from app.models.training import PtPlan
 
     member = make_member(db, gym_a)
     plan = priced_plan(db, gym_a.gym)
@@ -164,7 +172,15 @@ def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
         spent_on=today_in_nepal(),
         method="cash",
     )
-    db.add(expense)
+    pt_plan = PtPlan(
+        gym_id=gym_a.gym.id,
+        name="12 sessions",
+        kind="sessions",
+        sessions=12,
+        duration_months=2,
+        price=12_000_00,
+    )
+    db.add_all([expense, pt_plan])
     db.commit()
     return {
         "member": str(member.id),
@@ -173,6 +189,9 @@ def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
         "payment": str(payment.id),
         "branch": str(gym_a.branch.id),
         "expense": str(expense.id),
+        "pt_plan": str(pt_plan.id),
+        # The owner trains too.
+        "trainer": str(gym_a.owner.id),
     }
 
 

@@ -112,7 +112,9 @@ def test_exports(client: TestClient, db: Session, gym_a: GymFixture) -> None:
     assert "Valid until (BS)" in header
 
     payments = workbook(client.get("/api/v1/export/payments.xlsx"))
-    assert payments[1][5] == 1000  # rupees, not paisa
+    paid = dict(zip(payments[0], payments[1], strict=True))
+    assert paid["Amount (Rs)"] == 1000  # rupees, not paisa
+    assert paid["For"] == "Membership"
     assert len(workbook(client.get("/api/v1/export/memberships.xlsx"))) == 2
     assert len(workbook(client.get("/api/v1/export/check-ins.xlsx"))) == 2
     assert client.get("/api/v1/export/secrets.xlsx").status_code == 422

@@ -23,6 +23,7 @@ from app.models.member_app import Device, FreezeRequest, PaymentRequest
 from app.models.messaging import Notice, ReminderRule
 from app.models.payment import GymPaymentMethod
 from app.models.platform import MemberImport
+from app.models.training import PtPackage, PtPlan, PtSession
 from app.services import memberships as ms
 from app.services import sessions
 from tests.conftest import (
@@ -105,7 +106,39 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
         spent_on=today_in_nepal(),
         method="bank",
     )
-    db.add_all([device, b_request, b_import, b_freeze_request, b_lead, b_expense])
+    b_pt_plan = PtPlan(
+        gym_id=gym_b.gym.id,
+        name="B monthly PT",
+        kind="monthly",
+        duration_months=1,
+        price=8_000_00,
+    )
+    db.add_all(
+        [device, b_request, b_import, b_freeze_request, b_lead, b_expense, b_pt_plan]
+    )
+    db.flush()
+    b_package = PtPackage(
+        gym_id=gym_b.gym.id,
+        member_id=member.id,
+        plan_id=b_pt_plan.id,
+        plan_name=b_pt_plan.name,
+        kind="monthly",
+        trainer_id=gym_b.owner.id,
+        branch_id=gym_b.branch.id,
+        start_date=today_in_nepal(),
+        end_date=today_in_nepal() + dt.timedelta(days=29),
+        price=8_000_00,
+        discount=0,
+    )
+    db.add(b_package)
+    db.flush()
+    b_session = PtSession(
+        gym_id=gym_b.gym.id,
+        package_id=b_package.id,
+        trained_on=today_in_nepal(),
+        trainer_id=gym_b.owner.id,
+    )
+    db.add(b_session)
     db.commit()
     return World(
         ids={
@@ -126,6 +159,9 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
             "lead_id": b_lead.id,
             "import_id": b_import.id,
             "expense_id": b_expense.id,
+            "pt_plan_id": b_pt_plan.id,
+            "package_id": b_package.id,
+            "pt_session_id": b_session.id,
         }
     )
 
@@ -175,6 +211,7 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PATCH", "/api/v1/expenses/{expense_id}", {"amount": 1}),
     ("POST", "/api/v1/expenses/{expense_id}/void", {"reason": "taken over"}),
     ("POST", "/api/v1/members/{member_id}/sms", {"body": "Hello"}),
+    ("GET", "/api/v1/members/{member_id}/message", None),
     ("PATCH", "/api/v1/reminder-rules/{rule_id}", {"enabled": False}),
     ("DELETE", "/api/v1/reminder-rules/{rule_id}", None),
     ("DELETE", "/api/v1/notices/{notice_id}", None),
@@ -194,11 +231,19 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PATCH", "/api/v1/members/{member_id}/access", {"app_access": False}),
     ("POST", "/api/v1/members/{member_id}/sign-out-all", None),
     ("POST", "/api/v1/members/{member_id}/resend-welcome", None),
+    ("POST", "/api/v1/members/{member_id}/sign-in-link", None),
     ("POST", "/api/v1/members/{member_id}/qr/reissue", None),
     ("POST", "/api/v1/members/{member_id}/card/reissue", None),
     ("GET", "/api/v1/members/{member_id}/card", None),
     ("POST", "/api/v1/members/import/{import_id}/preview", {}),
     ("POST", "/api/v1/members/import/{import_id}/commit", {}),
+    ("PATCH", "/api/v1/pt/plans/{pt_plan_id}", {"price": 1}),
+    ("GET", "/api/v1/members/{member_id}/pt", None),
+    ("POST", "/api/v1/members/{member_id}/pt", "own_pt_plan"),
+    ("PATCH", "/api/v1/pt/packages/{package_id}", {"start_date": TODAY}),
+    ("POST", "/api/v1/pt/packages/{package_id}/cancel", {"reason": "taken over"}),
+    ("POST", "/api/v1/pt/packages/{package_id}/sessions", {}),
+    ("POST", "/api/v1/pt/sessions/{pt_session_id}/void", {"reason": "taken over"}),
 ]
 
 # Id routes whose permission is not the gym at all.
@@ -211,6 +256,7 @@ NOT_GYM_SCOPED = {
     ("GET", "/api/v1/m/{slug}/logo"),
     ("POST", "/api/v1/m/{slug}/otp/request"),
     ("POST", "/api/v1/m/{slug}/otp/verify"),
+    ("POST", "/api/v1/m/{slug}/desk-sign-in"),
     ("GET", "/api/v1/m/{slug}/join"),
     ("POST", "/api/v1/m/{slug}/join"),
     # Not an id: which export (members, payments, ...), of the caller's gym.
@@ -264,6 +310,22 @@ def test_another_gyms_record_is_not_found(
 
         plan = priced_plan(db, gym_a.gym)
         response = client.request(method, url, json={"plan_id": str(plan.id)})
+    elif body == "own_pt_plan":
+        # Gym A's own PT plan and trainer, gym B's member: still not found.
+        pt_plan = PtPlan(
+            gym_id=gym_a.gym.id,
+            name="A monthly PT",
+            kind="monthly",
+            duration_months=1,
+            price=8_000_00,
+        )
+        db.add(pt_plan)
+        db.commit()
+        response = client.request(
+            method,
+            url,
+            json={"plan_id": str(pt_plan.id), "trainer_id": str(gym_a.owner.id)},
+        )
     else:
         response = client.request(method, url, json=body)
     assert response.status_code == 404, response.text
@@ -292,7 +354,7 @@ def test_nothing_of_gym_b_changed(
     before = (member.name, membership.end_date, membership.discount)
     sign_in(db, client, gym_a.owner)
     for method, path, body in CROSS_GYM_ROUTES:
-        if body not in ("upload", "own_plan"):
+        if body not in ("upload", "own_plan", "own_pt_plan"):
             client.request(method, path.format(**world_b.ids), json=body)
     for row in (member, membership):
         db.refresh(row)
@@ -302,6 +364,14 @@ def test_nothing_of_gym_b_changed(
     expense = db.get(Expense, world_b.ids["expense_id"])
     db.refresh(expense)
     assert (expense.amount, expense.voided_at) == (30_000_00, None)
+    package = db.get(PtPackage, world_b.ids["package_id"])
+    db.refresh(package)
+    assert (package.start_date, package.cancelled_at) == (today_in_nepal(), None)
+    sessions = db.scalars(
+        select(PtSession).where(PtSession.package_id == package.id)
+    ).all()
+    assert [s.voided_at for s in sessions] == [None]
+    assert db.get(PtPlan, world_b.ids["pt_plan_id"]).price == 8_000_00
 
 
 def test_lists_only_show_your_own_gym(
@@ -334,6 +404,13 @@ def test_lists_only_show_your_own_gym(
     assert str(world_b.ids["plan_id"]) not in plan_ids
     staff = client.get("/api/v1/staff").json()
     assert [s["id"] for s in staff] == [str(gym_a.owner.id)]
+    # Personal training: plans, trainers and clients are the gym's own.
+    assert client.get("/api/v1/pt/plans?include_hidden=true").json() == []
+    assert [t["id"] for t in client.get("/api/v1/pt/trainers").json()] == [
+        str(gym_a.owner.id)
+    ]
+    assert client.get("/api/v1/pt/packages").json() == []
+    assert client.get("/api/v1/pt/clients").json() == []
     # Phone lookups too: another gym's member is never "already on file".
     assert client.get("/api/v1/members/phone-check?phone=9819999999").json() == []
 

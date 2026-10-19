@@ -77,6 +77,18 @@ class BulkSmsResult(BaseModel):
     queued: int
 
 
+MessagePurpose = Literal["reminder", "dues", "not_visiting", "welcome"]
+
+
+class MemberMessage(BaseModel):
+    """The gym's wording filled in for one member, for the desk to send from
+    its own phone on WhatsApp (§18.5). Nothing is sent by us."""
+
+    text: str
+    # As stored, 98XXXXXXXX: the screen adds Nepal's 977 for WhatsApp.
+    phone: str
+
+
 class MemberSmsIn(Strict):
     """Either the gym's reminder wording, or a message typed at the desk."""
 

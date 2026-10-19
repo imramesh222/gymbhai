@@ -317,8 +317,8 @@ def export(
         )
         headers = [
             "Receipt", "Paid at (Nepal time)", "Member code", "Member", "Kind",
-            "Amount (Rs)", "Method", "Transaction ID", "Received by", "Voided",
-            "Void reason", "Note",
+            "For", "Amount (Rs)", "Method", "Transaction ID", "Received by",
+            "Voided", "Void reason", "Note",
         ]  # fmt: skip
         rows = [
             [
@@ -327,6 +327,8 @@ def export(
                 by_id[p.member_id].member_code,
                 by_id[p.member_id].name,
                 p.kind,
+                # Personal training is its own money (§18.3).
+                "Personal training" if p.pt_package_id else "Membership",
                 excel.rupees(p.amount),
                 p.method,
                 p.transaction_ref,

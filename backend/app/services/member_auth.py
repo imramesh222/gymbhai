@@ -8,6 +8,8 @@
 * Codes: 6 digits, 5 minutes, 5 wrong tries; at most 3 per phone or email
   per 15 minutes and a limit per address, because each one costs us an SMS.
   They are never charged to the gym and never blocked by its credit (§5.7).
+* Or at the desk, with no code at all (§18.4): staff show a QR on the
+  member's profile, and the member's phone that scans it is signed in.
 """
 
 import datetime as dt
@@ -18,7 +20,7 @@ import uuid
 from dataclasses import dataclass
 
 from fastapi import Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -32,8 +34,9 @@ from app.core.security import (
 from app.core.time import utcnow
 from app.models.gym import Gym
 from app.models.member import Member
-from app.models.member_app import MemberSession, OtpCode
+from app.models.member_app import MemberSession, MemberSignInLink, OtpCode
 from app.models.messaging import SMS_OTP, SmsMessage
+from app.models.staff import StaffUser
 from app.services import email
 from app.services.activity import client_ip
 from app.services.sms import service as sms
@@ -292,6 +295,76 @@ def confirm_email_change(
         raise wrong
     row.consumed_at = utcnow()
     return where.value
+
+
+# --- at the desk, with a QR (PLAN.md §18.4) -------------------------------------
+
+# Long enough to find the camera; short enough that a photo of the screen
+# is useless by the time anyone could use it.
+DESK_LINK_MINUTES = 5
+
+
+def _link_hash(token: str) -> str:
+    message = f"desk:{token}".encode()
+    return hmac.new(settings.secret_key.encode(), message, hashlib.sha256).hexdigest()
+
+
+def can_sign_in(member: Member) -> bool:
+    """What members_at() asks of a code's members: the gym gave them the app."""
+    return member.app_access and not member.is_archived and member.erased_at is None
+
+
+def make_sign_in_link(
+    db: Session, member: Member, staff: StaffUser
+) -> tuple[str, dt.datetime]:
+    """A one-time token for the member's QR, and when it stops working.
+
+    Any earlier one for them stops now: only the newest QR on a screen works.
+    """
+    db.execute(
+        delete(MemberSignInLink).where(
+            MemberSignInLink.member_id == member.id, MemberSignInLink.used_at.is_(None)
+        )
+    )
+    token = secrets.token_urlsafe(24)
+    expires_at = utcnow() + dt.timedelta(minutes=DESK_LINK_MINUTES)
+    db.add(
+        MemberSignInLink(
+            gym_id=member.gym_id,
+            member_id=member.id,
+            token_hash=_link_hash(token),
+            created_by=staff.id,
+            expires_at=expires_at,
+        )
+    )
+    return token, expires_at
+
+
+def use_sign_in_link(
+    db: Session, gym: Gym, token: str
+) -> tuple[Member, uuid.UUID | None]:
+    """The member a desk QR signs in, once; and who showed it to them."""
+    gone = AppError(
+        401,
+        "sign_in_link_gone",
+        "This QR has expired or been used. Ask the desk for a new one.",
+    )
+    link = db.scalars(
+        select(MemberSignInLink)
+        .where(
+            MemberSignInLink.gym_id == gym.id,
+            MemberSignInLink.token_hash == _link_hash(token.strip()),
+        )
+        .with_for_update()
+    ).first()
+    if link is None or link.used_at is not None or link.expires_at <= utcnow():
+        raise gone
+    member = db.get(Member, link.member_id)
+    # Access turned off, archived or erased since the QR was made.
+    if member is None or not can_sign_in(member):
+        raise gone
+    link.used_at = utcnow()
+    return member, link.created_by
 
 
 # --- sessions ---------------------------------------------------------------------

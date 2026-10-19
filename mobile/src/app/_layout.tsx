@@ -51,6 +51,10 @@ function Navigator({ fontsReady }: { fontsReady: boolean }) {
         </Stack.Protected>
         <Stack.Protected guard={Boolean(gym) && !signedIn}>
           <Stack.Screen name="sign-in" />
+          <Stack.Screen
+            name="scan-desk"
+            options={{ presentation: "fullScreenModal" }}
+          />
           <Stack.Screen name="join" />
         </Stack.Protected>
         <Stack.Protected guard={Boolean(gym) && signedIn}>

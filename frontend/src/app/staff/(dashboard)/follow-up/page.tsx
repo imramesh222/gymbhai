@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { SendSms } from "@/components/member/SendSms";
+import { WhatsAppButton } from "@/components/member/WhatsApp";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Money } from "@/components/ui/Money";
@@ -12,7 +13,12 @@ import { PageSkeleton } from "@/components/ui/Skeleton";
 import { Tabs, useTab, type Tab } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import { t, type MessageKey } from "@/i18n";
-import { messagesApi, type FollowUpLists, type Member } from "@/lib/api";
+import {
+  messagesApi,
+  type FollowUpLists,
+  type Member,
+  type MessagePurpose,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { daysBetween, todayInNepal } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
@@ -36,10 +42,13 @@ function lastVisit(member: Member): string {
 function Row({
   member,
   reminder,
+  purpose,
   onMessage,
 }: {
   member: Member;
   reminder: boolean;
+  /** What a WhatsApp message to them says (§18.5). */
+  purpose: MessagePurpose;
   onMessage: (member: Member, reminder: boolean) => void;
 }) {
   const { can } = useAuth();
@@ -70,6 +79,7 @@ function Row({
           <Phone className="size-4" aria-hidden />
           {t("followUp.call")}
         </a>
+        <WhatsAppButton memberId={member.id} purpose={purpose} className={button} />
         {can("messages.sms") && (
           <button
             type="button"
@@ -89,12 +99,14 @@ function Section({
   title,
   members,
   reminder,
+  purpose,
   onMessage,
   more,
 }: {
   title?: string;
   members: Member[];
   reminder: boolean;
+  purpose: MessagePurpose;
   onMessage: (member: Member, reminder: boolean) => void;
   /** Shown under a list that was cut short. */
   more?: React.ReactNode;
@@ -106,7 +118,13 @@ function Section({
       ) : (
         <ul className="divide-y divide-hairline">
           {members.map((m) => (
-            <Row key={m.id} member={m} reminder={reminder} onMessage={onMessage} />
+            <Row
+              key={m.id}
+              member={m}
+              reminder={reminder}
+              purpose={purpose}
+              onMessage={onMessage}
+            />
           ))}
         </ul>
       )}
@@ -145,23 +163,33 @@ function Panel({
           title={`${t("followUp.today")} (${data.due_today.length})`}
           members={data.due_today}
           reminder
+          purpose="reminder"
           onMessage={onMessage}
         />
         <Section
           title={`${t("followUp.week")} (${data.due_this_week.length})`}
           members={data.due_this_week}
           reminder
+          purpose="reminder"
           onMessage={onMessage}
         />
       </div>
     );
   if (tab === "lapsed")
-    return <Section members={data.lapsed} reminder onMessage={onMessage} />;
+    return (
+      <Section
+        members={data.lapsed}
+        reminder
+        purpose="reminder"
+        onMessage={onMessage}
+      />
+    );
   if (tab === "owing")
     return (
       <Section
         members={data.owing}
         reminder={false}
+        purpose="dues"
         onMessage={onMessage}
         more={cut(data.owing.length, data.owing_total, "dues")}
       />
@@ -182,6 +210,7 @@ function Panel({
       <Section
         members={data.not_visiting}
         reminder={false}
+        purpose="not_visiting"
         onMessage={onMessage}
         more={cut(data.not_visiting.length, data.not_visiting_total, "not_visiting")}
       />

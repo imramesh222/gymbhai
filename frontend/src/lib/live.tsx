@@ -19,6 +19,7 @@ export type LiveType =
   | "freeze_request"
   | "lead"
   | "expense"
+  | "pt"
   | "member"
   | "notice"
   | "staff";

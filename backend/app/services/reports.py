@@ -46,11 +46,7 @@ def money_between(
         Payment.paid_at < end,
     ]
     if branches is not None:
-        conditions.append(
-            Payment.membership_id.in_(
-                select(Membership.id).where(Membership.branch_id.in_(branches))
-            )
-        )
+        conditions.append(ms.payments_in_branches(branches))
     by_method = dict(
         db.execute(
             select(Payment.method, func.sum(signed))

@@ -9,7 +9,7 @@ from app.core.time import utcnow
 from app.models.idempotency import IdempotencyKey
 from app.models.job import Job
 from app.models.lead import Lead
-from app.models.member_app import MemberSession, OtpCode
+from app.models.member_app import MemberSession, MemberSignInLink, OtpCode
 from app.models.staff import LoginAttempt, StaffPasswordReset, StaffSession
 from app.services import owner_messages, reminders
 from app.services.push import service as push
@@ -38,8 +38,9 @@ def cleanup(db: Session, payload: dict) -> None:
     codes, old sign-in tries and idempotency keys, dead sessions."""
     now = utcnow()
     db.execute(delete(Job).where(Job.done_at < now - dt.timedelta(days=30)))
-    # Kept a day past expiry: the rate limits count recent codes.
-    for code in (OtpCode, StaffPasswordReset):
+    # Kept a day past expiry: the rate limits count recent codes. (Desk QRs
+    # have no limits to count, but a day leaves who-used-what for a question.)
+    for code in (OtpCode, StaffPasswordReset, MemberSignInLink):
         db.execute(delete(code).where(code.expires_at < now - dt.timedelta(days=1)))
     db.execute(delete(LoginAttempt).where(LoginAttempt.at < now - dt.timedelta(days=1)))
     # A repeat of a money request comes within minutes, not days.

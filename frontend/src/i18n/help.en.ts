@@ -75,4 +75,15 @@ export const guides: Guide[] = [
       "Messages → Automations sends reminders for you every morning at 9.",
     ],
   },
+  {
+    id: "personal-training",
+    title: "Sell personal training and record sessions",
+    steps: [
+      "Settings › Personal training: add your PT plans, monthly or a pack of sessions, with their prices.",
+      "Staff › the trainer's account: tick “Train members”, or start from Trainer.",
+      "Open the member, then Personal training › Sell personal training. Choose the plan and trainer, and take the payment.",
+      "After each session the trainer opens Personal training › My clients and presses Record session.",
+    ],
+    tip: "Its money is its own: a membership's dues never include it, and its payments get their own receipts.",
+  },
 ];

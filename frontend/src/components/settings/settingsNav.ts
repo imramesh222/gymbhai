@@ -16,6 +16,11 @@ export const SETTINGS_PAGES: SettingsPage[] = [
     anyOf: ["setup.plans"],
   },
   {
+    href: "/staff/settings/personal-training",
+    label: "settings.nav.pt",
+    anyOf: ["setup.plans"],
+  },
+  {
     href: "/staff/settings/payment-accounts",
     label: "settings.nav.payments",
     anyOf: ["setup.payment_methods"],

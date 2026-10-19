@@ -159,18 +159,21 @@ def after_sale(
     )
 
 
-def welcome(db: Session, gym: Gym, member: Member, staff_id: uuid.UUID | None) -> None:
-    """For a member added without a membership, or "Resend welcome" (§5.5)."""
-    state = members_service.state(db, member)
-    body = render(
-        gym.config.welcome_sms,
-        values_for(gym, member, state.current, state.valid_until),
-    )
+def welcome_text(gym: Gym, member: Member, state: members_service.MemberState) -> str:
     if not state.current:
-        body = render(
+        return render(
             sms_defaults.WELCOME_NO_PLAN[gym.config.language],
             values_for(gym, member, None, None),
         )
+    return render(
+        gym.config.welcome_sms,
+        values_for(gym, member, state.current, state.valid_until),
+    )
+
+
+def welcome(db: Session, gym: Gym, member: Member, staff_id: uuid.UUID | None) -> None:
+    """For a member added without a membership, or "Resend welcome" (§5.5)."""
+    body = welcome_text(gym, member, members_service.state(db, member))
     sms.queue(
         db,
         gym_id=gym.id,
@@ -199,6 +202,43 @@ def reminder_text(db: Session, gym: Gym, member: Member) -> str:
         offset = (today_in_nepal() - end).days
         template = min(rules, key=lambda r: abs(_offset(r) - offset)).template
     return render(template, values_for(gym, member, state.current, end))
+
+
+# Messages staff send from their own phone, on WhatsApp (§18.5).
+MESSAGE_PURPOSES = ("reminder", "dues", "not_visiting", "welcome")
+
+
+def message_text(db: Session, gym: Gym, member: Member, purpose: str) -> str:
+    """The gym's own wording, as its SMS or automation would say it now."""
+    if purpose == "reminder":
+        return reminder_text(db, gym, member)
+    state = members_service.state(db, member)
+    if purpose == "welcome":
+        return welcome_text(gym, member, state)
+    trigger = TRIGGER_DUES if purpose == "dues" else TRIGGER_NOT_VISITING
+    rule = db.scalars(
+        select(ReminderRule)
+        .where(ReminderRule.gym_id == gym.id, ReminderRule.trigger == trigger)
+        .order_by(ReminderRule.days)
+    ).first()
+    template = (
+        rule.template
+        if rule
+        else next(
+            text
+            for kind, _, text, _ in sms_defaults.RULES[gym.config.language]
+            if kind == trigger
+        )
+    )
+    if purpose == "dues":
+        extra = {"amount": rupees(state.dues)}
+    else:
+        last = members_service.last_visits(db, [member.id]).get(member.id)
+        since = (last or member.created_at).astimezone(NEPAL).date()
+        extra = {"days": (today_in_nepal() - since).days}
+    return render(
+        template, values_for(gym, member, state.current, state.valid_until, **extra)
+    )
 
 
 # --- the daily run ------------------------------------------------------------------

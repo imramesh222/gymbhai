@@ -37,6 +37,8 @@ PUBLIC = {
     ("GET", "/api/v1/m/{slug}/logo"),
     ("POST", "/api/v1/m/{slug}/otp/request"),
     ("POST", "/api/v1/m/{slug}/otp/verify"),
+    # The one-time QR staff showed at the desk is the proof (§18.4).
+    ("POST", "/api/v1/m/{slug}/desk-sign-in"),
     # The join form, while the gym has it on (§16.4, 9.5).
     ("GET", "/api/v1/m/{slug}/join"),
     ("POST", "/api/v1/m/{slug}/join"),

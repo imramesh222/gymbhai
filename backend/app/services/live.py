@@ -5,6 +5,8 @@
 * Staff approve or reject it         -> the member's app, other approvers
 * A sale, payment, freeze, edit, ... -> the member's page and their app
 * An expense recorded or voided      -> the Expenses screen
+* Personal training sold, a session  -> the Personal training screen (and,
+  recorded, a payment                   as a member change, their page and app)
 * A staff account or the gym's sign-in -> every staff screen re-reads who is
   rules change                           signed in; the Staff page reloads
 
@@ -54,6 +56,9 @@ FREEZE_REQUEST = "freeze_request"
 LEAD = "lead"
 # An expense recorded, edited or voided (§18.1). No branch: the whole gym's.
 EXPENSE = "expense"
+# Personal training sold or changed, a session recorded or voided, or money
+# taken for it (§18.3).
+PT = "pt"
 MEMBER = "member"
 # A staff account (permissions, disabled, two-step sign-in, devices) or the
 # gym's rules for signing in changed. Carries nothing but the gym: each screen
@@ -118,6 +123,7 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
     freezes = ctx.can(Permission.MEMBERSHIPS_FREEZE)
     leads = ctx.can(Permission.LEADS_MANAGE)
     money = ctx.can(Permission.REPORTS_MONEY)
+    training = ctx.can(Permission.PT_TRAIN) or ctx.can(Permission.PT_SELL)
 
     def accepts(event: Event) -> bool:
         if event.get("gym") != gym:
@@ -132,6 +138,8 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
             return leads and (branches is None or event.get("branch") in branches)
         if event["type"] == EXPENSE:
             return money and (branches is None or event.get("branch") in branches)
+        if event["type"] == PT:
+            return training and (branches is None or event.get("branch") in branches)
         if event["type"] in (CHECK_IN, MEMBER):
             return sees_members and (
                 branches is None or event.get("branch") in branches
