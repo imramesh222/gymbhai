@@ -62,6 +62,7 @@ There are no fixed roles. The owner creates each staff account — name, phone o
 | Enquiries | Enquiries: add, follow up, convert (§16.4, 9.1; in the *Front desk* starting point) |
 | Memberships | Sell and renew · Edit dates, price, discount and plan · Extend days · **Extend everyone** · Freeze · Cancel · Delete |
 | Money | Collect payments · **Approve app payments** · Edit payments · Void payments · Record refunds · See money totals and reports |
+| Expenses | Record expenses · Edit and void expenses (§18.1) |
 | Door | Check members in · Let someone in despite an expired membership |
 | Messages | Send notices · Send SMS to a member |
 | Gym setup | Plans and prices · Payment methods · Reminder rules · Check-in rules · Devices · Gym settings |
@@ -340,6 +341,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `memberships` | `gym_id`, `member_id`, `plan_id`, `plan_name` (copied at sale, like the price), `branch_id`, `start_date`, `end_date`, `price`, `discount`, `admission_fee`, `cancelled_at`, `cancel_reason`, `created_by`, `source` (desk, app_request, import); `visit_limit` and `access_hours` copied from the plan at sale. A visit pack with every visit used counts as ended, from the let-in check-ins on it |
 | `membership_freezes` | `gym_id`, `membership_id`, `from_date`, `to_date` (inclusive), `reason` — extends `end_date` by the frozen days; ending a freeze early gives the unused days back |
 | `payments` | `gym_id`, `member_id`, `membership_id`, `kind` (payment, refund), `amount`, `method` (cash, esewa, khalti, fonepay, bank), `transaction_ref` (unique per gym when set), `paid_at`, `receipt_no` (sequential per gym), `received_by`, `note`, `voided_at`, `voided_by`, `void_reason` — a payment can't exceed what is owed on its membership, nor a refund what was paid |
+| `expenses` | `gym_id`, `branch_id` (null = the whole gym), `category` (rent, salaries, electricity, water, internet, equipment, repairs, cleaning, marketing, fees, other), `amount`, `spent_on` (a Nepal day, not after today), `method` (as payments), `paid_to`, `note`, `created_by`, `voided_at`, `voided_by`, `void_reason` — money the gym spent; never deleted, only voided (§18.1) |
 | `gym_payment_methods` | `gym_id`, `kind` (esewa, khalti, fonepay, bank, other), `label`, `account_name`, `account_number`, `qr_image_key`, `is_active`, `sort_order` — the gym's own accounts, shown to members |
 | `payment_requests` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `membership_id`, `payment_id` — a member's "I've paid" from the app (§5.4) |
 | `freeze_requests` | `gym_id`, `member_id`, `membership_id` (the one covering the first day), `from_date`, `to_date`, `reason`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `freeze_id` (the freeze approving it made) — one pending per member; the app allows up to 90 days, longer at the desk |
@@ -416,15 +418,16 @@ Staff screens are light and dense — read all day in a bright room, with white 
 | **Payment requests** | Members' app payments waiting for approval: amount, transaction ID, screenshot. **Approve** / **Reject** (§5.4). Red count in the menu |
 | **Freeze requests** | Members asking from the app to pause their membership (dates, reason), for staff with **Freeze**, with a count in the menu. **Approve** makes an ordinary freeze (the end date moves by those days); **Reject** with a reason the member sees. Pending / approved / rejected |
 | **Payments** | All payments, filter by date, method, staff; daily cash total for closing the till; edit or void (§5.6) |
+| **Expenses** | A month of the gym's own calendar: spent, and spent by category; every expense (date, category, paid to, method, branch, who recorded it); **Add expense**, and on each one Edit, *Same again* (the form filled in, dated today) and Void (§18.1) |
 | **Membership edit** | Every field in §5.6, plus **Extend everyone**, and a **History** tab showing each change, who made it, before and after |
 | **Attendance** | Last 7, 30 or 90 days; check-ins by day as bars; a weekday × hour heatmap of the busiest hours; denied scans |
-| **Reports** | Monthly: income by method, new members, renewals, lapsed, active count, renewal rate — each against the month before. Charts of the last 12 months: income, active members, new vs lapsed, renewal rate. Prints |
+| **Reports** | Monthly: income, **spent** and **profit** (income − spent), income by method, spent by category, new members, renewals, lapsed, active count, renewal rate — each against the month before. Charts of the last 12 months: money in and out, active members, new vs lapsed, renewal rate. Prints |
 | **Notices** | Write a notice, choose branches. Every notice goes as a free notification to members who turned notifications on; optionally also by SMS to the rest (shows SMS cost first). Decided 2026-10-18: push used to wait for the SMS tick |
 | **Automations** | Messages → Automations: one card per trigger (before/on the day it ends · win back · money still owed · not visiting · birthday), each rule with an on/off tick, its days, its wording and SMS count; added ones start off. Also the desk SMS wording (welcome, membership sold). Was *Settings → Reminders*, which redirects |
 | **Staff** | Staff accounts: add, disable, reset password; permission checklist and branch access per person, with *Manager* / *Front desk* / *Blank* starting points |
 | **Subscription** | Their plan with us, days left, pay and submit transaction ID, SMS credit balance and top-up |
 | **Settings** | One page each, with a menu: gym profile and calendar (warns before leaving with unsaved changes), plans and prices, payment accounts and QR images, branches, check-in rules (including "not visiting" days), door scanners and the QR poster, security (owner). Plans can be visit packs (*Visits allowed*) and off-peak (*Only at certain hours*: days and times). Settings → Gym has *Let people ask to join from the gym QR* (off by default) |
-| **Import / Export** | Upload an Excel/CSV register, map columns, preview, import members with their current expiry dates. Download members, memberships, payments and check-ins as Excel. Dates in a register may be AD or BS (a year of 2050 or more is read as BS). Imported memberships carry no price — what members paid before GymBhai isn't income in GymBhai — and no SMS is sent until the gym chooses "Resend welcome" |
+| **Import / Export** | Upload an Excel/CSV register, map columns, preview, import members with their current expiry dates. Download members, memberships, payments, expenses and check-ins as Excel. Dates in a register may be AD or BS (a year of 2050 or more is read as BS). Imported memberships carry no price — what members paid before GymBhai isn't income in GymBhai — and no SMS is sent until the gym chooses "Resend welcome" |
 
 ### Member app (`/<gym-slug>`)
 
@@ -456,7 +459,7 @@ Staff side: **Help and guides** (WhatsApp / Viber to `SUPPORT_WHATSAPP`, and sho
 
 ## 8. API outline
 
-All under `/api/v1`. Staff routes take the gym from the token. The money routes — add member with a sale, sell or renew, collect, refund, approve an app payment, pay us — take an `Idempotency-Key` header (§11).
+All under `/api/v1`. Staff routes take the gym from the token. The money routes — add member with a sale, sell or renew, collect, refund, approve an app payment, record an expense, pay us — take an `Idempotency-Key` header (§11).
 
 ```
 Auth
@@ -492,7 +495,7 @@ Members
   POST       /members/{id}/erase      at their request, for good (owner only)
   POST       /members/import          upload → preview
   POST       /members/import/{id}/commit
-  GET        /export/{members|memberships|payments|check-ins}.xlsx
+  GET        /export/{members|memberships|payments|expenses|check-ins}.xlsx
 
 Our subscription
   GET   /subscription                plan, days left, SMS balance
@@ -520,6 +523,10 @@ Memberships & money
   POST  /payments/{id}/receipt-link   a signed link to the PDF, 30 days (§16.3, 8.4)
   POST  /m/me/payments/{id}/receipt-link   the member's own
   GET   /receipts/{id}.pdf?exp=&sig=  public: the signature is the permission
+  GET   /expenses?month=&category=    a month of the gym's calendar, with totals (§18.1)
+  POST  /expenses
+  PATCH /expenses/{id}
+  POST  /expenses/{id}/void
 
 Check-in
   POST  /check-ins/scan               from kiosk (device token) or staff
@@ -649,6 +656,9 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | **M10** | Our business | Admin numbers and gym health, onboarding nudges, support link, what's new, gym referrals (§16.5) | 1 week | We see which gyms will pay and which will leave |
 | **M11** | Nepali | Nepali for the staff dashboard, member app and SMS (§16.6) | 1 week + translation | Gyms and members can work in Nepali |
 | **M12** | Member phone app | Expo / React Native app for members on Android and iPhone: live updates over WebSocket, no double taps, offline QR, native notifications; shared code with the web app (§17) | 3 weeks | Members install a real app; published to the stores afterwards |
+| **M13** | Expenses | What the gym spends, by category; spent and profit on Reports; export (§18.1) | 2–3 days | Owners see profit, not only income |
+| **M14** | Door readers | Fingerprint and face readers, ZKTeco / eSSL or Hikvision, chosen per reader: members added to the reader and removed from it as memberships start and end; its scans become check-ins (§18.2) | ~2 weeks per brand + a reader of each to test with | Expired members stopped at a door that unlocks by itself |
+| **M15** | Personal training | Monthly PT and packs of sessions, trainers' own screens (§18.3) | ~2 weeks | PT sold and tracked at the desk |
 
 **Progress**
 
@@ -667,6 +677,9 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M10 | Done 2026-10-17: the /admin numbers and each gym's health and setup, setup nudges by SMS on trial days 3 and 10, Help (WhatsApp / Viber and guides), What's new with an unread dot, and gym referrals with a free month each. Before launch: `SUPPORT_WHATSAPP` in `.env.prod` |
 | M11 | Done 2026-10-17, **waiting on a native speaker's review**: `ne.json` with every string (a test keeps its keys and {placeholders} in step with `en.json`) and Nepali help guides; a language for each staff account and each member, the gym's as the default, chosen at sign-up and in Settings → Gym; English / नेपाली on every sign-in screen, kept in a cookie; Noto Sans Devanagari through `next/font`; Nepali month names, रु, and Nepali or Western digits (a gym setting); SMS wording seeded in the gym's language, and wording the gym never edited follows a change of language. The server renders English and the browser renders Nepali, so one request's language never leaks into another's. The legal pages and the receipt PDF stay English until a lawyer and the review sign them off |
 | M12 | Done (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019). 12.3–12.8 done 2026-10-18 — `mobile/` (Expo SDK 58): every screen of 17.5 but *signed-in devices*, checked on the iPhone simulator and an Android emulator: the QR it draws passes the door's check, offline too; three taps on *I've paid* made one request; a notice and an approval arrived with no tap; Nepali throughout. Jest covers double taps, the socket, the API client and links. Push needs `EAS_PROJECT_ID` (mobile/README.md) and is untested until then. 12.9 done 2026-10-18 — 34 Jest tests, a lint rule that refuses API calls from a control without `useAction`, eight Maestro flows (`mobile/e2e/`, `make e2e-mobile`, on a fresh gym from `make seed-app`) passing on the iPhone simulator in Expo Go and on the Android emulator with the `.apk`, `make apk` (60 MB, 64- and 32-bit ARM, debug-signed, built on the Mac), the GymBhai icon, and `docs/MOBILE.md`: running, tests, sending the `.apk` to Android testers, and Expo Go for iPhone testers. Push set up 2026-10-18 (Expo project `@mero-gym/mero-gym`, Firebase `gymbhai-69df8`, FCM V1 key in Expo) and working end to end on the Play Store emulator: *Turn on*, a notice from the desk arrives as a notification, tapping it opens Notices. **Waiting on:** a real Android phone, real testers; iPhone push at publishing |
+| M13 | Done 2026-10-19, on the branch `rameshdev`: expenses by category in the gym's own months, with *Same again* and void with a reason; spent, profit and spent by category on Reports, and money in and out on its chart; `expenses.xlsx`; *Add an expense* in search; *Record expenses* and *Edit and void expenses* in an *Expenses* area of the staff form; an `expense` live event and a query-count test. Also fixed: the staff form never showed the *Enquiries* permission (its area was missing from the form's list); it now shows any area it doesn't know, at the end |
+| M14 | Waiting on the pilot gyms' reader models and one reader of each brand to test with (§18.2) |
+| M15 | Planned (§18.3) |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -690,13 +703,13 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 
 ## 14. After v1
 
-The next milestones, M6–M11, are planned in §16 (self-service freeze requests and Nepali moved there). After them, in rough order, driven by what pilot gyms ask for and will pay for:
+The next milestones, M6–M11, are planned in §16 (self-service freeze requests and Nepali moved there); M13–M15, from what the pilot gyms asked for, in §18. After them, in rough order, driven by what pilot gyms ask for and will pay for:
 
-1. Fingerprint and face readers at the door, including turnstiles and door locks (§4.3) — many Nepali gyms already own a ZKTeco reader, so for some this decides whether they buy
+1. Fingerprint and face readers at the door, including turnstiles and door locks (§4.3) — many Nepali gyms already own a ZKTeco reader, so for some this decides whether they buy. **Now M14 (§18.2)**
 2. Automatic payment verification — Fonepay dynamic QR / eSewa merchant APIs confirm an app payment so it activates without staff approval; needs each gym's merchant account
-3. Personal training packages and sessions, with trainer permissions and screens — assigned members, workout and diet plans
-4. Supplement / merchandise sales at the desk
-5. Expenses (rent, salaries, electricity) so the owner sees profit, not only income
+3. Personal training packages and sessions, with trainer permissions and screens — assigned members, workout and diet plans. **Now M15 (§18.3)**
+4. Supplement / merchandise sales at the desk — not asked for by the pilot gyms (§18)
+5. Expenses (rent, salaries, electricity) so the owner sees profit, not only income. **Now M13 (§18.1)**
 6. Family and couple plans — one sale covering several linked members; needs its own design, because dues and status are per membership today
 7. Class schedule and booking
 8. Offline kiosk — queue scans and sync when the internet returns
@@ -716,7 +729,7 @@ All of these can be changed later.
 | **Name and domain** | **GymBhai**, `gymbhai.com` | Used in every URL, the member app and the code. Register the domain (and the Facebook / Instagram names) soon — it was free on 2026-09-19 |
 | **SMS gateway** | Later | Built ready: one SMS interface, `console` provider for development, Sparrow and Aakash adapters ready. Until one is chosen, members sign in with `MASTER_OTP` (§11). Choosing one is an environment setting plus the account's API key. The adapters follow the gateways' published APIs but have not been run against a live account: `python -m scripts.sms_check` reads the account's credit balance before anything is sent (docs/DEPLOY.md §5). Sparrow (checked against docs.sparrowsms.com on 2026-09-20) also whitelists the caller's IP address and queues without giving a message id, so there is no delivery report to record |
 | **Pricing** | Later | Plans with us are rows edited in `/admin`, never hard-coded; the trial works without any price set |
-| **Door hardware** | Later — maybe fingerprint or face | v1 ships QR (kiosk, staff phone, USB scanner, manual). The check-in service accepts other sources, so fingerprint / face readers plug in later (§4.3) |
+| **Door hardware** | Fingerprint and face readers: ZKTeco / eSSL and Hikvision, the brand chosen for each reader (§18.2, M14) | v1 ships QR (kiosk, staff phone, USB scanner, manual). The check-in service accepts other sources, so fingerprint / face readers plug in without changing it (§4.3) |
 | **Language** | English only at launch | All text in translation files so Nepali can be added later without redoing screens |
 | **Calendar** | Each gym chooses | AD or BS for counting plans; AD, BS or both for showing dates (§5.1) |
 | **Staff** | Owner decides per person | Staff accounts with ticked permissions and branches, including approving app payments (§2.1) |
@@ -994,3 +1007,67 @@ Accessibility: every control labelled for screen readers, touch targets at least
 | `push_subscriptions.kind`, `push_subscriptions.expo_token` (and `endpoint`, `p256dh`, `auth` nullable) | 12.2 |
 | `idempotency_keys` keyed by member as well as staff | 12.2 |
 | `member_sessions.client` (web, app) | 12.2 |
+
+---
+
+## 18. Next: what the pilot gyms asked for (M13–M15)
+
+*Asked 2026-10-19.*
+
+| Question | Answer |
+|---|---|
+| Door readers | Fingerprint and face readers on the door, which unlock it. Some gyms have **ZKTeco or eSSL** (eSSL readers are made by ZKTeco), some **Hikvision**: each gym chooses its brand (18.2) |
+| Personal training | Some members ask for a trainer. Gyms charge **both** ways: a monthly fee, and packs of sessions |
+| Trainers' pay | A **fixed salary**: an expense (18.1), with no commission to work out |
+| Expenses | Some gyms want to track them |
+| Supplements | Not asked for: they stay on the later list (§14) |
+
+**Order.** M13, expenses, first: it is small and nothing blocks it. M14, the door readers, as soon as we know the pilot gyms' models and have a reader of each brand to test with: for a gym whose door opens by fingerprint or face, it is what stops an expired member walking in. M15, personal training, after that. The small pilot helpers (signing in at the desk with a QR, WhatsApp buttons, notifications for staff, a demo gym) fit in between.
+
+v1's rules apply to every step, as in §16: the gym from the token and a cross-gym 404 test for every new route, one specific permission per endpoint with a 403 test, money in paisa, every change in `activity_log`, every string in `en.json` and `ne.json`, a live event and a query-count test for each new list.
+
+### 18.1 M13 — Expenses
+
+What the gym spends — rent, salaries, bills — recorded at the desk, so Reports shows profit, not only income.
+
+| | |
+|---|---|
+| Table | `expenses` (§6). Like payments, never deleted: a mistake is voided with a reason, and every edit goes to `activity_log` with before and after |
+| Categories | Fixed, so they translate and add up the same way in every gym: rent · salaries · electricity · water · internet and phone · equipment · repairs · cleaning and supplies · marketing · taxes and fees · other. A trainer's salary is *salaries*, with their name in *paid to* |
+| Permissions | **Record expenses** (`expenses.record`) and **Edit and void expenses** (`expenses.edit`), an *Expenses* area of their own; both in the *Manager* starting point, neither in *Front desk*. The list and its totals need **See money totals and reports**, as Payments does, because salaries are in it: someone who may only record sees the form, not the list |
+| Branches | An expense is for one branch, or (null) the whole gym. Staff limited to some branches record for one of theirs and see only theirs; whole-gym expenses are for those who work at every branch |
+| Date | `spent_on`, a Nepal day, today unless changed, never after today; entered in AD or BS like every date |
+| Screen | **Money and numbers → Expenses**: a month of the gym's own calendar (BS months for a gym showing BS, as Reports), spent this month and by category, then every expense: date, category, paid to, method, branch, who recorded it. **Add expense**; on each one *Edit*, *Same again* (the form filled in from it, dated today: rent and salaries come every month) and *Void* with a reason. *Add an expense* is also in search (Ctrl/⌘K) |
+| Reports | Monthly: **Spent**, **Profit** (income − spent), spent by category, each against the month before. The income chart becomes money in and out by month |
+| Export | `expenses.xlsx` on Import / export, with the same permission as payments |
+| API | `GET /expenses?month=&category=` (the month's expenses, the total and by category) · `POST /expenses`, with an `Idempotency-Key` (a double tap must not record the rent twice) · `PATCH /expenses/{id}` · `POST /expenses/{id}/void` |
+| Live | An `expense` event, heard by staff who see money at that branch; the Expenses screen reloads |
+| Later | A photo of the bill; expenses that repeat by themselves; a till total that takes off cash paid out |
+
+### 18.2 M14 — Door readers: ZKTeco / eSSL and Hikvision
+
+Pilot gyms have both brands. **The brand is chosen for each reader**: when the gym adds one in Settings → Door scanners, it picks *ZKTeco / eSSL* or *Hikvision* and the branch it is at, so a gym with two branches can have one of each. Behind the choice is one reader interface with an adapter per brand, the way SMS has one interface and an adapter per gateway (§3): the door rules, Attendance and the member's visits never know which brand it was.
+
+Whatever the brand:
+
+- Fingerprints and faces stay on the reader; GymBhai stores only which reader user is which member (§4.3). A member enrols at the reader itself, once.
+- GymBhai adds a member to the reader when a membership starts or is renewed, and takes them off when it ends or is frozen. The reader then refuses an expired member by itself, and keeps working when the internet drops.
+- Each scan the reader reports becomes a check-in through the same service as a QR scan (method `fingerprint` or `face`), under the same rules.
+
+| | ZKTeco / eSSL | Hikvision |
+|---|---|---|
+| Talking to GymBhai | Models with **ADMS** (*Cloud server setting* in the Comm menu) send each scan to GymBhai over HTTP and collect commands from it: nothing else needed at the gym | Readers are managed through **ISAPI** on the gym's own network, which GymBhai can't reach from the internet: a small bridge at the gym (a PC or a Raspberry Pi) passes commands on. The reader can send its scans out to GymBhai by itself. Hikvision's **ISUP**, where the reader connects out to us, would avoid the bridge but is more work |
+| Older models | Those that only speak the local-network protocol need the same bridge | — |
+| An expired member | Taken off the reader when the membership ends | Each user on the reader can carry an end date, so it refuses them from that day even before GymBhai catches up |
+
+The details of each protocol are confirmed on a real reader before a gym relies on it. First step: each pilot gym's brand and model (the label on the back, or Menu → System Info) and whether the reader is connected to the internet; then one reader of each brand to build and test with.
+
+### 18.3 M15 — Personal training
+
+Designed after M14. What is known now: PT is sold both as a monthly fee and as packs of sessions; trainers are on a salary (an expense, 18.1), so there is no commission; a trainer is a staff account with the permissions the owner ticks (§2.1) and sees their own clients.
+
+### 18.4 What the data model gains
+
+| Table / column | Step |
+|---|---|
+| `expenses` | M13 |

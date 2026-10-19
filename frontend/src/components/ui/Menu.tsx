@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -24,10 +24,14 @@ export function Menu({
   items,
   label = t("common.more"),
   align = "right",
+  compact = false,
 }: {
   items: MenuItem[];
   label?: string;
   align?: "left" | "right";
+  /** In a list row: "⋯", named by `label` for screen readers, leaving the
+   * row's text the room a labelled button would take on a phone. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -78,11 +82,22 @@ export function Menu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={id}
+        aria-label={compact ? label : undefined}
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-card ring-1 ring-hairline transition hover:bg-slate-50"
+        className={
+          compact
+            ? "inline-flex size-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            : "inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-card ring-1 ring-hairline transition hover:bg-slate-50"
+        }
       >
-        {label}
-        <ChevronDown className="size-4 text-slate-500" aria-hidden />
+        {compact ? (
+          <MoreHorizontal className="size-5" aria-hidden />
+        ) : (
+          <>
+            {label}
+            <ChevronDown className="size-4 text-slate-500" aria-hidden />
+          </>
+        )}
       </button>
       {open && (
         <div

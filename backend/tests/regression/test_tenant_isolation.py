@@ -15,7 +15,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.time import utcnow
+from app.core.time import today_in_nepal, utcnow
+from app.models.expense import Expense
 from app.models.gym import Gym
 from app.models.lead import Lead
 from app.models.member_app import Device, FreezeRequest, PaymentRequest
@@ -96,7 +97,15 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
         phone="9819999990",
         source="walk_in",
     )
-    db.add_all([device, b_request, b_import, b_freeze_request, b_lead])
+    b_expense = Expense(
+        gym_id=gym_b.gym.id,
+        branch_id=gym_b.branch.id,
+        category="rent",
+        amount=30_000_00,
+        spent_on=today_in_nepal(),
+        method="bank",
+    )
+    db.add_all([device, b_request, b_import, b_freeze_request, b_lead, b_expense])
     db.commit()
     return World(
         ids={
@@ -116,6 +125,7 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
             "freeze_request_id": b_freeze_request.id,
             "lead_id": b_lead.id,
             "import_id": b_import.id,
+            "expense_id": b_expense.id,
         }
     )
 
@@ -162,6 +172,8 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PATCH", "/api/v1/payments/{payment_id}", {"note": "taken"}),
     ("POST", "/api/v1/payments/{payment_id}/void", {"reason": "taken over"}),
     ("GET", "/api/v1/payments/{payment_id}/receipt", None),
+    ("PATCH", "/api/v1/expenses/{expense_id}", {"amount": 1}),
+    ("POST", "/api/v1/expenses/{expense_id}/void", {"reason": "taken over"}),
     ("POST", "/api/v1/members/{member_id}/sms", {"body": "Hello"}),
     ("PATCH", "/api/v1/reminder-rules/{rule_id}", {"enabled": False}),
     ("DELETE", "/api/v1/reminder-rules/{rule_id}", None),
@@ -287,6 +299,9 @@ def test_nothing_of_gym_b_changed(
     assert (member.name, membership.end_date, membership.discount) == before
     assert membership.cancelled_at is None
     assert db.get(Payment, world_b.ids["payment_id"]).voided_at is None
+    expense = db.get(Expense, world_b.ids["expense_id"])
+    db.refresh(expense)
+    assert (expense.amount, expense.voided_at) == (30_000_00, None)
 
 
 def test_lists_only_show_your_own_gym(
@@ -299,6 +314,9 @@ def test_lists_only_show_your_own_gym(
     assert client.get("/api/v1/gym").json()["id"] == str(gym_a.gym.id)
     assert client.get("/api/v1/members").json()["total"] == 0
     assert client.get("/api/v1/payments").json()["total"] == 0
+    expenses = client.get("/api/v1/expenses").json()
+    assert (expenses["items"], expenses["sum_amount"]) == ([], 0)
+    assert client.get("/api/v1/reports/monthly").json()["expenses"] == 0
     assert client.get("/api/v1/payment-methods").json() == []
     assert client.get("/api/v1/notices").json() == []
     assert client.get("/api/v1/sms").json()["items"] == []

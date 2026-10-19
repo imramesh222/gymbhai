@@ -299,6 +299,42 @@ def test_freeze_requests(engine, client: TestClient, db: Session, gym_a) -> None
     same_cost(engine, client, "/api/v1/freeze-requests", add)
 
 
+def test_expenses(engine, client: TestClient, db: Session, gym_a, make_staff) -> None:
+    """Who recorded each one comes in one query, however many there are."""
+    from app.core.time import today_in_nepal
+    from app.models.expense import Expense
+
+    sign_in(db, client, gym_a.owner)
+
+    def add(n: int) -> None:
+        db.add(
+            Expense(
+                gym_id=gym_a.gym.id,
+                branch_id=gym_a.branch.id if n % 2 else None,
+                category="salaries",
+                amount=(n + 1) * 1000_00,
+                spent_on=today_in_nepal(),
+                method="cash",
+                paid_to=f"Trainer {n}",
+                created_by=make_staff(gym_a.gym).id,
+            )
+        )
+        db.commit()
+
+    add(90)
+
+    def get() -> list:
+        response = client.get("/api/v1/expenses")
+        assert response.status_code == 200, response.text
+        return response.json()["items"]
+
+    one = queries(engine, get)
+    for n in range(MORE):
+        add(n)
+    assert len(get()) == MORE + 1
+    assert queries(engine, get) == one
+
+
 def test_leads(engine, client: TestClient, db: Session, gym_a) -> None:
     from app.models.lead import Lead
 

@@ -11,6 +11,7 @@ import {
   Megaphone,
   MessageSquare,
   PauseCircle,
+  Receipt,
   ScanLine,
   Settings,
   Sparkles,
@@ -100,6 +101,13 @@ export const NAV: NavGroup[] = [
         label: "nav.payments",
         icon: Wallet,
         anyOf: ["reports.money"],
+      },
+      {
+        href: "/staff/expenses",
+        label: "nav.expenses",
+        icon: Receipt,
+        // Recording alone shows the form, not the list (§18.1).
+        anyOf: ["reports.money", "expenses.record"],
       },
       {
         href: "/staff/reports",

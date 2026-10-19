@@ -17,6 +17,7 @@ from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.core.time import NEPAL, today_in_nepal, utcnow
 from app.db.session import get_db
+from app.models.expense import Expense
 from app.models.gym import Branch, Gym
 from app.models.member import Member
 from app.models.member_app import REQUEST_PENDING, CheckIn, PaymentRequest
@@ -38,6 +39,7 @@ from app.schemas.reports import (
     TrendRead,
 )
 from app.services import activity, excel, live, reports
+from app.services import expenses as expenses_service
 from app.services import leads as leads_service
 from app.services import members as members_service
 from app.services import memberships as ms
@@ -131,7 +133,9 @@ def monthly(
     assert gym is not None
     calendar = "ad" if gym.config.date_display == "ad" else "bs"
     data = reports.monthly(db, ctx, month or reports.current_month(calendar))
-    return MonthlyRead(**{**data.__dict__, "renewal_rate": data.renewal_rate})
+    return MonthlyRead(
+        **{**data.__dict__, "renewal_rate": data.renewal_rate, "profit": data.profit}
+    )
 
 
 @router.get("/reports/trend", response_model=TrendRead)
@@ -158,6 +162,8 @@ def trend(
                 month=month,
                 started=data.last_day >= joined,
                 income=data.income,
+                expenses=data.expenses,
+                profit=data.profit,
                 new_members=data.new_members,
                 renewals=data.renewals,
                 lapsed=data.lapsed,
@@ -171,7 +177,9 @@ def trend(
 
 # --- export ------------------------------------------------------------------------
 
-EXPORTS = ("members", "memberships", "payments", "check-ins")
+EXPORTS = ("members", "memberships", "payments", "expenses", "check-ins")
+# Money in and out: for staff who may see money (reports.money).
+MONEY_EXPORTS = ("payments", "expenses")
 
 
 def _staff_names(db: Session, gym_id: uuid.UUID) -> dict[uuid.UUID, str]:
@@ -188,13 +196,15 @@ def _local(at: dt.datetime | None) -> str:
 
 @router.get("/export/{kind}.xlsx")
 def export(
-    kind: Annotated[str, Path(pattern="^(members|memberships|payments|check-ins)$")],
+    kind: Annotated[
+        str, Path(pattern="^(members|memberships|payments|expenses|check-ins)$")
+    ],
     request: Request,
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
 ) -> Response:
     """The gym's data as Excel, any time — even with a lapsed subscription."""
-    if kind == "payments" and not ctx.can(Permission.REPORTS_MONEY):
+    if kind in MONEY_EXPORTS and not ctx.can(Permission.REPORTS_MONEY):
         raise AppError(
             403,
             "permission_denied",
@@ -326,6 +336,32 @@ def export(
                 p.note,
             ]  # fmt: skip
             for p in rows_p
+        ]
+    elif kind == "expenses":
+        staff = _staff_names(db, gym.id)
+        rows_e = db.scalars(
+            expenses_service.visible(ctx).order_by(Expense.spent_on, Expense.created_at)
+        )
+        headers = [
+            *day_headers("Date"), "Category", "Amount (Rs)", "Method", "Paid to",
+            "Branch", "Note", "Recorded by", "Recorded at (Nepal time)", "Voided",
+            "Void reason",
+        ]  # fmt: skip
+        rows = [
+            [
+                *day(e.spent_on),
+                e.category,
+                excel.rupees(e.amount),
+                e.method,
+                e.paid_to,
+                branches.get(e.branch_id) if e.branch_id else "Whole gym",
+                e.note,
+                staff.get(e.created_by),
+                _local(e.created_at),
+                bool(e.voided_at),
+                e.void_reason,
+            ]  # fmt: skip
+            for e in rows_e
         ]
     else:
         staff = _staff_names(db, gym.id)

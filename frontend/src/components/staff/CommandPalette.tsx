@@ -1,6 +1,13 @@
 "use client";
 
-import { ScanLine, Search, UserPlus, Wallet, type LucideIcon } from "lucide-react";
+import {
+  Receipt,
+  ScanLine,
+  Search,
+  UserPlus,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -41,6 +48,13 @@ const ACTIONS: Action[] = [
     href: "/staff/payments",
     icon: Wallet,
     anyOf: ["reports.money"],
+  },
+  {
+    id: "expense",
+    label: "palette.addExpense",
+    href: "/staff/expenses?add=1",
+    icon: Receipt,
+    anyOf: ["expenses.record"],
   },
 ];
 

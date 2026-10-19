@@ -81,6 +81,21 @@ def test_staff_hear_only_their_branches() -> None:
     assert not accepts(event(live.MEMBER, branch=None))
 
 
+def test_expenses_are_heard_by_staff_who_see_money() -> None:
+    """Salaries are among them (PLAN.md §18.1): recording them isn't enough."""
+    owner = live.staff_filter(staff(Permission.REPORTS_MONEY))
+    assert owner(event(live.EXPENSE)) and owner(event(live.EXPENSE, branch=None))
+    recorder = live.staff_filter(
+        staff(Permission.MEMBERS_VIEW, Permission.EXPENSES_RECORD)
+    )
+    assert not recorder(event(live.EXPENSE))
+    one_branch = live.staff_filter(staff(Permission.REPORTS_MONEY, branches=[BRANCH]))
+    assert one_branch(event(live.EXPENSE))
+    assert not one_branch(event(live.EXPENSE, branch=OTHER_BRANCH))
+    # The whole gym's: for those who work at every branch.
+    assert not one_branch(event(live.EXPENSE, branch=None))
+
+
 def test_a_member_hears_only_about_themselves() -> None:
     accepts = live.member_filter(MEMBER)
     assert accepts(event(live.CHECK_IN))

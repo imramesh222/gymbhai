@@ -1,5 +1,6 @@
 from app.models.activity import ActivityLog
 from app.models.billing import GymSubscription, PlatformPlan
+from app.models.expense import Expense
 from app.models.gym import Branch, Gym
 from app.models.idempotency import IdempotencyKey
 from app.models.job import Job
@@ -46,6 +47,7 @@ __all__ = [
     "ChangelogEntry",
     "CheckIn",
     "Device",
+    "Expense",
     "FreezeRequest",
     "Gym",
     "GymCounter",

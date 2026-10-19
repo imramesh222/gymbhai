@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { areasOf } from "@/components/staff/permissionAreas";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Checkbox } from "@/components/ui/inputs";
@@ -23,16 +24,6 @@ import { useLoad } from "@/lib/useLoad";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 
-const AREAS = [
-  "members",
-  "memberships",
-  "payments",
-  "reports",
-  "door",
-  "messages",
-  "setup",
-  "staff",
-];
 const PRESETS = ["manager", "front_desk", "blank"];
 
 /** Staff accounts: the owner ticks exactly what each person may do (§2.1). */
@@ -202,7 +193,7 @@ function StaffDialog({
               </button>
             ))}
           </div>
-          {AREAS.map((area) => {
+          {areasOf(catalog).map((area) => {
             const keys = catalog.permissions.filter((p) => p.area === area);
             if (keys.length === 0) return null;
             return (

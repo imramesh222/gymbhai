@@ -10,7 +10,15 @@ import { errorMessage, reportsApi, type ImportPreview } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
-const EXPORTS = ["members", "memberships", "payments", "check-ins"] as const;
+const EXPORTS = [
+  "members",
+  "memberships",
+  "payments",
+  "expenses",
+  "check-ins",
+] as const;
+// Money in and out: for staff who may see money totals.
+const MONEY: readonly string[] = ["payments", "expenses"];
 const FIELDS = [
   "name",
   "phone",
@@ -50,7 +58,7 @@ export default function DataPage() {
       <Card title={t("data.export")}>
         <p className="mb-3 text-sm text-slate-600">{t("data.exportHelp")}</p>
         <div className="flex flex-wrap gap-2">
-          {EXPORTS.filter((kind) => kind !== "payments" || can("reports.money")).map(
+          {EXPORTS.filter((kind) => !MONEY.includes(kind) || can("reports.money")).map(
             (kind) => (
               <Button
                 key={kind}

@@ -1,35 +1,27 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { BarChart } from "@/components/charts/BarChart";
 import { LineChart } from "@/components/charts/LineChart";
 import { compactRupees } from "@/components/charts/scale";
+import { categoryLabel } from "@/components/money/ExpenseDialog";
 import { methodLabel } from "@/components/money/PaymentFields";
 import { Delta } from "@/components/today/Delta";
 import { Card, PageHeader, Stat } from "@/components/ui/Card";
 import { Money } from "@/components/ui/Money";
+import { MonthSwitcher } from "@/components/ui/MonthSwitcher";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 import { t } from "@/i18n";
 import { reportsApi, type TrendMonth } from "@/lib/api";
-import { adMonths, bsMonths, formatDate } from "@/lib/dates";
+import { formatDate } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { formatRs } from "@/lib/money";
+import { monthName } from "@/lib/months";
 import { useLoad } from "@/lib/useLoad";
-
-function shift(month: string, by: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const index = y * 12 + (m - 1) + by;
-  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
-}
-
-function monthName(month: string, calendar: "ad" | "bs", withYear = false): string {
-  const [year, number] = month.split("-").map(Number);
-  const name = (calendar === "bs" ? bsMonths() : adMonths())[number - 1];
-  return withYear ? `${name} ${year}` : name;
-}
 
 /**
  * Reports (PLAN.md §7, §16.2 7.9): one month's figures, each against the
@@ -54,6 +46,17 @@ export default function ReportsPage() {
     previous?.started && before !== undefined ? (
       <Delta now={now} before={before} period="lastMonth" goodWhenUp={goodWhenUp} />
     ) : undefined;
+  const vsRs = (now: number, before: number | undefined, goodWhenUp = true) =>
+    previous?.started && before !== undefined ? (
+      <Delta
+        now={now}
+        before={before}
+        period="lastMonth"
+        goodWhenUp={goodWhenUp}
+        format={(paisa) => formatRs(paisa)}
+      />
+    ) : undefined;
+  const spent = Object.entries(data.expenses_by_category).sort(([, a], [, b]) => b - a);
 
   return (
     <div className="space-y-4">
@@ -67,32 +70,26 @@ export default function ReportsPage() {
           </Button>
         }
       />
-      <div className="flex items-center justify-between rounded-xl bg-white p-1.5 shadow-card ring-1 ring-hairline print:hidden">
-        <Button variant="ghost" onClick={() => setMonth(shift(data.month, -1))}>
-          <ChevronLeft className="size-4" aria-hidden />
-          {t("common.previous")}
-        </Button>
-        <p className="font-semibold">{monthName(data.month, calendar, true)}</p>
-        <Button variant="ghost" onClick={() => setMonth(shift(data.month, 1))}>
-          {t("common.next")}
-          <ChevronRight className="size-4" aria-hidden />
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <MonthSwitcher month={data.month} calendar={calendar} onChange={setMonth} />
+      <div className="grid gap-3 sm:grid-cols-3">
         <Stat
           value={<Money paisa={data.income} />}
           label={t("reports.income")}
-          hint={
-            previous?.started ? (
-              <Delta
-                now={data.income}
-                before={previous.income}
-                period="lastMonth"
-                format={(paisa) => formatRs(paisa)}
-              />
-            ) : undefined
-          }
+          hint={vsRs(data.income, previous?.income)}
         />
+        <Stat
+          value={<Money paisa={data.expenses} />}
+          label={t("reports.spent")}
+          hint={vsRs(data.expenses, previous?.expenses, false)}
+        />
+        <Stat
+          value={<Money paisa={data.profit} />}
+          label={t("reports.profit")}
+          tone={data.profit < 0 ? "danger" : "plain"}
+          hint={vsRs(data.profit, previous?.profit)}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
           value={data.new_members}
           label={t("reports.newMembers")}
@@ -130,15 +127,20 @@ export default function ReportsPage() {
 
       {months.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card title={t("reports.incomeByMonth")} className="min-w-0">
+          <Card title={t("reports.moneyByMonth")} className="min-w-0">
             <BarChart
-              title={t("reports.incomeByMonth")}
+              title={t("reports.moneyByMonth")}
               labels={labels}
               series={[
                 {
                   key: "income",
                   label: t("reports.income"),
                   values: months.map((m) => m.income),
+                },
+                {
+                  key: "spent",
+                  label: t("reports.spent"),
+                  values: months.map((m) => m.expenses),
                 },
               ]}
               format={(paisa) => formatRs(paisa)}
@@ -197,7 +199,31 @@ export default function ReportsPage() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Card title={t("reports.spentByCategory")}>
+          {spent.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              {t("reports.noExpenses")}{" "}
+              <Link
+                href="/staff/expenses"
+                className="font-medium text-brand-700 hover:underline print:hidden"
+              >
+                {t("nav.expenses")}
+              </Link>
+            </p>
+          ) : (
+            <dl className="divide-y divide-hairline text-sm">
+              {spent.map(([category, amount]) => (
+                <div key={category} className="flex justify-between py-2">
+                  <dt>{categoryLabel(category)}</dt>
+                  <dd className="font-semibold">
+                    <Money paisa={amount} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </Card>
         <Card title={t("reports.byMethod")}>
           <dl className="divide-y divide-hairline text-sm">
             {Object.entries(data.income_by_method).map(([method, amount]) => (
