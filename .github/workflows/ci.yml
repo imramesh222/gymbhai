@@ -88,6 +88,10 @@ jobs:
       OTP_TEST_CODE: "246810"
       # Every e2e request comes from one address.
       OTP_PER_IP: "1000"
+      # Push switched on, logged not sent: a key made for the tests alone
+      # (as in docker-compose.e2e.yml). Without it the app never offers push.
+      PUSH_PROVIDER: console
+      VAPID_PRIVATE_KEY: r6AP-6DFOTeSWbF00ghu1XlddwGWOeRJmODHuo02Siw
       E2E_ADMIN_EMAIL: e2e-admin@gymbhai.com
       E2E_ADMIN_PASSWORD: e2e-admin-password-123
     steps:
