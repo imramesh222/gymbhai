@@ -23,8 +23,10 @@ export const config = {
   matcher: [
     {
       // Pages only: not the API (JSON, behind its own headers in Caddy), not
-      // built assets, icons or the service worker, and not link prefetches.
-      source: "/((?!api|_next/static|_next/image|favicon.ico|sw.js|.*\\.png$).*)",
+      // built assets, icons or the service workers (the member app's, and the
+      // staff dashboard's), and not link prefetches.
+      source:
+        "/((?!api|_next/static|_next/image|favicon.ico|sw.js|staff-sw.js|.*\\.png$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

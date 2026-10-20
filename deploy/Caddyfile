@@ -28,6 +28,11 @@
 	handle /health* {
 		reverse_proxy api:8000
 	}
+	# ZKTeco and eSSL readers call this path, as their ADMS protocol has it
+	# (PLAN.md §18.2, docs/READERS.md): straight to the API, HTTPS only.
+	handle /iclock/* {
+		reverse_proxy api:8000
+	}
 	handle {
 		encode zstd gzip
 		reverse_proxy web:3000

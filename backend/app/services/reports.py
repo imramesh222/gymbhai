@@ -23,6 +23,8 @@ from app.models.member import Member
 from app.models.member_app import LET_IN, CheckIn
 from app.models.membership import Membership
 from app.models.payment import KIND_PAYMENT, Payment
+from app.models.staff import StaffUser
+from app.models.training import PtPackage, PtPlan, PtSession
 from app.services import expenses as expenses_service
 from app.services import members as members_service
 from app.services import memberships as ms
@@ -411,4 +413,112 @@ def monthly(db: Session, ctx: StaffContext, month: str) -> Monthly:
         active_members=active or 0,
         visits=visits or 0,
         by_plan=dict(by_plan),
+    )
+
+
+@dataclass
+class PtMonth:
+    """Personal training in a report month (§18.3)."""
+
+    # Net PT payments: already within the month's income.
+    income: int
+    sold: int
+    sessions: int
+    # Members with personal training during the month.
+    members: int
+    # (trainer id, name, members, sessions trained), busiest first.
+    by_trainer: list[tuple[uuid.UUID, str, int, int]]
+
+
+def pt_month(
+    db: Session, ctx: StaffContext, first: dt.date, last: dt.date
+) -> PtMonth | None:
+    """The month's personal training, at the caller's branches: None for a
+    gym that has never had a PT plan. A fixed number of queries."""
+    if db.scalar(select(PtPlan.id).where(PtPlan.gym_id == ctx.gym_id).limit(1)) is None:
+        return None
+    start, end = day_start(first), day_start(last + dt.timedelta(days=1))
+    branches = []
+    if ctx.branch_ids is not None:
+        branches.append(PtPackage.branch_id.in_(ctx.branch_ids))
+
+    signed = case((Payment.kind == KIND_PAYMENT, Payment.amount), else_=-Payment.amount)
+    income = db.scalar(
+        select(func.coalesce(func.sum(signed), 0))
+        .select_from(Payment)
+        .join(PtPackage, PtPackage.id == Payment.pt_package_id)
+        .where(
+            Payment.gym_id == ctx.gym_id,
+            Payment.voided_at.is_(None),
+            Payment.paid_at >= start,
+            Payment.paid_at < end,
+            *branches,
+        )
+    )
+    sold = db.scalar(
+        select(func.count())
+        .select_from(PtPackage)
+        .where(
+            PtPackage.gym_id == ctx.gym_id,
+            PtPackage.cancelled_at.is_(None),
+            PtPackage.created_at >= start,
+            PtPackage.created_at < end,
+            *branches,
+        )
+    )
+    during = (
+        PtPackage.gym_id == ctx.gym_id,
+        PtPackage.cancelled_at.is_(None),
+        PtPackage.start_date <= last,
+        PtPackage.end_date >= first,
+        *branches,
+    )
+    members = db.scalar(
+        select(func.count(func.distinct(PtPackage.member_id))).where(*during)
+    )
+    members_by: dict[uuid.UUID, int] = dict(
+        db.execute(
+            select(PtPackage.trainer_id, func.count(func.distinct(PtPackage.member_id)))
+            .where(*during)
+            .group_by(PtPackage.trainer_id)
+        ).all()
+    )
+    # Each session counts for the trainer of that day.
+    sessions_by: dict[uuid.UUID, int] = dict(
+        db.execute(
+            select(PtSession.trainer_id, func.count())
+            .join(PtPackage, PtPackage.id == PtSession.package_id)
+            .where(
+                PtSession.gym_id == ctx.gym_id,
+                PtSession.voided_at.is_(None),
+                PtSession.trained_on >= first,
+                PtSession.trained_on <= last,
+                *branches,
+            )
+            .group_by(PtSession.trainer_id)
+        ).all()
+    )
+    trainers = set(members_by) | set(sessions_by)
+    names: dict[uuid.UUID, str] = (
+        dict(
+            db.execute(
+                select(StaffUser.id, StaffUser.name).where(StaffUser.id.in_(trainers))
+            ).all()
+        )
+        if trainers
+        else {}
+    )
+    by_trainer = sorted(
+        (
+            (i, names.get(i, ""), members_by.get(i, 0), sessions_by.get(i, 0))
+            for i in trainers
+        ),
+        key=lambda row: (-row[3], -row[2], row[1]),
+    )
+    return PtMonth(
+        income=income or 0,
+        sold=sold or 0,
+        sessions=sum(sessions_by.values()),
+        members=members or 0,
+        by_trainer=by_trainer,
     )

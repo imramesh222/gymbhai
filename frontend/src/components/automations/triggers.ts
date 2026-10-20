@@ -1,10 +1,12 @@
 import type { MessageKey } from "@/i18n";
-import { t } from "@/i18n";
+import { plural, t } from "@/i18n";
 import type { Trigger } from "@/lib/api";
 
 /** What each automation's `days` means, and what it may say (PLAN.md §16.3, 8.2). */
 export interface TriggerInfo {
   trigger: Trigger;
+  /** Memberships', or personal training's (§18.3): shown under its own heading. */
+  group: "membership" | "pt";
   title: MessageKey;
   help: MessageKey;
   min: number;
@@ -20,6 +22,7 @@ const COMMON = ["name", "gym", "link", "code"];
 export const TRIGGERS: TriggerInfo[] = [
   {
     trigger: "expiry",
+    group: "membership",
     title: "automations.expiry.title",
     help: "automations.expiry.help",
     min: -60,
@@ -29,6 +32,7 @@ export const TRIGGERS: TriggerInfo[] = [
   },
   {
     trigger: "lapsed",
+    group: "membership",
     title: "automations.lapsed.title",
     help: "automations.lapsed.help",
     min: 1,
@@ -38,6 +42,7 @@ export const TRIGGERS: TriggerInfo[] = [
   },
   {
     trigger: "dues",
+    group: "membership",
     title: "automations.dues.title",
     help: "automations.dues.help",
     min: 1,
@@ -47,6 +52,7 @@ export const TRIGGERS: TriggerInfo[] = [
   },
   {
     trigger: "not_visiting",
+    group: "membership",
     title: "automations.notVisiting.title",
     help: "automations.notVisiting.help",
     min: 3,
@@ -56,6 +62,7 @@ export const TRIGGERS: TriggerInfo[] = [
   },
   {
     trigger: "birthday",
+    group: "membership",
     title: "automations.birthday.title",
     help: "automations.birthday.help",
     min: 0,
@@ -63,22 +70,52 @@ export const TRIGGERS: TriggerInfo[] = [
     placeholders: COMMON,
     example: "automations.birthday.example",
   },
+  {
+    trigger: "pt_ending",
+    group: "pt",
+    title: "automations.ptEnding.title",
+    help: "automations.ptEnding.help",
+    min: -60,
+    max: 60,
+    placeholders: [...COMMON, "plan", "trainer", "end_date", "days"],
+    example: "automations.ptEnding.example",
+  },
+  {
+    trigger: "pt_dues",
+    group: "pt",
+    title: "automations.ptDues.title",
+    help: "automations.ptDues.help",
+    min: 1,
+    max: 90,
+    placeholders: [...COMMON, "amount", "plan", "trainer", "end_date"],
+    example: "automations.ptDues.example",
+  },
 ];
 
 /** "3 days before it ends", "After 14 days away", "On their birthday". */
 export function when(trigger: Trigger, days: number): string {
   switch (trigger) {
     case "expiry":
+    case "pt_ending":
       if (days === 0) return t("automations.when.onTheDay");
       return days < 0
-        ? t("automations.when.before", { count: -days })
-        : t("automations.when.after", { count: days });
+        ? plural(-days, "automations.when.before.one", "automations.when.before.other")
+        : plural(days, "automations.when.after.one", "automations.when.after.other");
     case "lapsed":
-      return t("automations.when.lapsed", { count: days });
+      return plural(
+        days,
+        "automations.when.lapsed.one",
+        "automations.when.lapsed.other",
+      );
     case "dues":
-      return t("automations.when.dues", { count: days });
+    case "pt_dues":
+      return plural(days, "automations.when.dues.one", "automations.when.dues.other");
     case "not_visiting":
-      return t("automations.when.notVisiting", { count: days });
+      return plural(
+        days,
+        "automations.when.notVisiting.one",
+        "automations.when.notVisiting.other",
+      );
     case "birthday":
       return t("automations.when.birthday");
   }

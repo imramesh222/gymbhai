@@ -7,6 +7,7 @@ and QR check-ins, with an installable member app. One product, many gyms.
 - **[CLAUDE.md](CLAUDE.md)** — the rules that are easy to break
 - **[docs/LOCAL.md](docs/LOCAL.md)** — start, stop, and a new Wi-Fi on your Mac
 - **[docs/MOBILE.md](docs/MOBILE.md)** — the phone app: run, test, share with testers
+- **[docs/PUSH.md](docs/PUSH.md)** — notifications on real phones: what to try on Android and iPhone
 - **[docs/DEPLOY.md](docs/DEPLOY.md)** — putting it on a server, backups, updates
 - **[docs/PILOT.md](docs/PILOT.md)** — onboarding a pilot gym
 
@@ -19,7 +20,9 @@ make setup   # .env, dependencies, database, migrations
 make up      # db, api, worker, web in Docker
 ```
 
-- Web: http://localhost:3000 — sign up a gym at `/signup`
+- Web: http://localhost:3000 — sign up a gym at `/signup`, or `make seed-demo` for
+  a demo gym with a year of members, money and visits: `/demo`, owner `9800000200`,
+  password `demo-password-123` (PLAN.md §18.7)
 - API docs: http://localhost:8000/docs (`API_PORT` in `.env`)
 
 `make help` lists everything else.

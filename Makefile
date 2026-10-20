@@ -21,7 +21,7 @@ E2E_ADMIN_PASSWORD ?= e2e-admin-password-123
 export
 
 .PHONY: help setup env deps db migrate migration migration-check up down logs ps vapid \
-        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app mobile-env apk apk-dev \
+        test test-backend test-frontend test-mobile e2e e2e-dev e2e-mobile seed-app seed-demo mobile-env apk apk-dev \
         lint fmt admin shell psql
 
 help:  ## Show this help
@@ -116,6 +116,9 @@ fmt:  ## Format both sides
 
 seed-app:  ## A fresh test gym for the phone app (/e2e-app; signs in with MASTER_OTP)
 	@$(COMPOSE) exec -T api python -m scripts.seed_app_test
+
+seed-demo:  ## A demo gym with a year of members, money, visits and expenses (/demo; never production)
+	@$(COMPOSE) exec -T api python -m scripts.seed_demo
 
 # The phone app's Maestro flows (mobile/e2e/README.md). On Expo Go by default;
 # app=com.gymbhai.member for an installed .apk or development build.

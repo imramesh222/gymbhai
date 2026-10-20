@@ -39,6 +39,12 @@ PUBLIC = {
     ("POST", "/api/v1/m/{slug}/otp/verify"),
     # The one-time QR staff showed at the desk is the proof (§18.4).
     ("POST", "/api/v1/m/{slug}/desk-sign-in"),
+    # ZKTeco readers over ADMS (§18.2): the reader's serial number, registered
+    # by the gym in Settings, is how it says who it is; others are refused.
+    ("GET", "/iclock/cdata"),
+    ("POST", "/iclock/cdata"),
+    ("GET", "/iclock/getrequest"),
+    ("POST", "/iclock/devicecmd"),
     # The join form, while the gym has it on (§16.4, 9.5).
     ("GET", "/api/v1/m/{slug}/join"),
     ("POST", "/api/v1/m/{slug}/join"),
@@ -68,6 +74,13 @@ ANY_STAFF = {
     ("GET", "/api/v1/auth/sessions"),
     ("POST", "/api/v1/auth/sessions/sign-out-others"),
     ("POST", "/api/v1/auth/sessions/{session_id}/sign-out"),
+    # Notifications on your own devices, and which kinds; each kind is still
+    # sent only to those whose permissions show it (§18.6).
+    ("GET", "/api/v1/auth/push"),
+    ("POST", "/api/v1/auth/push"),
+    ("POST", "/api/v1/auth/push/resume"),
+    ("POST", "/api/v1/auth/push/off"),
+    ("PUT", "/api/v1/auth/me/notifications"),
     # Selling needs the plans and their prices.
     ("GET", "/api/v1/plans"),
     # The desk shows members the gym's own payment QR.

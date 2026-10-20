@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import today_in_nepal
 from app.models.member import Member
-from app.models.member_app import MemberSession
+from app.models.member_app import READERS, Device, MemberSession
 from app.models.membership import Membership, MembershipFreeze
 from app.models.payment import Payment
 from app.models.staff import StaffUser
@@ -23,7 +23,7 @@ from app.schemas.members import (
 from app.schemas.money import PaymentRead
 from app.services import members as members_service
 from app.services import memberships as ms
-from app.services import storage
+from app.services import readers, storage
 from app.services.members import MemberState
 
 
@@ -147,4 +147,17 @@ def member_detail(db: Session, member: Member) -> MemberDetail:
                 MemberSession.member_id == member.id
             )
         ),
+        reader_pin=readers.pin_of(member) if _has_readers(db, member.gym_id) else None,
+    )
+
+
+def _has_readers(db: Session, gym_id: uuid.UUID) -> bool:
+    return bool(
+        db.scalar(
+            select(Device.id).where(
+                Device.gym_id == gym_id,
+                Device.kind.in_(READERS),
+                Device.revoked_at.is_(None),
+            )
+        )
     )

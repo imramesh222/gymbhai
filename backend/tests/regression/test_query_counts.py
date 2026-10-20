@@ -397,3 +397,126 @@ def test_personal_training(engine, client: TestClient, db: Session, gym_a) -> No
     add(90)
     same_cost(engine, client, "/api/v1/pt/packages", add)
     same_cost(engine, client, f"/api/v1/members/{member.id}/pt", add)
+
+
+def test_personal_training_owed_and_reported(
+    engine, client: TestClient, db: Session, gym_a, make_staff
+) -> None:
+    """Follow up's personal training list and Reports' PT figures cost the
+    same however many packages, trainers and sessions (PLAN.md §18.3)."""
+    from app.models.training import PtPlan
+
+    plan = PtPlan(
+        gym_id=gym_a.gym.id,
+        name="12 sessions",
+        kind="sessions",
+        sessions=12,
+        duration_months=2,
+        price=12_000_00,
+    )
+    db.add(plan)
+    db.commit()
+    sign_in(db, client, gym_a.owner)
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Client {n}", phone=f"98123600{n:02d}")
+        coach = make_staff(gym_a.gym, permissions=["pt.train"])
+        sold = client.post(
+            f"/api/v1/members/{member.id}/pt",
+            json={
+                "plan_id": str(plan.id),
+                "trainer_id": str(coach.id),
+                "payment": {"amount": 100_00, "method": "cash"},
+            },
+        )
+        assert sold.status_code == 201, sold.text
+        package = sold.json()["package"]["id"]
+        recorded = client.post(f"/api/v1/pt/packages/{package}/sessions", json={})
+        assert recorded.status_code == 201, recorded.text
+
+    def get(url: str) -> dict:
+        response = client.get(url)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    follow_up, report = "/api/v1/lists/follow-up", "/api/v1/reports/monthly"
+    add(90)
+    owed = queries(engine, lambda: get(follow_up))
+    reported = queries(engine, lambda: get(report))
+    for n in range(MORE):
+        add(n)
+    assert len(get(follow_up)["pt_owing"]) == MORE + 1
+    assert len(get(report)["personal_training"]["by_trainer"]) == MORE + 1
+    assert queries(engine, lambda: get(follow_up)) == owed
+    assert queries(engine, lambda: get(report)) == reported
+
+
+def test_who_gets_a_staff_notification(engine, db: Session, gym_a, make_staff) -> None:
+    """Worked out in the same few queries however many staff take them (§18.6)."""
+    from app.services import sessions
+    from app.services.push import staff as staff_push
+
+    def add(n: int) -> None:
+        person = make_staff(gym_a.gym, permissions=["memberships.freeze"])
+        staff_push.subscribe(
+            db,
+            person,
+            sessions.start(db, person, None).session,
+            endpoint=f"https://push.example.com/staff/{n}",
+            p256dh="B" * 87,
+            auth="a" * 22,
+            user_agent=None,
+        )
+        db.commit()
+
+    def who() -> list:
+        # By branch, as a freeze request goes: the costlier way.
+        return staff_push.recipients(
+            db, gym_a.gym.id, staff_push.FREEZE_REQUEST, gym_a.branch.id
+        )
+
+    add(90)
+    one = queries(engine, who)
+    for n in range(MORE):
+        add(n)
+    assert len(who()) == MORE + 1
+    assert queries(engine, who) == one
+
+
+def test_door_readers(engine, client: TestClient, db: Session, gym_a) -> None:
+    """A reader's members and changes waiting come in one query for every
+    reader on the list; what a reader should hold costs the same however many
+    members (§18.2)."""
+    from app.models.member_app import Device
+    from app.services import readers
+
+    sign_in(db, client, gym_a.owner)
+
+    def add_reader(n: int) -> None:
+        made = client.post(
+            "/api/v1/devices/readers",
+            json={
+                "kind": "zkteco",
+                "name": f"Reader {n}",
+                "branch_id": str(gym_a.branch.id),
+                "serial": f"SERIAL{n:04d}",
+            },
+        )
+        assert made.status_code == 201, made.text
+
+    add_reader(90)
+    same_cost(engine, client, "/api/v1/devices", add_reader)
+
+    device = db.scalars(sa.select(Device).where(Device.serial == "SERIAL0090")).one()
+    plan = priced_plan(db, gym_a.gym)
+
+    def add_member(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98000099{n:02d}")
+        sell(db, gym_a, member, plan=plan, paid=1500_00)
+
+    add_member(90)
+    one = queries(engine, lambda: readers.wanted(db, device))
+    for n in range(MORE):
+        add_member(n)
+    assert len(readers.wanted(db, device)) == MORE + 1
+    assert queries(engine, lambda: readers.wanted(db, device)) == one

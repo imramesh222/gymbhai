@@ -18,6 +18,7 @@ import {
   type FollowUpLists,
   type Member,
   type MessagePurpose,
+  type PtOwing,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { daysBetween, todayInNepal } from "@/lib/dates";
@@ -26,6 +27,13 @@ import { useLive } from "@/lib/live";
 import { useLoad } from "@/lib/useLoad";
 
 type TabId = "ending" | "lapsed" | "owing" | "not-visiting";
+
+/** Who a "Send message" is for. */
+type Recipient = { id: string; name: string };
+type OnMessage = (to: Recipient, reminder: boolean) => void;
+
+const BUTTON =
+  "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-50";
 
 function lastVisit(member: Member): string {
   if (!member.last_visit_at) return t("followUp.neverVisited");
@@ -39,6 +47,43 @@ function lastVisit(member: Member): string {
     : t("followUp.visitedDaysAgo", { count: days });
 }
 
+/** Call, WhatsApp and Send message, beside each row. */
+function Actions({
+  to,
+  phone,
+  reminder,
+  purpose,
+  onMessage,
+}: {
+  to: Recipient;
+  phone: string;
+  reminder: boolean;
+  /** What a WhatsApp message to them says (§18.5). */
+  purpose: MessagePurpose;
+  onMessage: OnMessage;
+}) {
+  const { can } = useAuth();
+  return (
+    <span className="flex shrink-0">
+      <a href={`tel:${phone}`} className={BUTTON}>
+        <Phone className="size-4" aria-hidden />
+        {t("followUp.call")}
+      </a>
+      <WhatsAppButton memberId={to.id} purpose={purpose} className={BUTTON} />
+      {can("messages.sms") && (
+        <button
+          type="button"
+          className={BUTTON}
+          onClick={() => onMessage(to, reminder)}
+        >
+          <MessageSquare className="size-4" aria-hidden />
+          {t("followUp.message")}
+        </button>
+      )}
+    </span>
+  );
+}
+
 function Row({
   member,
   reminder,
@@ -47,14 +92,10 @@ function Row({
 }: {
   member: Member;
   reminder: boolean;
-  /** What a WhatsApp message to them says (§18.5). */
   purpose: MessagePurpose;
-  onMessage: (member: Member, reminder: boolean) => void;
+  onMessage: OnMessage;
 }) {
-  const { can } = useAuth();
   const { date } = useGymCalendar();
-  const button =
-    "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-50";
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
       <Link href={`/staff/members/${member.id}`} className="min-w-0 hover:underline">
@@ -74,24 +115,69 @@ function Row({
           )}
         </p>
       </Link>
-      <span className="flex shrink-0">
-        <a href={`tel:${member.phone}`} className={button}>
-          <Phone className="size-4" aria-hidden />
-          {t("followUp.call")}
-        </a>
-        <WhatsAppButton memberId={member.id} purpose={purpose} className={button} />
-        {can("messages.sms") && (
-          <button
-            type="button"
-            className={button}
-            onClick={() => onMessage(member, reminder)}
-          >
-            <MessageSquare className="size-4" aria-hidden />
-            {t("followUp.message")}
-          </button>
-        )}
-      </span>
+      <Actions
+        to={member}
+        phone={member.phone}
+        reminder={reminder}
+        purpose={purpose}
+        onMessage={onMessage}
+      />
     </li>
+  );
+}
+
+/** Owed on personal training (§18.3): each package, with its plan and trainer. */
+function PtSection({
+  rows,
+  total,
+  onMessage,
+}: {
+  rows: PtOwing[];
+  total: number;
+  onMessage: OnMessage;
+}) {
+  const { date } = useGymCalendar();
+  return (
+    <Card title={`${t("followUp.owingPt")} (${total})`}>
+      <ul className="divide-y divide-hairline">
+        {rows.map((row) => (
+          <li
+            key={row.package_id}
+            className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+          >
+            <Link
+              href={`/staff/members/${row.member_id}?tab=training`}
+              className="min-w-0 hover:underline"
+            >
+              <p className="truncate font-medium">{row.name}</p>
+              <p className="text-xs text-slate-500">
+                {t("followUp.ptRow", {
+                  plan: row.plan_name,
+                  trainer: row.trainer_name,
+                  date: date(row.end_date),
+                })}
+                {" · "}
+                <span className="text-amber-700">
+                  {t("members.owes")} <Money paisa={row.dues} />
+                </span>
+              </p>
+            </Link>
+            <Actions
+              to={{ id: row.member_id, name: row.name }}
+              phone={row.phone}
+              reminder={false}
+              purpose="pt_dues"
+              onMessage={onMessage}
+            />
+          </li>
+        ))}
+      </ul>
+      {total > rows.length && (
+        <p className="pt-3 text-sm text-slate-500">
+          {t("followUp.showingFirst", { shown: rows.length, total })}
+        </p>
+      )}
+    </Card>
   );
 }
 
@@ -107,7 +193,7 @@ function Section({
   members: Member[];
   reminder: boolean;
   purpose: MessagePurpose;
-  onMessage: (member: Member, reminder: boolean) => void;
+  onMessage: OnMessage;
   /** Shown under a list that was cut short. */
   more?: React.ReactNode;
 }) {
@@ -140,7 +226,7 @@ function Panel({
 }: {
   tab: TabId;
   data: FollowUpLists;
-  onMessage: (member: Member, reminder: boolean) => void;
+  onMessage: OnMessage;
 }) {
   const { can } = useAuth();
   const cut = (shown: number, total: number, filter: string) =>
@@ -184,9 +270,14 @@ function Panel({
         onMessage={onMessage}
       />
     );
-  if (tab === "owing")
-    return (
+  if (tab === "owing") {
+    const memberships = (
       <Section
+        title={
+          data.pt_owing_total > 0
+            ? `${t("followUp.owingMemberships")} (${data.owing_total})`
+            : undefined
+        }
         members={data.owing}
         reminder={false}
         purpose="dues"
@@ -194,6 +285,19 @@ function Panel({
         more={cut(data.owing.length, data.owing_total, "dues")}
       />
     );
+    // Personal training's dues are its own (§18.3): a list of their own.
+    if (data.pt_owing_total === 0) return memberships;
+    return (
+      <div className="space-y-4">
+        {memberships}
+        <PtSection
+          rows={data.pt_owing}
+          total={data.pt_owing_total}
+          onMessage={onMessage}
+        />
+      </div>
+    );
+  }
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">
@@ -225,7 +329,7 @@ export default function FollowUpPage() {
   // A visit, a payment or a renewal can take someone off a list.
   useLive(["check_in", "member"], reload, { everyMs: 5000 });
   const [messaging, setMessaging] = useState<{
-    member: Member;
+    to: Recipient;
     reminder: boolean;
   } | null>(null);
 
@@ -236,7 +340,11 @@ export default function FollowUpPage() {
       count: data ? data.due_today.length + data.due_this_week.length : undefined,
     },
     { id: "lapsed", label: t("followUp.tab.lapsed"), count: data?.lapsed.length },
-    { id: "owing", label: t("followUp.tab.owing"), count: data?.owing_total },
+    {
+      id: "owing",
+      label: t("followUp.tab.owing"),
+      count: data ? data.owing_total + data.pt_owing_total : undefined,
+    },
     {
       id: "not-visiting",
       label: t("followUp.tab.notVisiting"),
@@ -260,7 +368,7 @@ export default function FollowUpPage() {
           <Panel
             tab={tab}
             data={data}
-            onMessage={(member, reminder) => setMessaging({ member, reminder })}
+            onMessage={(to, reminder) => setMessaging({ to, reminder })}
           />
         ) : (
           !error && <PageSkeleton label={t("common.loading")} />
@@ -268,11 +376,11 @@ export default function FollowUpPage() {
       </Tabs>
       {messaging && (
         <SendSms
-          memberId={messaging.member.id}
+          memberId={messaging.to.id}
           reminder={messaging.reminder}
           onClose={() => setMessaging(null)}
           onSent={() => {
-            toast.success(t("followUp.sent", { name: messaging.member.name }));
+            toast.success(t("followUp.sent", { name: messaging.to.name }));
             setMessaging(null);
           }}
         />

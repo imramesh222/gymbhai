@@ -503,6 +503,14 @@ export default function MemberPage() {
                     </span>
                   )}
                 </Row>
+                {member.reader_pin && (
+                  <Row label={t("readers.number")}>
+                    {member.reader_pin}
+                    <span className="block text-xs font-normal text-slate-500">
+                      {t("readers.numberHelp")}
+                    </span>
+                  </Row>
+                )}
               </dl>
               {member.notes && (
                 <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">

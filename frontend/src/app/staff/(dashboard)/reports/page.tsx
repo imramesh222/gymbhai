@@ -16,7 +16,7 @@ import { Money } from "@/components/ui/Money";
 import { MonthSwitcher } from "@/components/ui/MonthSwitcher";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 import { t } from "@/i18n";
-import { reportsApi, type TrendMonth } from "@/lib/api";
+import { reportsApi, type PtMonth, type TrendMonth } from "@/lib/api";
 import { formatDate } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { formatRs } from "@/lib/money";
@@ -247,6 +247,54 @@ export default function ReportsPage() {
           </dl>
         </Card>
       </div>
+      {data.personal_training && <PersonalTraining pt={data.personal_training} />}
     </div>
+  );
+}
+
+/** The month's personal training (§18.3), for a gym that sells it. */
+function PersonalTraining({ pt }: { pt: PtMonth }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="pt-2 text-[0.9375rem] font-semibold text-slate-900">
+        {t("pt.title")}
+      </h2>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat
+          value={<Money paisa={pt.income} />}
+          label={t("reports.pt.income")}
+          hint={t("reports.pt.incomeHelp")}
+        />
+        <Stat value={pt.sold} label={t("reports.pt.sold")} />
+        <Stat value={pt.sessions} label={t("reports.pt.sessions")} />
+        <Stat value={pt.members} label={t("reports.pt.members")} />
+      </div>
+      {pt.by_trainer.length > 0 && (
+        <Card title={t("reports.pt.byTrainer")}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500">
+                <th className="py-1 font-medium">{t("pt.trainer")}</th>
+                <th className="py-1 text-right font-medium">
+                  {t("reports.pt.membersCol")}
+                </th>
+                <th className="py-1 text-right font-medium">
+                  {t("reports.pt.sessionsCol")}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {pt.by_trainer.map((row) => (
+                <tr key={row.trainer_id}>
+                  <td className="py-2">{row.name}</td>
+                  <td className="py-2 text-right font-semibold">{row.members}</td>
+                  <td className="py-2 text-right font-semibold">{row.sessions}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </section>
   );
 }

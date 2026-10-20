@@ -33,7 +33,7 @@ export function isStandalone(): boolean {
   );
 }
 
-function supported(): boolean {
+export function supported(): boolean {
   return (
     "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
   );
@@ -48,7 +48,7 @@ async function registration(
   );
 }
 
-function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
+export function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
   const base64 = (base64url + "=".repeat((4 - (base64url.length % 4)) % 4))
     .replace(/-/g, "+")
     .replace(/_/g, "/");

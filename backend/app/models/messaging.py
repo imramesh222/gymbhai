@@ -84,12 +84,17 @@ TRIGGER_LAPSED = "lapsed"  # ended this many days ago and not renewed (win-back)
 TRIGGER_DUES = "dues"  # money still owed this many days after the sale
 TRIGGER_NOT_VISITING = "not_visiting"  # active, no visit for this many days
 TRIGGER_BIRTHDAY = "birthday"  # on the day; `days` is 0
+# Personal training (§18.3), each package on its own:
+TRIGGER_PT_ENDING = "pt_ending"  # from the end of their last package, as expiry
+TRIGGER_PT_DUES = "pt_dues"  # money still owed this many days after the sale
 TRIGGERS = (
     TRIGGER_EXPIRY,
     TRIGGER_LAPSED,
     TRIGGER_DUES,
     TRIGGER_NOT_VISITING,
     TRIGGER_BIRTHDAY,
+    TRIGGER_PT_ENDING,
+    TRIGGER_PT_DUES,
 )
 
 
@@ -114,7 +119,8 @@ class ReminderLog(IdMixin, TimestampMixin, GymOwned, Base):
 
     `dedupe_key` names the occasion: "membership:<id>" for expiry, lapsed and
     dues; "visit:<member>:<last visit date>" for not visiting, so each spell
-    away counts once; "birthday:<member>:<year>".
+    away counts once; "birthday:<member>:<year>"; "pt:<package>" for personal
+    training.
     """
 
     __tablename__ = "reminder_log"

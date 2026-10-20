@@ -506,6 +506,8 @@ export interface MemberDetail extends Member {
   payments: Payment[];
   renewal_starts_on: string;
   first_membership: boolean;
+  /** Their number on the gym's fingerprint and face readers, if it has any. */
+  reader_pin: string | null;
   /** Their newest app sign-in, still signed in or not. */
   app_signed_in_at: string | null;
 }
@@ -946,9 +948,7 @@ export interface PtSaleInput {
 
 export const ptApi = {
   plans: (includeHidden = false) =>
-    request<PtPlan[]>(
-      `/api/v1/pt/plans${includeHidden ? "?include_hidden=true" : ""}`,
-    ),
+    request<PtPlan[]>(`/api/v1/pt/plans${includeHidden ? "?include_hidden=true" : ""}`),
   createPlan: (body: PtPlanInput) =>
     request<PtPlan>("/api/v1/pt/plans", send("POST", body)),
   updatePlan: (id: string, body: Partial<PtPlanInput>) =>
@@ -980,7 +980,11 @@ export const ptApi = {
       `/api/v1/pt/packages/${id}/cancel`,
       send("POST", { reason, refund }),
     ),
-  record: (id: string, body: { trained_on: string; note: string | null }, key?: string) =>
+  record: (
+    id: string,
+    body: { trained_on: string; note: string | null },
+    key?: string,
+  ) =>
     request<PtPackageDetail>(
       `/api/v1/pt/packages/${id}/sessions`,
       once(send("POST", body), key),
@@ -995,6 +999,39 @@ export const ptApi = {
     request<Payment>(
       "/api/v1/payments",
       once(send("POST", { pt_package_id: packageId, ...payment }), key),
+    ),
+};
+
+// --- notifications for staff (PLAN.md §18.6) ---
+
+export type NotificationKind = "payment_request" | "freeze_request" | "lead";
+
+export interface StaffPushStatus {
+  /** Null: push isn't set up on this server. */
+  public_key: string | null;
+  /** This browser, for this sign-in. */
+  on_here: boolean;
+  /** What this person may get, in order, and which of those they turned off. */
+  kinds: NotificationKind[];
+  muted: NotificationKind[];
+}
+
+export const staffPushApi = {
+  status: (endpoint?: string) =>
+    request<StaffPushStatus>(`/api/v1/auth/push${query({ endpoint })}`),
+  on: (subscription: PushSubscriptionJSON) =>
+    request<StaffPushStatus>(
+      "/api/v1/auth/push",
+      send("POST", { endpoint: subscription.endpoint, keys: subscription.keys }),
+    ),
+  resume: (endpoint: string) =>
+    request<StaffPushStatus>("/api/v1/auth/push/resume", send("POST", { endpoint })),
+  off: (endpoint: string) =>
+    request<StaffPushStatus>("/api/v1/auth/push/off", send("POST", { endpoint })),
+  choose: (muted: NotificationKind[], endpoint?: string) =>
+    request<StaffPushStatus>(
+      "/api/v1/auth/me/notifications",
+      send("PUT", { muted, endpoint: endpoint ?? null }),
     ),
 };
 
@@ -1131,8 +1168,9 @@ export interface SmsMessage {
   created_at: string;
 }
 
-/** What starts an automation (PLAN.md §16.3, 8.2). */
-export type Trigger = "expiry" | "lapsed" | "dues" | "not_visiting" | "birthday";
+/** What starts an automation (PLAN.md §16.3, 8.2; personal training's, §18.3). */
+export type Trigger =
+  "expiry" | "lapsed" | "dues" | "not_visiting" | "birthday" | "pt_ending" | "pt_dues";
 
 export interface MessageSettings {
   welcome_sms: string;
@@ -1157,6 +1195,18 @@ export interface NoticeInput {
   send_sms: boolean;
 }
 
+/** Personal training with money still owed on it (§18.3). */
+export interface PtOwing {
+  package_id: string;
+  member_id: string;
+  name: string;
+  phone: string;
+  plan_name: string;
+  trainer_name: string;
+  end_date: string;
+  dues: number;
+}
+
 /** Who to chase (PLAN.md §16.3, 8.1). Owing and not visiting: the first 100. */
 export interface FollowUpLists {
   due_today: Member[];
@@ -1164,6 +1214,9 @@ export interface FollowUpLists {
   lapsed: Member[];
   owing: Member[];
   owing_total: number;
+  /** Owed on personal training, apart from memberships (§18.3). */
+  pt_owing: PtOwing[];
+  pt_owing_total: number;
   not_visiting: Member[];
   not_visiting_total: number;
   not_visiting_days: number;
@@ -1175,6 +1228,7 @@ export const MESSAGE_PURPOSES = [
   "dues",
   "not_visiting",
   "welcome",
+  "pt_dues",
 ] as const;
 export type MessagePurpose = (typeof MESSAGE_PURPOSES)[number];
 
@@ -1237,13 +1291,22 @@ export interface ScanResult {
   can_override: boolean;
 }
 
+export type DeviceKind = "kiosk" | "zkteco" | "hikvision";
+export type ReaderKind = Exclude<DeviceKind, "kiosk">;
+
 export interface Device {
   id: string;
   branch_id: string;
   name: string;
+  /** A kiosk, or a fingerprint and face reader (PLAN.md §18.2). */
+  kind: DeviceKind;
+  serial: string | null;
   last_seen_at: string | null;
   revoked_at: string | null;
   created_at: string;
+  /** A reader's members on it, and changes not yet made there. */
+  on_reader: number | null;
+  waiting: number | null;
 }
 
 export interface CheckInRow {
@@ -1278,6 +1341,17 @@ export const doorApi = {
     ),
   revokeDevice: (id: string) =>
     request<Device>(`/api/v1/devices/${id}/revoke`, send("POST")),
+  /** A fingerprint or face reader; the token is for a Hikvision reader's bridge. */
+  addReader: (body: {
+    kind: ReaderKind;
+    name: string;
+    branch_id: string;
+    serial: string | null;
+  }) =>
+    request<{ device: Device; token: string }>(
+      "/api/v1/devices/readers",
+      send("POST", body),
+    ),
   scan: (code: string, branch_id: string) =>
     request<ScanResult>("/api/v1/check-ins/scan", send("POST", { code, branch_id })),
   manual: (body: {
@@ -1414,6 +1488,18 @@ export interface MonthlyReport {
   active_members: number;
   visits: number;
   by_plan: Record<string, number>;
+  /** Only for a gym with PT plans (§18.3). */
+  personal_training: PtMonth | null;
+}
+
+/** Personal training in a report month (§18.3). */
+export interface PtMonth {
+  /** Already within the month's income. */
+  income: number;
+  sold: number;
+  sessions: number;
+  members: number;
+  by_trainer: { trainer_id: string; name: string; members: number; sessions: number }[];
 }
 
 export interface TrendMonth {

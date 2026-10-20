@@ -3,7 +3,8 @@ import { randomDigits, signUpGym } from "./helpers";
 
 /**
  * PLAN.md §18.3: a PT plan, sold with a part payment, a session recorded,
- * the rest collected; the trainer's list, and the member's Home.
+ * what's owed in Follow up, the rest collected; Reports, the trainer's list,
+ * and the member's Home.
  */
 test("personal training: sell a pack, record a session, the member sees it", async ({
   page,
@@ -60,12 +61,26 @@ test("personal training: sell a pack, record a session, the member sees it", asy
   await expect(page.getByText("Session recorded.")).toBeVisible();
   await expect(pack.getByText("11 of 12 sessions left")).toBeVisible();
 
+  // Follow up → Owe money: what's owed on personal training, in its own
+  // list; the row opens the member's Personal training tab.
+  await page.goto("/staff/follow-up?tab=owing");
+  const owed = page.getByRole("listitem").filter({ hasText: "Hari Thapa" });
+  await expect(owed.getByText(/12 sessions with Sita Sharma/)).toBeVisible();
+  await expect(owed.getByText("Rs 7,000")).toBeVisible();
+  await owed.getByRole("link", { name: /Hari Thapa/ }).click();
+
   await pack.getByRole("button", { name: "Collect payment" }).click();
   const collect = page.getByRole("dialog", { name: "Collect payment" });
   await expect(collect.getByLabel("Amount")).toHaveValue("7000");
   await collect.getByRole("button", { name: "Record payment" }).click();
   await expect(page.getByText(/Payment recorded\. Receipt #\d+\./)).toBeVisible();
   await expect(pack.getByText("Owes")).toHaveCount(0);
+
+  // Reports: the month's personal training, and each trainer's.
+  await page.goto("/staff/reports");
+  const income = page.getByText("From personal training", { exact: true });
+  await expect(income.locator("xpath=..")).toContainText("Rs 12,000");
+  await expect(page.getByRole("row", { name: "Sita Sharma 1 1" })).toBeVisible();
 
   // The trainer's own list, with Record session one tap away.
   await page.goto("/staff/pt");

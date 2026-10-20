@@ -194,9 +194,15 @@ class DeviceRead(BaseModel):
     id: uuid.UUID
     branch_id: uuid.UUID
     name: str
+    # "kiosk", or a reader: "zkteco" or "hikvision" (§18.2).
+    kind: str = "kiosk"
+    serial: str | None = None
     last_seen_at: dt.datetime | None
     revoked_at: dt.datetime | None
     created_at: dt.datetime
+    # A reader's members on it, and changes not yet made there.
+    on_reader: int | None = None
+    waiting: int | None = None
 
 
 class DeviceIn(Strict):

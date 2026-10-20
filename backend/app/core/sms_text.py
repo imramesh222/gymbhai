@@ -20,7 +20,17 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 # What a template may use. Unknown placeholders are left as typed, so a
 # mistake shows up in the preview instead of breaking the send.
-PLACEHOLDERS = ("name", "gym", "plan", "end_date", "days", "link", "code", "amount")
+PLACEHOLDERS = (
+    "name",
+    "gym",
+    "plan",
+    "end_date",
+    "days",
+    "link",
+    "code",
+    "amount",
+    "trainer",  # personal training's (§18.3)
+)
 
 
 def is_gsm(text: str) -> bool:

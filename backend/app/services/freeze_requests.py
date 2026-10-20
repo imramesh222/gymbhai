@@ -30,6 +30,7 @@ from app.models.messaging import SMS_MEMBERSHIP
 from app.services import activity, live
 from app.services import memberships as ms
 from app.services.push import service as push
+from app.services.push import staff as staff_push
 
 # Long enough for a trip home for Dashain; staff can freeze longer at the desk.
 MAX_DAYS = 90
@@ -111,6 +112,8 @@ def create(
         request=request,
     )
     _changed(db, row)
+    # On the phones of staff who freeze, not only their open screens (§18.6).
+    staff_push.freeze_request(db, row)
     return row
 
 

@@ -7,6 +7,7 @@ import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { DevicesCard } from "@/components/staff/DevicesCard";
 import { LanguageCard } from "@/components/staff/LanguageCard";
+import { NotificationsCard } from "@/components/staff/StaffNotifications";
 import { TwoStepCard } from "@/components/staff/TwoStepCard";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { t } from "@/i18n";
@@ -64,6 +65,7 @@ export default function ProfilePage() {
         </form>
       </Card>
       <LanguageCard />
+      <NotificationsCard />
       <TwoStepCard />
       <DevicesCard />
     </div>

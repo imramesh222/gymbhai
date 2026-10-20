@@ -14,6 +14,7 @@ from app.models.member_app import (
     MemberSignInLink,
     OtpCode,
     PaymentRequest,
+    ReaderUser,
 )
 from app.models.membership import Membership, MembershipFreeze
 from app.models.messaging import (
@@ -32,7 +33,7 @@ from app.models.platform import (
     MemberImport,
     SubscriptionPayment,
 )
-from app.models.push import PushSubscription
+from app.models.push import PushSubscription, StaffPushSubscription
 from app.models.staff import (
     LoginAttempt,
     StaffBranchAccess,
@@ -77,6 +78,7 @@ __all__ = [
     "PtPlan",
     "PtSession",
     "PushSubscription",
+    "ReaderUser",
     "ReminderLog",
     "ReminderRule",
     "ScheduledRun",
@@ -84,6 +86,7 @@ __all__ = [
     "SmsMessage",
     "StaffBranchAccess",
     "StaffPasswordReset",
+    "StaffPushSubscription",
     "StaffRecoveryCode",
     "StaffSession",
     "StaffUser",

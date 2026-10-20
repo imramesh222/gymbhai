@@ -245,3 +245,33 @@ class LanguageIn(Strict):
     """Null goes back to the gym's language."""
 
     language: Literal["en", "ne"] | None
+
+
+# --- notifications for staff (PLAN.md §18.6) ---------------------------------------
+
+NotificationKind = Literal["payment_request", "freeze_request", "lead"]
+
+
+class StaffPushStatus(BaseModel):
+    """My account → Notifications."""
+
+    # None: push isn't set up on this server.
+    public_key: str | None
+    # This browser, for this sign-in.
+    on_here: bool
+    # What this person may get, in order, and which of those they turned off.
+    kinds: list[NotificationKind]
+    muted: list[NotificationKind]
+
+
+class StaffPushEndpoint(Strict):
+    """Which browser: the endpoint its PushManager gave."""
+
+    endpoint: str = Field(min_length=10, max_length=2000)
+
+
+class NotificationsIn(Strict):
+    """The ticks, as what's turned off; `endpoint` for the answer's `on_here`."""
+
+    muted: list[NotificationKind] = Field(max_length=10)
+    endpoint: str | None = Field(default=None, min_length=10, max_length=2000)

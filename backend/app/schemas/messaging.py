@@ -10,11 +10,15 @@ from app.models.messaging import (
     TRIGGER_EXPIRY,
     TRIGGER_LAPSED,
     TRIGGER_NOT_VISITING,
+    TRIGGER_PT_DUES,
+    TRIGGER_PT_ENDING,
 )
 from app.schemas.auth import Strict
 from app.schemas.members import MemberRead
 
-Trigger = Literal["expiry", "lapsed", "dues", "not_visiting", "birthday"]
+Trigger = Literal[
+    "expiry", "lapsed", "dues", "not_visiting", "birthday", "pt_ending", "pt_dues"
+]
 
 # The days each trigger accepts (PLAN.md §16.3, 8.2).
 DAYS_ALLOWED: dict[str, tuple[int, int]] = {
@@ -23,6 +27,8 @@ DAYS_ALLOWED: dict[str, tuple[int, int]] = {
     TRIGGER_DUES: (1, 90),
     TRIGGER_NOT_VISITING: (3, 180),
     TRIGGER_BIRTHDAY: (0, 0),
+    TRIGGER_PT_ENDING: (-60, 60),
+    TRIGGER_PT_DUES: (1, 90),
 }
 
 
@@ -30,6 +36,19 @@ def check_days(trigger: str, days: int) -> None:
     low, high = DAYS_ALLOWED[trigger]
     if not low <= days <= high:
         raise ValueError(f"Days must be from {low} to {high} for this automation.")
+
+
+class PtOwing(BaseModel):
+    """Personal training with money still owed on it (§18.3)."""
+
+    package_id: uuid.UUID
+    member_id: uuid.UUID
+    name: str
+    phone: str
+    plan_name: str
+    trainer_name: str
+    end_date: dt.date
+    dues: int
 
 
 class FollowUpLists(BaseModel):
@@ -41,6 +60,9 @@ class FollowUpLists(BaseModel):
     lapsed: list[MemberRead]
     owing: list[MemberRead]
     owing_total: int
+    # Owed on personal training, apart from memberships (§18.3).
+    pt_owing: list[PtOwing]
+    pt_owing_total: int
     not_visiting: list[MemberRead]
     not_visiting_total: int
     not_visiting_days: int
@@ -77,7 +99,7 @@ class BulkSmsResult(BaseModel):
     queued: int
 
 
-MessagePurpose = Literal["reminder", "dues", "not_visiting", "welcome"]
+MessagePurpose = Literal["reminder", "dues", "not_visiting", "welcome", "pt_dues"]
 
 
 class MemberMessage(BaseModel):

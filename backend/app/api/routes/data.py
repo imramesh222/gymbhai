@@ -33,6 +33,8 @@ from app.schemas.reports import (
     MemberOwing,
     MonthlyRead,
     Person,
+    PtMonthRead,
+    PtTrainerMonth,
     SetupChecklist,
     TodayRead,
     TrendMonth,
@@ -133,8 +135,21 @@ def monthly(
     assert gym is not None
     calendar = "ad" if gym.config.date_display == "ad" else "bs"
     data = reports.monthly(db, ctx, month or reports.current_month(calendar))
+    pt = reports.pt_month(db, ctx, data.first_day, data.last_day)
     return MonthlyRead(
-        **{**data.__dict__, "renewal_rate": data.renewal_rate, "profit": data.profit}
+        **{**data.__dict__, "renewal_rate": data.renewal_rate, "profit": data.profit},
+        personal_training=PtMonthRead(
+            income=pt.income,
+            sold=pt.sold,
+            sessions=pt.sessions,
+            members=pt.members,
+            by_trainer=[
+                PtTrainerMonth(trainer_id=i, name=n, members=m, sessions=s)
+                for i, n, m, s in pt.by_trainer
+            ],
+        )
+        if pt
+        else None,
     )
 
 

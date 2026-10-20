@@ -14,6 +14,7 @@ import Link from "next/link";
 
 import { BarChart } from "@/components/charts/BarChart";
 import { WhatsAppButton, WhatsAppLink } from "@/components/member/WhatsApp";
+import { NotificationsPrompt } from "@/components/staff/StaffNotifications";
 import { methodLabel } from "@/components/money/PaymentFields";
 import { Notice } from "@/components/Notice";
 import { Delta } from "@/components/today/Delta";
@@ -310,6 +311,7 @@ export default function TodayPage() {
         }
       />
       {error && <Notice tone="error">{error}</Notice>}
+      <NotificationsPrompt />
       {!can("members.view") && (
         <Notice>{t("staff.memberAppAt", { url: memberAppUrl(me.gym.slug) })}</Notice>
       )}

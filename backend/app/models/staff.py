@@ -75,6 +75,12 @@ class StaffUser(IdMixin, TimestampMixin, Base):
     language: Mapped[str | None] = mapped_column(String(2))
     # When they last opened What's new (§16.5, 10.4): a dot until then.
     changelog_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Notifications they turned off (§18.6): the kinds in
+    # app/services/push/staff.py. Stored as what's off, so a kind added later
+    # starts on.
+    muted_notifications: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
 
     @property
     def two_step_enabled(self) -> bool:

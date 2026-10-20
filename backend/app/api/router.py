@@ -9,6 +9,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.api.routes import (
     admin,
+    adms,
     auth,
     branches,
     changelog,
@@ -30,8 +31,10 @@ from app.api.routes import (
     payment_requests,
     payments,
     plans,
+    reader_bridge,
     receipts,
     staff,
+    staff_push,
     subscription,
     training,
 )
@@ -40,7 +43,10 @@ from app.core.config import settings
 # (prefix, router)
 ROUTERS: list[tuple[str, APIRouter]] = [
     ("", health.router),
+    # Readers call these at the root, as ADMS has it (§18.2).
+    ("", adms.router),
     (settings.api_v1_prefix, auth.router),
+    (settings.api_v1_prefix, staff_push.router),
     (settings.api_v1_prefix, changelog.router),
     (settings.api_v1_prefix, gym.router),
     (settings.api_v1_prefix, branches.router),
@@ -56,6 +62,7 @@ ROUTERS: list[tuple[str, APIRouter]] = [
     (settings.api_v1_prefix, messaging.router),
     (settings.api_v1_prefix, data.router),
     (settings.api_v1_prefix, door.router),
+    (settings.api_v1_prefix, reader_bridge.router),
     (settings.api_v1_prefix, payment_requests.router),
     (settings.api_v1_prefix, freeze_requests.router),
     (settings.api_v1_prefix, member_app.router),
