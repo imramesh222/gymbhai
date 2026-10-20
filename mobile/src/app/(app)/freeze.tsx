@@ -7,17 +7,16 @@
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
 
 import { addDays, formatDate, todayInNepal } from "@shared/dates";
 import { t } from "@shared/i18n";
 
 import { Screen } from "@/components/Screen";
+import { Stepper } from "@/components/Stepper";
 import {
   ActionButton,
   Card,
   Field,
-  Label,
   Notice,
   Spinner,
   Title,
@@ -27,69 +26,8 @@ import { useLatestFreeze, useMe } from "@/lib/hooks";
 import { memberApi } from "@/lib/memberApi";
 import { keys } from "@/lib/query";
 import { useSlug } from "@/lib/session";
-import { colors, radius, space } from "@/lib/theme";
+import { colors, space } from "@/lib/theme";
 import { useAction } from "@/lib/useAction";
-
-function Stepper({
-  label,
-  value,
-  onLess,
-  onMore,
-  canLess,
-}: {
-  label: string;
-  value: string;
-  onLess: () => void;
-  onMore: () => void;
-  canLess: boolean;
-}) {
-  const button = (
-    text: string,
-    onPress: () => void,
-    enabled: boolean,
-    name: string,
-  ) => (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={name}
-      accessibilityState={{ disabled: !enabled }}
-      disabled={!enabled}
-      onPress={onPress}
-      style={{
-        width: 48,
-        height: 48,
-        borderRadius: radius.md,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors.canvas,
-        opacity: enabled ? 1 : 0.4,
-      }}
-    >
-      <Txt weight="bold" size={22} color={colors.ink}>
-        {text}
-      </Txt>
-    </Pressable>
-  );
-  return (
-    <View style={{ gap: space(1.5) }}>
-      <Label>{label}</Label>
-      <View
-        accessible={false}
-        style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
-      >
-        {button("−", onLess, canLess, `${label} −`)}
-        <Txt
-          weight="semibold"
-          style={{ flex: 1, textAlign: "center" }}
-          accessibilityLiveRegion="polite"
-        >
-          {value}
-        </Txt>
-        {button("+", onMore, true, `${label} +`)}
-      </View>
-    </View>
-  );
-}
 
 export default function Freeze() {
   const slug = useSlug();

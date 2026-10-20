@@ -5,6 +5,8 @@
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/noto-sans-devanagari": "^0.4.1",
+    "@noble/ed25519": "3.2.0",
+    "@noble/hashes": "2.4.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@tanstack/query-async-storage-persister": "^5.104.3",
     "@tanstack/react-query": "^5.104.3",

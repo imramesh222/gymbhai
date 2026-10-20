@@ -13,6 +13,7 @@ import { AccessHoursEditor } from "@/components/settings/AccessHoursEditor";
 import { describeHours, type AccessWindow } from "@/lib/accessHours";
 import { plural, t, type MessageKey } from "@/i18n";
 import {
+  classesApi,
   branchesApi,
   errorMessage,
   paymentMethodsApi,
@@ -122,6 +123,12 @@ export function PlansSection() {
                     · {t("plans.visits", { count: p.visit_limit })}
                   </span>
                 )}
+                {p.seats > 1 && (
+                  <span className="text-slate-500">
+                    {" "}
+                    · {t("plans.forPeople", { count: p.seats })}
+                  </span>
+                )}
                 {p.access_hours && (
                   <span className="block text-xs text-slate-500">
                     {describeHours(p.access_hours)}
@@ -184,7 +191,12 @@ function PlanDialog({
     is_active: plan?.is_active ?? true,
     visit_limit: plan?.visit_limit ? String(plan.visit_limit) : "",
     access_hours: (plan?.access_hours ?? []) as AccessWindow[],
+    seats: plan?.seats ?? 1,
+    classes: plan?.classes ?? "all",
+    class_type_ids: plan?.class_type_ids ?? [],
   });
+  // Classes it includes (§19.4): asked once the gym runs any.
+  const classTypes = useLoad(() => classesApi.types(), []).data ?? [];
   const [error, setError] = useState<string | null>(null);
 
   async function save(event: React.FormEvent) {
@@ -198,8 +210,13 @@ function PlanDialog({
       admission_fee: form.admission_fee ?? 0,
       all_branches: form.all_branches,
       branch_ids: form.all_branches ? [] : form.branch_ids,
-      visit_limit: form.visit_limit ? Number(form.visit_limit) : null,
+      // A visit pack is for one person (§19.1).
+      visit_limit:
+        form.visit_limit && form.seats === 1 ? Number(form.visit_limit) : null,
       access_hours: form.access_hours.length ? form.access_hours : null,
+      seats: form.seats,
+      classes: form.classes,
+      class_type_ids: form.classes === "chosen" ? form.class_type_ids : null,
       ...(plan ? { is_active: form.is_active } : {}),
     };
     try {
@@ -253,16 +270,58 @@ function PlanDialog({
             }
           />
         </div>
-        <Field
-          label={t("plans.visitLimit")}
-          value={form.visit_limit}
-          onChange={(visit_limit) => setForm({ ...form, visit_limit })}
-          type="number"
-          inputMode="numeric"
-          help={t("plans.visitLimitHelp")}
-          optional
-          optionalLabel={t("common.optional")}
+        <Select
+          label={t("plans.seats")}
+          value={String(form.seats)}
+          onChange={(seats) => setForm({ ...form, seats: Number(seats) })}
+          options={[1, 2, 3, 4, 5, 6].map((n) => ({
+            value: String(n),
+            label: n === 1 ? t("plans.seats.one") : t("plans.seats.many", { count: n }),
+          }))}
+          help={t("plans.seatsHelp")}
         />
+        {classTypes.length > 0 && (
+          <div>
+            <Select<"none" | "all" | "chosen">
+              label={t("plans.classes")}
+              value={form.classes}
+              onChange={(classes) => setForm({ ...form, classes })}
+              options={(["all", "chosen", "none"] as const).map((c) => ({
+                value: c,
+                label: t(`plans.classes.${c}`),
+              }))}
+              help={t("plans.classesHelp")}
+            />
+            {form.classes === "chosen" &&
+              classTypes.map((k) => (
+                <Checkbox
+                  key={k.id}
+                  label={k.name}
+                  checked={form.class_type_ids.includes(k.id)}
+                  onChange={(on) =>
+                    setForm({
+                      ...form,
+                      class_type_ids: on
+                        ? [...form.class_type_ids, k.id]
+                        : form.class_type_ids.filter((id) => id !== k.id),
+                    })
+                  }
+                />
+              ))}
+          </div>
+        )}
+        {form.seats === 1 && (
+          <Field
+            label={t("plans.visitLimit")}
+            value={form.visit_limit}
+            onChange={(visit_limit) => setForm({ ...form, visit_limit })}
+            type="number"
+            inputMode="numeric"
+            help={t("plans.visitLimitHelp")}
+            optional
+            optionalLabel={t("common.optional")}
+          />
+        )}
         <div>
           <Checkbox
             label={t("plans.offPeak")}

@@ -22,8 +22,13 @@ openpyxl==3.1.5
 boto3==1.43.98
 # Web Push to the member app (PLAN.md §16.3, 8.3): VAPID and payload encryption.
 pywebpush==2.5.0
+# Ed25519 for the member QR (PLAN.md §19.2); already pulled in by pywebpush.
+cryptography==50.0.2
 # Receipts as PDF to share (PLAN.md §16.3, 8.4), with Nepali names shaped right.
 fpdf2==2.8.9
+# Shrinking progress photos and stripping their location (PLAN.md §19.5);
+# fpdf2 needs it too.
+Pillow==13.0.0
 uharfbuzz==0.56.2
 # Error tracking, only when SENTRY_DSN is set.
 sentry-sdk[fastapi]==2.69.2

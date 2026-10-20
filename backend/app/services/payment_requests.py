@@ -82,6 +82,25 @@ def create(
         or plan.price is None
     ):
         raise AppError(422, "bad_plan", "That plan isn't available.")
+    with_ids = None
+    if plan.seats > 1:
+        # Only whoever pays renews a family or couple plan from the app, with
+        # the people already on it (§19.1); starting one is for the desk.
+        mates = ms.renewal_group(db, member)
+        if mates is None:
+            raise AppError(
+                422,
+                "plan_for_group",
+                "To start a family or couple plan, please ask at the desk.",
+            )
+        if len(mates) > plan.seats - 1:
+            raise AppError(
+                422,
+                "too_many_people",
+                f"This plan covers {plan.seats} people.",
+                seats=plan.seats,
+            )
+        with_ids = [str(m.id) for m in mates]
     if payment_method_id is not None:
         method = db.get(GymPaymentMethod, payment_method_id)
         if method is None or method.gym_id != member.gym_id or not method.is_active:
@@ -111,6 +130,7 @@ def create(
         amount=amount,
         transaction_ref=ref,
         status=REQUEST_PENDING,
+        with_member_ids=with_ids,
     )
     db.add(row)
     db.flush()
@@ -167,7 +187,11 @@ def approve(
     the_price = price if price is not None else plan.price
     if the_price is None:
         raise AppError(422, "plan_has_no_price", "Set a price for this plan.")
-    admission = plan.admission_fee if ms.is_first_membership(db, member) else 0
+    # A family or couple plan renewed by its payer (§19.1): everyone's first
+    # membership has the admission fee.
+    others = [uuid.UUID(i) for i in row.with_member_ids or []]
+    people = [member] + [m for m in (db.get(Member, i) for i in others) if m]
+    admission = plan.admission_fee * sum(ms.is_first_membership(db, m) for m in people)
     total = the_price - discount + admission
     if row.amount > total:
         raise AppError(
@@ -199,6 +223,7 @@ def approve(
             discount=discount,
             admission_fee=admission,
             source=SOURCE_APP,
+            with_member_ids=others,
             payment=ms.PaymentIn(
                 amount=row.amount,
                 method=METHOD_FOR_ACCOUNT.get(method.kind if method else "", "bank"),

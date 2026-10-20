@@ -48,6 +48,26 @@ async function registration(
   );
 }
 
+/**
+ * The registration once its worker is running. A browser takes a push
+ * subscription only then ("no active Service Worker"), and a worker
+ * registered a moment ago, the first time "Turn on" is tapped, is still
+ * installing.
+ */
+export function activated(
+  reg: ServiceWorkerRegistration,
+): Promise<ServiceWorkerRegistration> {
+  const worker = reg.installing ?? reg.waiting;
+  if (reg.active || !worker) return Promise.resolve(reg);
+  return new Promise((resolve, reject) => {
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "activated") resolve(reg);
+      else if (worker.state === "redundant")
+        reject(new Error("service worker failed to install"));
+    });
+  });
+}
+
 export function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
   const base64 = (base64url + "=".repeat((4 - (base64url.length % 4)) % 4))
     .replace(/-/g, "+")
@@ -117,8 +137,9 @@ export function usePush(slug: string) {
         setState("blocked");
         return;
       }
-      const reg = await registration(slug);
-      if (!reg) throw new Error("no service worker");
+      const found = await registration(slug);
+      if (!found) throw new Error("no service worker");
+      const reg = await activated(found);
       const subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: keyBytes(key),

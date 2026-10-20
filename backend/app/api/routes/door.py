@@ -17,7 +17,7 @@ from app.api.tenancy import StaffContext, for_gym, get_in_gym, in_branches
 from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.core.security import hash_refresh_token, new_refresh_token
-from app.core.time import NEPAL, utcnow
+from app.core.time import NEPAL, today_in_nepal, utcnow
 from app.db.session import get_db
 from app.models.gym import Branch, Gym
 from app.models.member import Member
@@ -37,13 +37,19 @@ from app.schemas.member_app import (
     DeviceRead,
     DeviceRegistered,
     KioskMe,
+    KioskRoster,
+    KioskRules,
     ManualCheckIn,
+    OfflineScansIn,
+    OfflineScansResult,
+    RosterMember,
     ScanIn,
     ScanResult,
     StaffScanIn,
 )
 from app.schemas.readers import ReaderIn
 from app.services import activity, checkins, readers, storage
+from app.services import kiosk as kiosk_service
 
 router = APIRouter(tags=["door"])
 
@@ -74,7 +80,7 @@ def scan_result(outcome: checkins.Outcome, *, can_override: bool = False) -> Sca
         plan_name=state.current.plan_name if state.current else None,
         days_left=state.days_left,
         valid_until=state.valid_until,
-        dues=state.dues,
+        dues=state.dues + state.group_dues,
         visits_left=left,
         can_override=can_override and not outcome.let_in,
     )
@@ -264,6 +270,47 @@ def kiosk_scan(
     )
     db.commit()
     return scan_result(outcome)
+
+
+@router.get("/kiosk/roster", response_model=KioskRoster)
+def kiosk_roster(
+    device: Device = Depends(kiosk), db: Session = Depends(get_db)
+) -> KioskRoster:
+    """Who could come to this branch, for deciding with no internet (§19.2)."""
+    gym = db.get(Gym, device.gym_id)
+    assert gym is not None
+    today = today_in_nepal()
+    members = kiosk_service.roster(db, device, today)
+    db.commit()  # last_seen_at
+    config = gym.config
+    return KioskRoster(
+        branch_id=device.branch_id,
+        from_date=today,
+        server_time=utcnow(),
+        offline_days=config.kiosk_offline_days,
+        rules=KioskRules(
+            grace_days=config.grace_days,
+            rescan_minutes=config.rescan_minutes,
+            dues_rule=config.dues_rule,
+        ),
+        members=[RosterMember.model_validate(m) for m in members],
+    )
+
+
+@router.post("/kiosk/scans", response_model=OfflineScansResult)
+def kiosk_offline_scans(
+    payload: OfflineScansIn,
+    device: Device = Depends(kiosk),
+    db: Session = Depends(get_db),
+) -> OfflineScansResult:
+    """What the kiosk decided while it had no internet, recorded as it was."""
+    recorded = kiosk_service.record(
+        db,
+        device,
+        [kiosk_service.OfflineScan(**s.model_dump()) for s in payload.scans],
+    )
+    db.commit()
+    return OfflineScansResult(recorded=recorded)
 
 
 # --- staff at the door ---

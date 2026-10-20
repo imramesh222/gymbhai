@@ -20,6 +20,7 @@ export type LiveType =
   | "lead"
   | "expense"
   | "pt"
+  | "class"
   | "member"
   | "notice"
   | "staff";

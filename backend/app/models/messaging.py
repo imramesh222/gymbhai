@@ -87,6 +87,8 @@ TRIGGER_BIRTHDAY = "birthday"  # on the day; `days` is 0
 # Personal training (§18.3), each package on its own:
 TRIGGER_PT_ENDING = "pt_ending"  # from the end of their last package, as expiry
 TRIGGER_PT_DUES = "pt_dues"  # money still owed this many days after the sale
+# Progress (§19.5): this many days after their last check; by push only.
+TRIGGER_PROGRESS = "progress"
 TRIGGERS = (
     TRIGGER_EXPIRY,
     TRIGGER_LAPSED,
@@ -95,6 +97,7 @@ TRIGGERS = (
     TRIGGER_BIRTHDAY,
     TRIGGER_PT_ENDING,
     TRIGGER_PT_DUES,
+    TRIGGER_PROGRESS,
 )
 
 

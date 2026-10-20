@@ -227,6 +227,7 @@ export default function NewMemberPage() {
               calendar={calendar}
               display={display}
               firstMembership
+              payer={{ phone }}
             />
           )}
         </Card>

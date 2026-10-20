@@ -1,0 +1,268 @@
+[
+  {
+    "name": "paid, warn, grace 0, at 08:00",
+    "days": "aaaaaaaaaaaaaa",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "allowed",
+      "reason": null
+    }
+  },
+  {
+    "name": "owes, allow, grace 0, at 08:00",
+    "days": "aaaaaaaaaaaaaa",
+    "hours": null,
+    "visits_left": null,
+    "owes": true,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "allow"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "allowed",
+      "reason": null
+    }
+  },
+  {
+    "name": "owes, warn, grace 0, at 08:00",
+    "days": "aaaaaaaaaaaaaa",
+    "hours": null,
+    "visits_left": null,
+    "owes": true,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "warned",
+      "reason": "dues"
+    }
+  },
+  {
+    "name": "owes, refuse, grace 0, at 08:00",
+    "days": "aaaaaaaaaaaaaa",
+    "hours": null,
+    "visits_left": null,
+    "owes": true,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "refuse"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_dues",
+      "reason": "dues"
+    }
+  },
+  {
+    "name": "frozen, warn, grace 0, at 08:00",
+    "days": "fffaaaaaaaaaaa",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_frozen",
+      "reason": "frozen"
+    }
+  },
+  {
+    "name": "ended_yesterday, warn, grace 3, at 08:00",
+    "days": "gggxxxxxxxxxxx",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 3,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "warned",
+      "reason": "expired_grace"
+    }
+  },
+  {
+    "name": "ended_yesterday, warn, grace 0, at 08:00",
+    "days": "xxxxxxxxxxxxxx",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_expired",
+      "reason": "expired"
+    }
+  },
+  {
+    "name": "ended_long_ago, warn, grace 3, at 08:00",
+    "days": "xxxxxxxxxxxxxx",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 3,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_expired",
+      "reason": "expired"
+    }
+  },
+  {
+    "name": "starts_next_week, warn, grace 0, at 08:00",
+    "days": "xxxxxxxaaaaaaa",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_expired",
+      "reason": "expired"
+    }
+  },
+  {
+    "name": "other_branch, warn, grace 0, at 08:00",
+    "days": "bbbbbbbbbbbbbb",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_branch",
+      "reason": "branch"
+    }
+  },
+  {
+    "name": "visits_used, warn, grace 0, at 08:00",
+    "days": "vvvvvvvvvvxxxx",
+    "hours": null,
+    "visits_left": 0,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_visits_used",
+      "reason": "visits_used"
+    }
+  },
+  {
+    "name": "off_peak, warn, grace 0, at 08:00",
+    "days": "aaaaaaaaaaaaaa",
+    "hours": [
+      {
+        "to": "10:00",
+        "days": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "from": "06:00"
+      }
+    ],
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "allowed",
+      "reason": null
+    }
+  },
+  {
+    "name": "off_peak, warn, grace 0, at 20:00",
+    "days": "aaaaaaaaaaaaaa",
+    "hours": [
+      {
+        "to": "10:00",
+        "days": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "from": "06:00"
+      }
+    ],
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "20:00",
+    "expected": {
+      "result": "denied_hours",
+      "reason": "hours"
+    }
+  },
+  {
+    "name": "archived, warn, grace 0, at 08:00",
+    "days": "xxxxxxxxxxxxxx",
+    "hours": null,
+    "visits_left": null,
+    "owes": false,
+    "rules": {
+      "grace_days": 0,
+      "rescan_minutes": 180,
+      "dues_rule": "warn"
+    },
+    "time": "08:00",
+    "expected": {
+      "result": "denied_expired",
+      "reason": "expired"
+    }
+  }
+]

@@ -9,11 +9,14 @@ import { membersApi, type Member } from "@/lib/api";
 export interface Picked {
   id: string;
   name: string;
+  /** Never had a membership: the admission fee applies (§19.1). */
+  first?: boolean;
 }
 
 /**
  * Choose one member by name, phone or code: "Referred by" (PLAN.md §16.4,
- * 9.6). Up to five matches as you type; the choice shows as a chip.
+ * 9.6), someone on a family plan (§19.1). Up to five matches as you type;
+ * the choice shows as a chip.
  */
 export function MemberPicker({
   label,
@@ -24,26 +27,28 @@ export function MemberPicker({
   label: string;
   value: Picked | null;
   onChange: (picked: Picked | null) => void;
-  /** Not this member (themselves). */
-  exclude?: string;
+  /** Not these members (themselves, or those chosen already). */
+  exclude?: string | string[];
 }) {
   const id = useId();
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Member[]>([]);
+  const excluded = [exclude ?? []].flat().join(",");
   useEffect(() => {
     if (q.trim().length < 2) return;
     let gone = false;
     const timer = setTimeout(() => {
+      const skip = excluded.split(",");
       membersApi
         .list({ q, limit: 5 })
-        .then((r) => !gone && setFound(r.items.filter((m) => m.id !== exclude)))
+        .then((r) => !gone && setFound(r.items.filter((m) => !skip.includes(m.id))))
         .catch(() => undefined);
     }, 250);
     return () => {
       gone = true;
       clearTimeout(timer);
     };
-  }, [q, exclude]);
+  }, [q, excluded]);
   const shown = q.trim().length >= 2 ? found : [];
 
   if (value) {
@@ -84,7 +89,7 @@ export function MemberPicker({
               <button
                 type="button"
                 onClick={() => {
-                  onChange({ id: m.id, name: m.name });
+                  onChange({ id: m.id, name: m.name, first: m.status === "none" });
                   setQ("");
                 }}
                 className="flex w-full justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"

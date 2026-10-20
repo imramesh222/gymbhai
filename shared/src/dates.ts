@@ -170,6 +170,17 @@ export function formatAd(iso: string): string {
   return localDigits(`${d} ${adMonths()[m - 1]} ${y}`);
 }
 
+/** Day and month, no year, in the gym's main calendar: short enough for a
+ * chart's axis (PLAN.md §19.5). */
+export function formatShort(iso: string, display: DateDisplay): string {
+  if (display === "ad") {
+    const [, m, d] = iso.split("-").map(Number);
+    return localDigits(`${d} ${adMonths()[m - 1]}`);
+  }
+  const { month, day } = toBs(iso);
+  return localDigits(`${day} ${bsMonths()[month - 1]}`);
+}
+
 /** A date the way the gym has chosen to show dates. */
 export function formatDate(
   iso: string | null | undefined,

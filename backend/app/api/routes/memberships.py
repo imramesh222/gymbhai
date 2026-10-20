@@ -7,22 +7,25 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require
-from app.api.presenters import membership_read_one, payment_read
+from app.api.presenters import groups_read, membership_read_one, payment_read
 from app.api.tenancy import StaffContext, get_in_gym
 from app.core.errors import not_found
 from app.core.permissions import Permission
 from app.db.session import get_db
 from app.models.activity import ActivityLog
 from app.models.gym import Gym
-from app.models.membership import Membership, MembershipFreeze
+from app.models.member import Member
+from app.models.membership import Membership, MembershipFreeze, MembershipGroup
 from app.models.payment import Payment
 from app.schemas.members import (
+    AddToGroupIn,
     CancelIn,
     ExtendAllIn,
     ExtendAllResult,
     ExtendIn,
     FreezeIn,
     HistoryEntry,
+    MembershipGroupRead,
     MembershipRead,
     MembershipUpdate,
     SaleResult,
@@ -31,6 +34,8 @@ from app.services import memberships as ms
 from app.services.history import history_for
 
 router = APIRouter(prefix="/memberships", tags=["memberships"])
+# Family and couple plans (§19.1).
+groups_router = APIRouter(prefix="/membership-groups", tags=["memberships"])
 
 
 def load_membership(
@@ -221,3 +226,59 @@ def history(
     if payment_ids:
         conditions.append(ActivityLog.entity_id.in_(payment_ids))
     return history_for(db, ctx.gym_id, conditions)
+
+
+# --- family and couple plans (PLAN.md §19.1) --------------------------------------
+
+
+def load_group(
+    db: Session, ctx: StaffContext, group_id: uuid.UUID, *, for_update: bool = False
+) -> MembershipGroup:
+    """In the caller's gym, and seen from a branch they work at: the payer's."""
+    group = get_in_gym(
+        db,
+        MembershipGroup,
+        group_id,
+        ctx,
+        message="No such membership.",
+        for_update=for_update,
+    )
+    payer = ms.payer_membership(db, group)
+    if payer is None or not ctx.can_access_branch(payer.branch_id):
+        raise not_found("No such membership.")
+    return group
+
+
+@groups_router.get("/{group_id}", response_model=MembershipGroupRead)
+def get_group(
+    group_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
+) -> MembershipGroupRead:
+    group = load_group(db, ctx, group_id)
+    return groups_read(db, [group.id])[group.id]
+
+
+@groups_router.post("/{group_id}/members", response_model=MembershipGroupRead)
+def add_to_group(
+    group_id: uuid.UUID,
+    payload: AddToGroupIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MEMBERSHIPS_SELL)),
+) -> MembershipGroupRead:
+    """Someone joins a plan with a free place; its price doesn't change.
+    Removing someone is cancelling their membership."""
+    # Locked: two desks filling the last place at once.
+    group = load_group(db, ctx, group_id, for_update=True)
+    member = get_in_gym(
+        db,
+        Member,
+        payload.member_id,
+        ctx,
+        branch_column=Member.home_branch_id,
+        message="No such member.",
+    )
+    ms.add_to_group(db, ctx, group, member, payload.start_date, request=request)
+    db.commit()
+    return groups_read(db, [group.id])[group.id]

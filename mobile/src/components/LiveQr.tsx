@@ -5,6 +5,7 @@ import { t } from "@shared/i18n";
 import { memberCode, msUntilNext, type QrIdentity } from "@shared/qr/memberQr";
 
 import { serverNow } from "@/lib/clock";
+import { sign } from "@/lib/ed25519";
 import { colors, space } from "@/lib/theme";
 
 import { QrCode } from "./QrCode";
@@ -29,7 +30,7 @@ export function LiveQr({
     const timer = setInterval(() => setNow(serverNow()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const code = memberCode(identity, now);
+  const code = memberCode(identity, now, sign);
   return (
     <View style={{ alignItems: "center", gap: space(2) }}>
       <QrCode

@@ -34,6 +34,9 @@ class Plan(IdMixin, TimestampMixin, GymOwned, Base):
         CheckConstraint("price IS NULL OR price >= 0", name="price"),
         CheckConstraint("admission_fee >= 0", name="admission_fee"),
         CheckConstraint("visit_limit IS NULL OR visit_limit > 0", name="visit_limit"),
+        CheckConstraint("seats BETWEEN 1 AND 6", name="seats"),
+        # Whose visits would they be? (§19.1)
+        CheckConstraint("seats = 1 OR visit_limit IS NULL", name="seats_no_visits"),
     )
 
     name: Mapped[str] = mapped_column(String(80))
@@ -60,6 +63,14 @@ class Plan(IdMixin, TimestampMixin, GymOwned, Base):
     # Off-peak: when the door lets them in, as [{"days": [0..6, Monday is 0],
     # "from": "06:00", "to": "10:00"}] in Nepal time; null is any time (9.4).
     access_hours: Mapped[list | None] = mapped_column(JSONB)
+    # People one sale covers: 2 for a couple, up to 6 for a family (§19.1).
+    seats: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
+    # The classes it lets members book (§19.4): none, all, or the chosen
+    # types. Copied onto each membership sold.
+    classes: Mapped[str] = mapped_column(
+        String(8), default="all", server_default=text("'all'")
+    )
+    class_type_ids: Mapped[list | None] = mapped_column(JSONB)
 
 
 class PlanBranch(IdMixin, TimestampMixin, Base):

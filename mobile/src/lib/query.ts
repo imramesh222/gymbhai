@@ -60,16 +60,20 @@ export const keys = {
   visits: (slug: string, month: string) => [slug, "visits", month] as const,
   notices: (slug: string) => [slug, "notices"] as const,
   freeze: (slug: string) => [slug, "freeze"] as const,
+  classes: (slug: string, from: string) => [slug, "classes", from] as const,
+  progress: (slug: string) => [slug, "progress"] as const,
   push: (slug: string) => [slug, "push"] as const,
 };
 
 /** What each live event means for the screens (§17.3). */
 const AFFECTS: Record<Exclude<MemberLiveType, "resync">, string[]> = {
-  member: ["me", "payments", "renew", "freeze", "visits"],
+  member: ["me", "payments", "renew", "freeze", "visits", "classes"],
   payment_request: ["me", "payments", "renew"],
   freeze_request: ["me", "freeze"],
   check_in: ["me", "visits"],
   notice: ["me", "notices"],
+  // Places taken at their branch, or a waitlist place given to them (§19.4).
+  class: ["classes"],
 };
 
 /** Re-read what an event changed; everything after a resync. */

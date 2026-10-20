@@ -8,6 +8,8 @@ const AREAS = [
   "leads",
   "memberships",
   "pt",
+  "classes",
+  "progress",
   "payments",
   "expenses",
   "reports",

@@ -68,6 +68,11 @@ export default function PaymentRequestsPage() {
                   </span>
                 )}
               </p>
+              {r.with_names && r.with_names.length > 0 && (
+                <p className="text-slate-600">
+                  {t("membership.with", { names: r.with_names.join(", ") })}
+                </p>
+              )}
               <p className="text-slate-600">
                 {r.method_label ?? "—"} · {t("payment.transactionRef")}:{" "}
                 {r.transaction_ref ?? "—"}

@@ -13,6 +13,9 @@ Automations run daily at 09:00 Nepal time. Each enabled rule has a trigger:
   end of the member's last package; a pack used up early ends on the day of
   its last session (§18.3).
 - pt_dues: money still owed on personal training `days` after it was sold.
+- progress: `days` after their last progress check (§19.5). By push only,
+  free: a nudge isn't worth an SMS credit, so only members whose phone takes
+  push are reminded.
 
 Nothing is sent twice: reminder_log holds one row per rule and occasion (its
 `dedupe_key`). A day the worker missed is caught up for up to CATCH_UP_DAYS;
@@ -25,7 +28,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable
 
-from sqlalchemy import extract, or_, select, tuple_
+from sqlalchemy import extract, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -36,7 +39,7 @@ from app.core.sms_text import render
 from app.core.time import NEPAL, today_in_nepal
 from app.models.gym import GYM_ACTIVE, Gym
 from app.models.member import Member
-from app.models.membership import Membership
+from app.models.membership import Membership, MembershipGroup
 from app.models.messaging import (
     SMS_MEMBERSHIP,
     SMS_REMINDER,
@@ -46,11 +49,13 @@ from app.models.messaging import (
     TRIGGER_EXPIRY,
     TRIGGER_LAPSED,
     TRIGGER_NOT_VISITING,
+    TRIGGER_PROGRESS,
     TRIGGER_PT_DUES,
     TRIGGER_PT_ENDING,
     ReminderLog,
     ReminderRule,
 )
+from app.models.progress import ProgressEntry
 from app.models.staff import StaffUser
 from app.models.training import PtPackage
 from app.services import members as members_service
@@ -156,8 +161,27 @@ def after_sale(
     *,
     new_member: bool,
     staff_id: uuid.UUID | None = None,
+    sms_allowed: bool = True,
 ) -> None:
-    """The SMS from §5.3 step 5: welcome for a new member, else "active until"."""
+    """The SMS from §5.3 step 5: welcome for a new member, else "active until".
+
+    On a family or couple plan, `membership` is the payer's: the others on it
+    hear by push only (§19.1), as one SMS per family is enough."""
+    if membership.group_id is not None and sms_allowed:
+        for other in ms.group_memberships(db, membership.group_id):
+            if other.member_id == member.id or other.cancelled_at is not None:
+                continue
+            person = db.get(Member, other.member_id)
+            if person is not None:
+                after_sale(
+                    db,
+                    gym,
+                    person,
+                    other,
+                    new_member=False,
+                    staff_id=staff_id,
+                    sms_allowed=False,
+                )
     if not member.app_access:
         return
     state = members_service.state(db, member)
@@ -187,6 +211,7 @@ def after_sale(
         sms_body=body,
         sms_kind=SMS_MEMBERSHIP,
         created_by=staff_id,
+        sms_allowed=sms_allowed,
     )
 
 
@@ -334,6 +359,7 @@ def _send(
     pushable: set[uuid.UUID],
     membership_id: uuid.UUID | None = None,
     quiet: bool = False,
+    sms_allowed: bool = True,
 ) -> bool:
     """Record the occasion, then send it: by push if the member's phone takes
     it, else SMS (§16.3, 8.3). False if it was sent before.
@@ -366,6 +392,7 @@ def _send(
         sms_body=body,
         sms_kind=SMS_REMINDER,
         pushable=pushable,
+        sms_allowed=sms_allowed,
     )
     if message is not None:
         db.execute(
@@ -386,6 +413,7 @@ TAP_OPENS = {
     # Home shows their personal training, and what they owe on it.
     TRIGGER_PT_ENDING: "",
     TRIGGER_PT_DUES: "",
+    TRIGGER_PROGRESS: "/progress",
 }
 
 
@@ -416,6 +444,7 @@ def _run_gym(db: Session, gym: Gym, today: dt.date) -> int:
         + _birthdays(db, gym, today, by_trigger[TRIGGER_BIRTHDAY], pushable)
         + _pt_ending(db, gym, today, by_trigger[TRIGGER_PT_ENDING], pushable)
         + _pt_dues(db, gym, today, by_trigger[TRIGGER_PT_DUES], pushable)
+        + _progress(db, gym, today, by_trigger[TRIGGER_PROGRESS], pushable)
     )
 
 
@@ -446,6 +475,7 @@ def _chain_ends(
         )
     )
     states = members_service.states_for(db, candidates, today)
+    payers = _payers(db, {m.group_id for st in states.values() for m in st.memberships})
 
     queued = 0
     for member in candidates:
@@ -464,6 +494,10 @@ def _chain_ends(
             default=None,
         )
         if last is None:
+            continue
+        # A family or couple plan is renewed by whoever pays: only they're
+        # reminded, not everyone on the same phone (§19.1).
+        if payers.get(last.group_id, member.id) != member.id:
             continue
         for rule in rules:
             target = end + dt.timedelta(days=_offset(rule))
@@ -487,6 +521,22 @@ def _chain_ends(
                 quiet=overtaken,
             )
     return queued
+
+
+def _payers(
+    db: Session, group_ids: Iterable[uuid.UUID | None]
+) -> dict[uuid.UUID | None, uuid.UUID]:
+    """Who pays for each family or couple plan; no query without one."""
+    wanted = {g for g in group_ids if g is not None}
+    if not wanted:
+        return {}
+    return dict(
+        db.execute(
+            select(MembershipGroup.id, MembershipGroup.payer_member_id).where(
+                MembershipGroup.id.in_(wanted)
+            )
+        ).all()
+    )
 
 
 def _dues(
@@ -764,6 +814,51 @@ def _pt_dues(
                 f"pt:{package.id}",
                 render(rule.template, values),
                 pushable=pushable,
+            )
+    return queued
+
+
+def _progress(
+    db: Session,
+    gym: Gym,
+    today: dt.date,
+    rules: list[ReminderRule],
+    pushable: set[uuid.UUID],
+) -> int:
+    """`days` after their last check, by push only (§19.5): once per check
+    (the key holds its date), and only near the day it came due."""
+    if not rules or not pushable:
+        return 0
+    last = (
+        select(ProgressEntry.member_id, func.max(ProgressEntry.measured_on).label("on"))
+        .where(ProgressEntry.gym_id == gym.id)
+        .group_by(ProgressEntry.member_id)
+        .subquery()
+    )
+    queued = 0
+    for rule in rules:
+        latest = today - dt.timedelta(days=rule.days)
+        rows = db.execute(
+            select(Member, last.c.on)
+            .join(last, last.c.member_id == Member.id)
+            .where(
+                *_reachable(gym),
+                Member.id.in_(pushable),
+                last.c.on <= latest,
+                last.c.on >= latest - dt.timedelta(days=CATCH_UP_DAYS),
+            )
+        ).all()
+        for member, on in rows:
+            values = values_for(gym, member, None, None, days=(today - on).days)
+            queued += _send(
+                db,
+                gym,
+                rule,
+                member,
+                f"progress:{member.id}:{on.isoformat()}",
+                render(rule.template, values),
+                pushable=pushable,
+                sms_allowed=False,
             )
     return queued
 

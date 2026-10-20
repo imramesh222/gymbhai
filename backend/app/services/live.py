@@ -59,6 +59,9 @@ EXPENSE = "expense"
 # Personal training sold or changed, a session recorded or voided, or money
 # taken for it (§18.3).
 PT = "pt"
+# A class booked, cancelled or changed (§19.4): staff who run classes at that
+# branch, and that branch's members, whose app shows places left.
+CLASS = "class"
 MEMBER = "member"
 # A staff account (permissions, disabled, two-step sign-in, devices) or the
 # gym's rules for signing in changed. Carries nothing but the gym: each screen
@@ -124,6 +127,14 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
     leads = ctx.can(Permission.LEADS_MANAGE)
     money = ctx.can(Permission.REPORTS_MONEY)
     training = ctx.can(Permission.PT_TRAIN) or ctx.can(Permission.PT_SELL)
+    classes = any(
+        ctx.can(p)
+        for p in (
+            Permission.CLASSES_TEACH,
+            Permission.CLASSES_BOOK,
+            Permission.CLASSES_MANAGE,
+        )
+    )
 
     def accepts(event: Event) -> bool:
         if event.get("gym") != gym:
@@ -140,6 +151,8 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
             return money and (branches is None or event.get("branch") in branches)
         if event["type"] == PT:
             return training and (branches is None or event.get("branch") in branches)
+        if event["type"] == CLASS:
+            return classes and (branches is None or event.get("branch") in branches)
         if event["type"] in (CHECK_IN, MEMBER):
             return sees_members and (
                 branches is None or event.get("branch") in branches
@@ -164,7 +177,7 @@ def member_filter(
         if event.get("member") == me:
             return True
         return (
-            event["type"] == NOTICE
+            event["type"] in (NOTICE, CLASS)
             and gym is not None
             and event.get("gym") == gym
             and event.get("branch") in (None, branch)

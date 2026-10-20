@@ -248,7 +248,9 @@ def priced_plan(db: Session, gym: Gym, *, months: int = 1, price: int = 1500_00)
     from app.models.plan import Plan
 
     plan = db.scalars(
-        select(Plan).where(Plan.gym_id == gym.id, Plan.duration_months == months)
+        select(Plan).where(
+            Plan.gym_id == gym.id, Plan.duration_months == months, Plan.seats == 1
+        )
     ).one()
     plan.price = price
     db.commit()

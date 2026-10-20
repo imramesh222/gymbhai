@@ -120,7 +120,13 @@ export default function Renew() {
       queryClient.invalidateQueries({ queryKey: keys.me(slug) }),
     ]);
 
-  const admission = options.data?.first_membership ? (plan?.admission_fee ?? 0) : 0;
+  // Whoever pays for a family or couple plan renews it for everyone on it
+  // (§19.1): each newcomer's admission fee too.
+  const mates = plan && plan.seats > 1 ? (options.data?.renew_with ?? []) : [];
+  const newcomers =
+    (options.data?.first_membership ? 1 : 0) +
+    mates.filter((m) => m.first_membership).length;
+  const admission = (plan?.admission_fee ?? 0) * newcomers;
   const total = (plan?.price ?? 0) + admission;
 
   // One request, however many taps or retries (§17.4). A screenshot upload
@@ -241,6 +247,11 @@ export default function Renew() {
             >
               <View style={{ flex: 1 }}>
                 <Txt weight="medium">{p.name}</Txt>
+                {p.seats > 1 ? (
+                  <Txt size={13} color={colors.faint}>
+                    {t("plans.forPeople", { count: p.seats })}
+                  </Txt>
+                ) : null}
                 {monthly !== null && (p.duration_months ?? 0) > 1 ? (
                   <Txt size={13} color={colors.faint}>
                     {t("app.renew.perMonth", { amount: formatRs(monthly) })}
@@ -272,6 +283,13 @@ export default function Renew() {
       {plan ? (
         <>
           <Card style={{ gap: space(1) }}>
+            {mates.length > 0 ? (
+              <Txt size={14} color={colors.muted}>
+                {t("app.renew.forEveryone", {
+                  names: mates.map((m) => m.name).join(", "),
+                })}
+              </Txt>
+            ) : null}
             {admission > 0 ? (
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Txt size={14}>{t("sale.admissionFee")}</Txt>

@@ -146,6 +146,16 @@ ACTIONS: dict[Permission, tuple] = {
         "/api/v1/members/{member}/pt",
         {"plan_id": "{pt_plan}", "trainer_id": "{trainer}"},
     ),
+    # Classes (§19.4): an instructor's own, booking at the desk, the timetable.
+    Permission.CLASSES_TEACH: ("GET", "/api/v1/classes/mine", None),
+    Permission.CLASSES_BOOK: (
+        "POST",
+        "/api/v1/classes/{class}/bookings",
+        {"member_id": "{member}"},
+    ),
+    Permission.CLASSES_MANAGE: ("POST", "/api/v1/class-types", {"name": "Yoga"}),
+    # Progress (§19.5).
+    Permission.PROGRESS_RECORD: ("GET", "/api/v1/members/{member}/progress", None),
 }
 
 # Their screens arrive later (PLAN.md §12). Remove each when it gets a route.
@@ -180,9 +190,25 @@ def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
         duration_months=2,
         price=12_000_00,
     )
-    db.add_all([expense, pt_plan])
+    from app.core.time import utcnow
+    from app.models.classes import ClassType, GymClass
+
+    zumba = ClassType(gym_id=gym_a.gym.id, name="Zumba")
+    db.add_all([expense, pt_plan, zumba])
+    db.flush()
+    tomorrow = utcnow() + dt.timedelta(days=1)
+    gym_class = GymClass(
+        gym_id=gym_a.gym.id,
+        branch_id=gym_a.branch.id,
+        type_id=zumba.id,
+        starts_at=tomorrow,
+        ends_at=tomorrow + dt.timedelta(hours=1),
+        places=10,
+    )
+    db.add(gym_class)
     db.commit()
     return {
+        "class": str(gym_class.id),
         "member": str(member.id),
         "plan": str(plan.id),
         "membership": str(membership.id),

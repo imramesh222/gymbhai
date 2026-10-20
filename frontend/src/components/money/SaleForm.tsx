@@ -5,10 +5,12 @@ import { useState } from "react";
 import { Money } from "@/components/ui/Money";
 import { DateInput, MoneyInput, Select } from "@/components/ui/inputs";
 import { t } from "@/i18n";
+import type { Picked } from "@/components/member/MemberPicker";
 import type { Branch, Plan, SaleInput } from "@/lib/api";
 import { planEnd, type Calendar, type DateDisplay } from "@/lib/dates";
 import { formatRs } from "@/lib/money";
 
+import { GroupPeople } from "./GroupPeople";
 import { PaymentFields, toPaymentInput, type PaymentDraft } from "./PaymentFields";
 
 export interface SaleDraft {
@@ -21,6 +23,8 @@ export interface SaleDraft {
   discount: number | null;
   admissionFee: number | null;
   payment: PaymentDraft;
+  /** A family or couple plan's others (§19.1). */
+  withMembers: Picked[];
 }
 
 export function emptySale(startDate: string, branchId: string): SaleDraft {
@@ -34,6 +38,7 @@ export function emptySale(startDate: string, branchId: string): SaleDraft {
     discount: 0,
     admissionFee: 0,
     payment: { amount: null, method: "cash", transactionRef: "" },
+    withMembers: [],
   };
 }
 
@@ -51,6 +56,7 @@ export function toSaleInput(draft: SaleDraft): SaleInput {
     discount: draft.discount ?? 0,
     admission_fee: draft.admissionFee ?? 0,
     payment: toPaymentInput(draft.payment),
+    with_member_ids: draft.withMembers.map((p) => p.id),
   };
 }
 
@@ -66,6 +72,7 @@ export function SaleForm({
   calendar,
   display,
   firstMembership,
+  payer,
 }: {
   plans: Plan[];
   branches: Branch[];
@@ -74,6 +81,8 @@ export function SaleForm({
   calendar: Calendar;
   display: DateDisplay;
   firstMembership: boolean;
+  /** Who it's sold to: they pay for a family or couple plan (§19.1). */
+  payer?: { id?: string; name?: string; phone?: string };
 }) {
   const [paymentTouched, setPaymentTouched] = useState(false);
   const plan = plans.find((p) => p.id === value.planId);
@@ -93,14 +102,27 @@ export function SaleForm({
     onChange(next);
   }
 
+  /** The plan's fee for each person on their first membership (§19.1). */
+  function admissionFor(chosen: Plan | undefined, people: Picked[]): number {
+    const newcomers = (firstMembership ? 1 : 0) + people.filter((p) => p.first).length;
+    return (chosen?.admission_fee ?? 0) * newcomers;
+  }
+
   function choosePlan(planId: string) {
     const chosen = plans.find((p) => p.id === planId);
+    const people =
+      (chosen?.seats ?? 1) > 1 ? value.withMembers.slice(0, chosen!.seats - 1) : [];
     update({
       planId,
       price: chosen?.price ?? null,
-      admissionFee: firstMembership ? (chosen?.admission_fee ?? 0) : 0,
+      admissionFee: admissionFor(chosen, people),
       endEdited: false,
+      withMembers: people,
     });
+  }
+
+  function choosePeople(withMembers: Picked[]) {
+    update({ withMembers, admissionFee: admissionFor(plan, withMembers) });
   }
 
   const total = saleTotal(value);
@@ -126,6 +148,18 @@ export function SaleForm({
           />
         )}
       </div>
+
+      {plan && plan.seats > 1 && (
+        <GroupPeople
+          seats={plan.seats}
+          value={value.withMembers}
+          onChange={choosePeople}
+          payerId={payer?.id}
+          payerName={payer?.name}
+          defaultPhone={payer?.phone}
+          branchId={value.branchId}
+        />
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <DateInput
@@ -161,7 +195,13 @@ export function SaleForm({
           label={t("sale.admissionFee")}
           value={value.admissionFee}
           onChange={(admissionFee) => update({ admissionFee })}
-          help={firstMembership ? t("sale.admissionFirst") : t("sale.admissionRenewal")}
+          help={
+            plan && plan.seats > 1
+              ? t("sale.admissionPeople")
+              : firstMembership
+                ? t("sale.admissionFirst")
+                : t("sale.admissionRenewal")
+          }
         />
       </div>
 

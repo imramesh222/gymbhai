@@ -71,6 +71,17 @@ export default function MemberHome() {
           {state.plan_name && (
             <p className="mt-1 font-semibold text-slate-900">{state.plan_name}</p>
           )}
+          {/* A family or couple plan (§19.1). */}
+          {state.plan_with && state.plan_with.length > 0 && (
+            <p className="text-sm text-slate-600">
+              {t("app.home.with", { names: state.plan_with.join(", ") })}
+            </p>
+          )}
+          {state.paid_by && (
+            <p className="text-sm text-slate-600">
+              {t("app.home.paidBy", { name: state.paid_by })}
+            </p>
+          )}
           {state.valid_until && (
             <p className="mt-0.5 text-sm text-slate-600">
               {state.status === "expired"
@@ -95,6 +106,12 @@ export default function MemberHome() {
           {state.dues > 0 && (
             <p className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200/70">
               {t("app.home.owes")} <Money paisa={state.dues} className="ml-1" />
+            </p>
+          )}
+          {!!state.group_dues && state.group_dues > 0 && (
+            <p className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200/70">
+              {t("app.home.groupOwes")}{" "}
+              <Money paisa={state.group_dues} className="ml-1" />
             </p>
           )}
         </div>
@@ -133,6 +150,38 @@ export default function MemberHome() {
           {me.member_code}
         </p>
       </div>
+
+      {me.has_classes && (
+        <Link
+          href={`/${slug}/classes`}
+          className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900">
+              {t("app.home.classes")}
+            </p>
+            <p className="text-xs text-slate-500">{t("app.home.classesHelp")}</p>
+          </div>
+          <span aria-hidden className="text-lg text-slate-400">
+            ›
+          </span>
+        </Link>
+      )}
+
+      <Link
+        href={`/${slug}/progress`}
+        className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline"
+      >
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900">
+            {t("app.home.progress")}
+          </p>
+          <p className="text-xs text-slate-500">{t("app.home.progressHelp")}</p>
+        </div>
+        <span aria-hidden className="text-lg text-slate-400">
+          ›
+        </span>
+      </Link>
 
       {me.busy && (
         <div className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline">

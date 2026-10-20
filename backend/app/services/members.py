@@ -47,6 +47,7 @@ from app.models.membership import Membership, MembershipFreeze
 from app.models.messaging import SmsMessage
 from app.models.payment import KIND_PAYMENT, Payment
 from app.models.platform import MemberImport
+from app.models.progress import ProgressEntry, ProgressPhoto
 from app.models.push import PushSubscription
 from app.models.training import PtPackage, PtSession
 from app.services import activity, counters, live
@@ -282,6 +283,9 @@ class MemberState:
     visit_limit: int | None = None
     # Its dates cover today, but every visit is used: the door says so.
     used_up_today: bool = False
+    # Owed by whoever pays for a family or couple plan they're on (§19.1):
+    # not in `dues`, which is theirs to pay, but the door's dues rule counts it.
+    group_dues: int = 0
 
     @property
     def visits_left(self) -> int | None:
@@ -360,14 +364,37 @@ def state_of(
     return MemberState(status=NONE, dues=dues, memberships=list(memberships))
 
 
-def states_for(
-    db: Session, members: Sequence[Member], today: dt.date | None = None
-) -> dict[uuid.UUID, MemberState]:
-    """Every member's state in three queries, however many members."""
+@dataclass
+class StateInputs:
+    """Everything members' states are computed from, loaded once: any day's
+    state comes from it with no more queries (the kiosk's roster, §19.2)."""
+
+    by_member: dict[uuid.UUID, list[Membership]]
+    freezes: dict[uuid.UUID, list[MembershipFreeze]]
+    payments: dict[uuid.UUID, list[Payment]]
+    visits: dict[uuid.UUID, int]
+    group_dues: dict[uuid.UUID, int]
+
+    def state(self, member_id: uuid.UUID, today: dt.date | None = None) -> MemberState:
+        found = state_of(
+            self.by_member.get(member_id, []),
+            self.freezes,
+            self.payments,
+            today,
+            self.visits,
+        )
+        found.group_dues = self.group_dues.get(member_id, 0)
+        return found
+
+
+def state_inputs(db: Session, members: Sequence[Member]) -> StateInputs:
+    """In four queries, however many members (five with a family plan)."""
     ids = [m.id for m in members]
-    if not ids:
-        return {}
-    rows = list(db.scalars(select(Membership).where(Membership.member_id.in_(ids))))
+    rows = (
+        list(db.scalars(select(Membership).where(Membership.member_id.in_(ids))))
+        if ids
+        else []
+    )
     by_member: dict[uuid.UUID, list[Membership]] = defaultdict(list)
     for row in rows:
         by_member[row.member_id].append(row)
@@ -378,11 +405,23 @@ def states_for(
     payments: dict[uuid.UUID, list[Payment]] = defaultdict(list)
     for p in ms.payments_for(db, membership_ids):
         payments[p.membership_id].append(p)  # type: ignore[index]
-    visits = ms.visits_used(db, rows)
-    return {
-        m.id: state_of(by_member[m.id], freezes, payments, today, visits)
-        for m in members
-    }
+    return StateInputs(
+        by_member=by_member,
+        freezes=freezes,
+        payments=payments,
+        visits=ms.visits_used(db, rows),
+        group_dues=ms.group_dues_for(db, rows),
+    )
+
+
+def states_for(
+    db: Session, members: Sequence[Member], today: dt.date | None = None
+) -> dict[uuid.UUID, MemberState]:
+    """Every member's state in three queries, however many members."""
+    if not members:
+        return {}
+    inputs = state_inputs(db, members)
+    return {m.id: inputs.state(m.id, today) for m in members}
 
 
 def state(db: Session, member: Member) -> MemberState:
@@ -701,6 +740,15 @@ def erase(
             .where(Lead.id.in_(lead_ids))
             .values(name=ERASED_NAME, phone=None, email=None, notes=None)
         )
+    # Their weight, measurements and photos are theirs alone (§19.5).
+    files += list(
+        db.scalars(
+            select(ProgressPhoto.photo_key).where(ProgressPhoto.member_id == member.id)
+        )
+    )
+    db.execute(delete(ProgressPhoto).where(ProgressPhoto.member_id == member.id))
+    db.execute(delete(ProgressEntry).where(ProgressEntry.member_id == member.id))
+    member.height_mm = None
     # A trainer's notes on their sessions are about them too (§18.3).
     db.execute(
         sql_update(PtSession)

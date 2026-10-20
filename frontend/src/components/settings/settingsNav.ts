@@ -21,6 +21,12 @@ export const SETTINGS_PAGES: SettingsPage[] = [
     anyOf: ["setup.plans"],
   },
   {
+    // Classes and the timetable (§19.4).
+    href: "/staff/settings/classes",
+    label: "settings.nav.classes",
+    anyOf: ["classes.manage"],
+  },
+  {
     href: "/staff/settings/payment-accounts",
     label: "settings.nav.payments",
     anyOf: ["setup.payment_methods"],

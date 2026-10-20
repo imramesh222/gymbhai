@@ -31,6 +31,15 @@ class Permission(StrEnum):
     # changing trainer or dates, cancelling, and anyone's sessions.
     PT_TRAIN = "pt.train"
     PT_SELL = "pt.sell"
+
+    # Classes (§19.4): an instructor's own rosters; booking members in at the
+    # desk; the timetable, and moving or cancelling a class.
+    CLASSES_TEACH = "classes.teach"
+    CLASSES_BOOK = "classes.book"
+    CLASSES_MANAGE = "classes.manage"
+
+    # Progress (§19.5): weight and measurements, for members at their branches.
+    PROGRESS_RECORD = "progress.record"
     # Money
     PAYMENTS_COLLECT = "payments.collect"
     PAYMENTS_APPROVE_APP = "payments.approve_app"
@@ -76,6 +85,8 @@ PRESETS: dict[str, frozenset[Permission]] = {
         Permission.PAYMENTS_VOID,
         Permission.MEMBERSHIPS_DELETE,
         Permission.PT_TRAIN,
+        # Teaching classes is a job too.
+        Permission.CLASSES_TEACH,
     },
     "front_desk": frozenset(
         {
@@ -90,11 +101,18 @@ PRESETS: dict[str, frozenset[Permission]] = {
             Permission.PAYMENTS_COLLECT,
             Permission.DOOR_CHECK_IN,
             Permission.LEADS_MANAGE,
+            Permission.CLASSES_BOOK,
         }
     ),
     # Their own clients and sessions, and the door (§18.3).
     "trainer": frozenset(
-        {Permission.PT_TRAIN, Permission.MEMBERS_VIEW, Permission.DOOR_CHECK_IN}
+        {
+            Permission.PT_TRAIN,
+            Permission.CLASSES_TEACH,
+            Permission.PROGRESS_RECORD,
+            Permission.MEMBERS_VIEW,
+            Permission.DOOR_CHECK_IN,
+        }
     ),
     "blank": frozenset(),
 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { History } from "@/components/member/History";
+import { MemberPicker, type Picked } from "@/components/member/MemberPicker";
 import { PaymentsTable } from "@/components/member/PaymentsTable";
 import {
   PaymentFields,
@@ -28,6 +29,7 @@ import {
   paymentsApi,
   plansApi,
   type Membership,
+  type Plan,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { todayInNepal } from "@/lib/dates";
@@ -37,7 +39,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 
-type DialogName = "edit" | "extend" | "freeze" | "cancel" | "void" | null;
+type DialogName = "edit" | "extend" | "freeze" | "cancel" | "void" | "add" | null;
 
 export default function MembershipPage() {
   const confirm = useConfirm();
@@ -75,6 +77,11 @@ export default function MembershipPage() {
   const { membership: m, member, history, plans, branches } = data;
   const payments = member.payments.filter((p) => p.membership_id === m.id);
   const live = m.status !== "cancelled";
+  // A family or couple plan (§19.1): the money is on the payer's membership.
+  const group = m.group;
+  const payer = group?.people.find((p) => p.member_id === group.payer_member_id);
+  const paysHere = !group || group.payer_member_id === m.member_id;
+  const stillOn = group?.people.filter((p) => !p.cancelled) ?? [];
 
   async function run(action: () => Promise<unknown>) {
     setError(null);
@@ -123,7 +130,7 @@ export default function MembershipPage() {
               )}
               {can("memberships.cancel") && (
                 <Button variant="danger" onClick={() => setDialog("cancel")}>
-                  {t("membership.cancel")}
+                  {paysHere ? t("membership.cancel") : t("membership.removeFromPlan")}
                 </Button>
               )}
             </>
@@ -170,25 +177,48 @@ export default function MembershipPage() {
               <Row label={t("sale.branch")}>
                 {branches.find((b) => b.id === m.branch_id)?.name ?? "—"}
               </Row>
-              <Row label={t("sale.price")}>
-                <Money paisa={m.price} />
-              </Row>
-              <Row label={t("sale.discount")}>
-                <Money paisa={m.discount} />
-              </Row>
-              <Row label={t("sale.admissionFee")}>
-                <Money paisa={m.admission_fee} />
-              </Row>
-              <Row label={t("sale.total")}>
-                <Money paisa={m.total} />
-              </Row>
-              <Row label={t("membership.paid")}>
-                <Money paisa={m.paid} />
-              </Row>
-              <Row label={t("member.dues")}>
-                <Money paisa={m.dues} className={m.dues > 0 ? "text-amber-700" : ""} />
-              </Row>
+              {paysHere ? (
+                <>
+                  <Row label={t("sale.price")}>
+                    <Money paisa={m.price} />
+                  </Row>
+                  <Row label={t("sale.discount")}>
+                    <Money paisa={m.discount} />
+                  </Row>
+                  <Row label={t("sale.admissionFee")}>
+                    <Money paisa={m.admission_fee} />
+                  </Row>
+                  <Row label={t("sale.total")}>
+                    <Money paisa={m.total} />
+                  </Row>
+                  <Row label={t("membership.paid")}>
+                    <Money paisa={m.paid} />
+                  </Row>
+                  <Row label={t("member.dues")}>
+                    <Money
+                      paisa={m.dues}
+                      className={m.dues > 0 ? "text-amber-700" : ""}
+                    />
+                  </Row>
+                </>
+              ) : (
+                payer && (
+                  <Row label={t("membership.paidBy")}>
+                    <Link
+                      href={`/staff/memberships/${payer.membership_id}`}
+                      className="text-brand-700 hover:underline"
+                    >
+                      {payer.name}
+                    </Link>
+                  </Row>
+                )
+              )}
             </dl>
+            {!paysHere && payer && (
+              <p className="mt-2 text-xs text-slate-500">
+                {t("membership.paidByHelp", { name: payer.name })}
+              </p>
+            )}
             {m.cancel_reason && (
               <p className="mt-2 text-sm text-slate-600">
                 {t("membership.cancelledBecause", { reason: m.cancel_reason })}
@@ -244,6 +274,53 @@ export default function MembershipPage() {
               </div>
             )}
           </Card>
+          {group && (
+            <Card
+              title={t("membership.onPlan")}
+              actions={
+                <span className="text-xs text-slate-500">
+                  {t("membership.onPlanCount", {
+                    count: stillOn.length,
+                    seats: group.seats,
+                  })}
+                </span>
+              }
+            >
+              <ul className="divide-y divide-hairline">
+                {group.people.map((p) => (
+                  <li key={p.membership_id}>
+                    <Link
+                      href={`/staff/memberships/${p.membership_id}`}
+                      className="flex items-center justify-between gap-2 py-2 text-sm hover:bg-slate-50"
+                    >
+                      <span className={p.cancelled ? "text-slate-400" : "font-medium"}>
+                        {p.name}
+                        <span className="text-slate-500"> · {p.member_code}</span>
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {p.member_id === group.payer_member_id && t("membership.pays")}
+                        {p.cancelled && t("membership.removed")}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {live &&
+                can("memberships.sell") &&
+                stillOn.length < group.seats &&
+                payer &&
+                !payer.cancelled && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setDialog("add")}
+                  >
+                    {t("membership.addPerson")}
+                  </Button>
+                )}
+            </Card>
+          )}
           <Card title={t("member.payments")}>
             <PaymentsTable payments={payments} />
             {can("payments.void") && payments.some((p) => !p.voided_at) && (
@@ -268,7 +345,9 @@ export default function MembershipPage() {
       {dialog === "edit" && (
         <EditDialog
           membership={m}
-          plans={plans}
+          // A family or couple plan changes only to one for as many people.
+          plans={plans.filter((p) => p.seats === (group?.seats ?? 1))}
+          moneyOnPayer={!paysHere}
           branches={branches}
           display={display}
           error={error}
@@ -299,12 +378,30 @@ export default function MembershipPage() {
       )}
       {dialog === "cancel" && (
         <CancelDialog
+          title={paysHere ? t("membership.cancel") : t("membership.removeFromPlan")}
+          everyone={
+            paysHere && stillOn.length > 1 ? stillOn.map((p) => p.name) : undefined
+          }
           paid={m.paid}
           canRefund={can("payments.refund")}
           error={error}
           onClose={() => setDialog(null)}
           onSave={(reason, refund) =>
             run(() => membershipsApi.cancel(m.id, reason, refund))
+          }
+        />
+      )}
+      {dialog === "add" && group && (
+        <AddPersonDialog
+          exclude={stillOn.map((p) => p.member_id)}
+          display={display}
+          error={error}
+          onClose={() => setDialog(null)}
+          onSave={(person, start) =>
+            run(async () => {
+              await membershipsApi.addToGroup(group.id, person.id, start);
+              toast.success(t("membership.added"));
+            })
           }
         />
       )}
@@ -326,6 +423,7 @@ export default function MembershipPage() {
 function EditDialog({
   membership,
   plans,
+  moneyOnPayer,
   branches,
   display,
   error,
@@ -333,7 +431,9 @@ function EditDialog({
   onSave,
 }: {
   membership: Membership;
-  plans: { id: string; name: string }[];
+  plans: Plan[];
+  /** Someone else pays for this plan: its plan and price are on theirs. */
+  moneyOnPayer: boolean;
   branches: { id: string; name: string }[];
   display: "ad" | "bs" | "both";
   error: string | null;
@@ -374,13 +474,17 @@ function EditDialog({
         }}
         className="space-y-3"
       >
-        <Select
-          label={t("sale.plan")}
-          value={form.plan_id}
-          onChange={(plan_id) => setForm({ ...form, plan_id })}
-          options={plans.map((p) => ({ value: p.id, label: p.name }))}
-        />
-        <p className="text-xs text-slate-500">{t("membership.planChangeHelp")}</p>
+        {!moneyOnPayer && (
+          <>
+            <Select
+              label={t("sale.plan")}
+              value={form.plan_id}
+              onChange={(plan_id) => setForm({ ...form, plan_id })}
+              options={plans.map((p) => ({ value: p.id, label: p.name }))}
+            />
+            <p className="text-xs text-slate-500">{t("membership.planChangeHelp")}</p>
+          </>
+        )}
         {branches.length > 1 && (
           <Select
             label={t("sale.branch")}
@@ -403,23 +507,25 @@ function EditDialog({
             display={display}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <MoneyInput
-            label={t("sale.price")}
-            value={form.price}
-            onChange={(price) => setForm({ ...form, price })}
-          />
-          <MoneyInput
-            label={t("sale.discount")}
-            value={form.discount}
-            onChange={(discount) => setForm({ ...form, discount })}
-          />
-          <MoneyInput
-            label={t("sale.admissionFee")}
-            value={form.admission_fee}
-            onChange={(admission_fee) => setForm({ ...form, admission_fee })}
-          />
-        </div>
+        {!moneyOnPayer && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MoneyInput
+              label={t("sale.price")}
+              value={form.price}
+              onChange={(price) => setForm({ ...form, price })}
+            />
+            <MoneyInput
+              label={t("sale.discount")}
+              value={form.discount}
+              onChange={(discount) => setForm({ ...form, discount })}
+            />
+            <MoneyInput
+              label={t("sale.admissionFee")}
+              value={form.admission_fee}
+              onChange={(admission_fee) => setForm({ ...form, admission_fee })}
+            />
+          </div>
+        )}
         <TextArea
           label={t("membership.reason")}
           value={form.reason}
@@ -534,12 +640,17 @@ function FreezeDialog({
 }
 
 function CancelDialog({
+  title,
+  everyone,
   paid,
   canRefund,
   error,
   onClose,
   onSave,
 }: {
+  title: string;
+  /** Cancelling the payer's cancels the plan for everyone on it (§19.1). */
+  everyone?: string[];
   paid: number;
   canRefund: boolean;
   error: string | null;
@@ -553,7 +664,7 @@ function CancelDialog({
     transactionRef: "",
   });
   return (
-    <Dialog open onClose={onClose} title={t("membership.cancel")}>
+    <Dialog open onClose={onClose} title={title}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -561,6 +672,11 @@ function CancelDialog({
         }}
         className="space-y-3"
       >
+        {everyone && (
+          <Notice tone="warning">
+            {t("membership.cancelEveryone", { names: everyone.join(", ") })}
+          </Notice>
+        )}
         <TextArea
           label={t("membership.reason")}
           value={reason}
@@ -581,7 +697,53 @@ function CancelDialog({
         )}
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" variant="danger" block>
-          {t("membership.cancel")}
+          {title}
+        </Button>
+      </form>
+    </Dialog>
+  );
+}
+
+function AddPersonDialog({
+  exclude,
+  display,
+  error,
+  onClose,
+  onSave,
+}: {
+  exclude: string[];
+  display: "ad" | "bs" | "both";
+  error: string | null;
+  onClose: () => void;
+  onSave: (person: Picked, start: string | null) => void;
+}) {
+  const [person, setPerson] = useState<Picked | null>(null);
+  const [start, setStart] = useState("");
+  return (
+    <Dialog open onClose={onClose} title={t("membership.addPerson")}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (person) onSave(person, start || null);
+        }}
+        className="space-y-3"
+      >
+        <MemberPicker
+          label={t("sale.withFind")}
+          value={person}
+          onChange={setPerson}
+          exclude={exclude}
+        />
+        <DateInput
+          label={t("membership.addPersonStart")}
+          value={start}
+          onChange={setStart}
+          display={display}
+        />
+        <p className="text-xs text-slate-500">{t("membership.addPersonHelp")}</p>
+        {error && <Notice tone="error">{error}</Notice>}
+        <Button type="submit" block disabled={!person}>
+          {t("membership.addPerson")}
         </Button>
       </form>
     </Dialog>

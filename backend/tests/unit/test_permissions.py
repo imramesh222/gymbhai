@@ -33,8 +33,8 @@ def test_presets_are_starting_points_within_the_catalogue() -> None:
 
 
 def test_every_permission_in_plan_section_2_1_exists() -> None:
-    # Guards against a key being dropped by accident: 34 ticks on the form.
-    assert len(ALL_PERMISSIONS) == 34
+    # Guards against a key being dropped by accident: 38 ticks on the form.
+    assert len(ALL_PERMISSIONS) == 38
 
 
 def test_expenses_start_with_managers_not_the_front_desk() -> None:
@@ -54,9 +54,21 @@ def test_personal_training_starting_points() -> None:
     assert Permission.PT_TRAIN not in PRESETS["manager"]
     assert PRESETS["trainer"] == {
         Permission.PT_TRAIN,
+        Permission.CLASSES_TEACH,
+        Permission.PROGRESS_RECORD,
         Permission.MEMBERS_VIEW,
         Permission.DOOR_CHECK_IN,
     }
+
+
+def test_classes_starting_points() -> None:
+    """A trainer teaches; the desk books members in; a manager runs the
+    timetable but isn't made an instructor (PLAN.md §19.4)."""
+    assert Permission.CLASSES_TEACH in PRESETS["trainer"]
+    assert Permission.CLASSES_BOOK in PRESETS["front_desk"]
+    assert Permission.CLASSES_MANAGE not in PRESETS["front_desk"]
+    assert {Permission.CLASSES_BOOK, Permission.CLASSES_MANAGE} <= PRESETS["manager"]
+    assert Permission.CLASSES_TEACH not in PRESETS["manager"]
 
 
 def test_staff_can_only_grant_what_they_hold() -> None:

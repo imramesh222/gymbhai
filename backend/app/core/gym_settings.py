@@ -29,6 +29,17 @@ class GymSettings(BaseModel):
     grace_days: int = Field(default=0, ge=0, le=30)
     # A second scan within this many minutes is "already checked in" (§4.3).
     rescan_minutes: int = Field(default=180, ge=0, le=24 * 60)
+    # How long a kiosk keeps letting people in with no internet (§19.2).
+    kiosk_offline_days: int = Field(default=3, ge=1, le=7)
+    # Classes (§19.4): booking opens this many days ahead, closes this many
+    # minutes before the start; cancelling later than this many hours before
+    # is a late cancel. A member with `no_show_limit` no-shows in 30 days
+    # can't book for `no_show_block_days`; 0 is off.
+    class_booking_days: int = Field(default=7, ge=1, le=30)
+    class_closes_minutes: int = Field(default=30, ge=0, le=240)
+    class_cancel_hours: int = Field(default=2, ge=0, le=48)
+    no_show_limit: int = Field(default=0, ge=0, le=10)
+    no_show_block_days: int = Field(default=7, ge=1, le=30)
     # An active member with no visit for this many days is "not visiting" on
     # Follow up (§16.3, 8.1).
     not_visiting_days: int = Field(default=14, ge=3, le=90)

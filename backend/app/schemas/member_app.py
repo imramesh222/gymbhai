@@ -68,6 +68,8 @@ class QrIdentity(BaseModel):
     key: str
     version: int
     window_seconds: int
+    # Ed25519, for gb2 codes a kiosk can check offline (§19.2).
+    signing_key: str | None = None
 
 
 class MemberState(BaseModel):
@@ -80,6 +82,11 @@ class MemberState(BaseModel):
     visit_limit: int | None = None
     visits_left: int | None = None
     access_hours: list[dict] | None = None
+    # A family or couple plan (§19.1): the others on it, and who pays when
+    # it isn't them ("Ram pays for this"), with what's still owed on it.
+    plan_with: list[str] = []
+    paid_by: str | None = None
+    group_dues: int = 0
 
 
 class MemberMe(BaseModel):
@@ -106,6 +113,8 @@ class MemberMe(BaseModel):
     digits: Literal["nepali", "western"] = "western"
     # Personal training still to come or under way, soonest first (§18.3).
     training: list[MemberTraining] = []
+    # Classes at their branch in the next week: Home offers to book (§19.4).
+    has_classes: bool = False
 
 
 class MemberSignIn(BaseModel):
@@ -166,6 +175,14 @@ class PaymentRequestRead(BaseModel):
     member_code: str | None = None
     expected_total: int | None = None
     reviewed_by_name: str | None = None
+    # A family or couple plan's others (§19.1).
+    with_names: list[str] = []
+
+
+class RenewMate(BaseModel):
+    id: uuid.UUID
+    name: str
+    first_membership: bool
 
 
 class RenewOptions(BaseModel):
@@ -173,6 +190,9 @@ class RenewOptions(BaseModel):
     payment_methods: list[PaymentMethodRead]
     renewal_starts_on: dt.date
     first_membership: bool
+    # Whoever pays for a family or couple plan renews it for these people too
+    # (§19.1); a plan for several is offered only then, and only if they fit.
+    renew_with: list[RenewMate] = []
 
 
 class ApproveIn(Strict):
@@ -224,6 +244,62 @@ class KioskMe(BaseModel):
 
 class ScanIn(Strict):
     code: str = Field(min_length=4, max_length=200)
+
+
+# --- the kiosk offline (PLAN.md §19.2) ---
+
+
+class RosterMember(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    code: str
+    # Changes with the photo, so the kiosk knows to fetch it again.
+    photo: str | None
+    photo_url: str | None
+    # SHA-256 of their card's token; their gb2 public key.
+    card: str
+    key: str
+    # One letter a day from the roster's `from_date` (app/services/kiosk.py).
+    days: str
+    hours: list[dict] | None
+    visits_left: int | None
+    owes: bool
+    plan_name: str | None
+    valid_until: dt.date | None
+
+
+class KioskRules(BaseModel):
+    grace_days: int
+    rescan_minutes: int
+    dues_rule: str
+
+
+class KioskRoster(BaseModel):
+    branch_id: uuid.UUID
+    from_date: dt.date
+    # The kiosk keeps its offset from this, and uses our clock offline.
+    server_time: dt.datetime
+    offline_days: int
+    rules: KioskRules
+    members: list[RosterMember]
+
+
+class OfflineScanIn(Strict):
+    client_id: str = Field(min_length=8, max_length=64)
+    member_id: uuid.UUID
+    method: Literal["app_qr", "card_qr"]
+    at: dt.datetime
+    result: str = Field(max_length=24)
+
+
+class OfflineScansIn(Strict):
+    scans: list[OfflineScanIn] = Field(max_length=500)
+
+
+class OfflineScansResult(BaseModel):
+    recorded: int
 
 
 class StaffScanIn(ScanIn):

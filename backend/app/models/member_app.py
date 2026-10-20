@@ -15,7 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, GymOwned, IdMixin, TimestampMixin
@@ -145,6 +145,14 @@ class CheckIn(IdMixin, TimestampMixin, GymOwned, Base):
     __table_args__ = (
         Index("ix_check_ins_gym_at", "gym_id", "at"),
         Index("ix_check_ins_member_at", "member_id", "at"),
+        # A kiosk's offline scan sent twice is recorded once (§19.2).
+        Index(
+            "uq_check_ins_device_client",
+            "device_id",
+            "client_id",
+            unique=True,
+            postgresql_where=text("client_id IS NOT NULL"),
+        ),
     )
 
     branch_id: Mapped[uuid.UUID] = mapped_column(
@@ -168,6 +176,12 @@ class CheckIn(IdMixin, TimestampMixin, GymOwned, Base):
         UUID(as_uuid=True), ForeignKey("staff_users.id")
     )
     note: Mapped[str | None] = mapped_column(Text)
+    # Decided by a kiosk with no internet and sent later (§19.2): the result
+    # is what it decided at the door, never decided again here.
+    offline: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    client_id: Mapped[str | None] = mapped_column(String(64))
 
 
 REQUEST_PENDING = "pending"
@@ -206,6 +220,9 @@ class PaymentRequest(IdMixin, TimestampMixin, GymOwned, Base):
     payment_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL")
     )
+    # A family or couple plan renewed by its payer: the others it covers,
+    # as member ids, worked out by the server when the request is made (§19.1).
+    with_member_ids: Mapped[list | None] = mapped_column(JSONB)
 
 
 class FreezeRequest(IdMixin, TimestampMixin, GymOwned, Base):

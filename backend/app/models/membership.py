@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -67,6 +68,39 @@ class Membership(IdMixin, TimestampMixin, GymOwned, Base):
     # never changes what a member bought.
     visit_limit: Mapped[int | None] = mapped_column(Integer)
     access_hours: Mapped[list | None] = mapped_column(JSONB)
+    # Sold with others on a family or couple plan (§19.1). The payer's
+    # membership carries the price and every payment; the others carry 0.
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("membership_groups.id"), index=True
+    )
+    # Copied from the plan at sale (§19.4): the classes it lets them book.
+    classes: Mapped[str] = mapped_column(
+        String(8), default="all", server_default=text("'all'")
+    )
+    class_type_ids: Mapped[list | None] = mapped_column(JSONB)
+
+
+class MembershipGroup(IdMixin, TimestampMixin, GymOwned, Base):
+    """One sale for several people: a couple, a parent and children (§19.1).
+
+    Each person has an ordinary membership of their own (dates, status,
+    freezes, visits); this ties them together and says who pays.
+    """
+
+    __tablename__ = "membership_groups"
+    __table_args__ = (CheckConstraint("seats BETWEEN 2 AND 6", name="seats"),)
+
+    plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("plans.id")
+    )
+    payer_member_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id"), index=True
+    )
+    # Copied from the plan at sale, like its price.
+    seats: Mapped[int] = mapped_column(Integer)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id")
+    )
 
 
 class MembershipFreeze(IdMixin, TimestampMixin, GymOwned, Base):

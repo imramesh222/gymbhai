@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.presenters import payments_read
@@ -36,6 +37,7 @@ TEXT = {
     "date": "Date",
     "member": "Member",
     "plan": "Plan",
+    "covers": "Also covers",
     "period": "Membership",
     "training": "Personal training",
     "method": "Paid by",
@@ -93,7 +95,25 @@ def build(db: Session, payment: Payment) -> Receipt:
         dues_after=dues_after,
         date_display=gym.config.date_display,
         training=isinstance(bought, PtPackage),
+        covers=_covers(db, bought),
     )
+
+
+def _covers(db: Session, bought: Membership | PtPackage | None) -> list[str]:
+    """Everyone else a family or couple plan's payment covers (§19.1)."""
+    if not isinstance(bought, Membership) or bought.group_id is None:
+        return []
+    ids = [
+        m.member_id
+        for m in ms.group_memberships(db, bought.group_id)
+        if m.member_id != bought.member_id and m.cancelled_at is None
+    ]
+    if not ids:
+        return []
+    names = dict(
+        db.execute(select(Member.id, Member.name).where(Member.id.in_(ids))).all()
+    )
+    return [names[i] for i in ids if i in names]
 
 
 def rupees(paisa: int) -> str:
@@ -189,6 +209,8 @@ def pdf(receipt: Receipt) -> bytes:
     ]
     if receipt.plan_name:
         rows.append((TEXT["plan"], receipt.plan_name))
+    if receipt.covers:
+        rows.append((TEXT["covers"], ", ".join(receipt.covers)))
     if receipt.start_date and receipt.end_date:
         rows.append(
             (

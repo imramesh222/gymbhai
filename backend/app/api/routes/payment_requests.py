@@ -48,12 +48,14 @@ def _reads(db: Session, rows: Sequence[PaymentRequest]) -> list[PaymentRequestRe
             )
         )
     }
-    # Members with a membership already: no admission fee for them.
+    # Members with a membership already: no admission fee for them. On a
+    # family or couple plan, each newcomer pays one (§19.1).
+    people = {uuid.UUID(i) for r in rows for i in r.with_member_ids or []}
     renewing = set(
         db.scalars(
             select(Membership.member_id)
             .where(
-                Membership.member_id.in_(member_ids),
+                Membership.member_id.in_(member_ids | people),
                 Membership.cancelled_at.is_(None),
             )
             .distinct()
@@ -67,8 +69,11 @@ def _reads(db: Session, rows: Sequence[PaymentRequest]) -> list[PaymentRequestRe
             read.member_code = member.member_code
             plan = plans.get(row.plan_id)
             if plan is not None and plan.price is not None:
-                first = row.member_id not in renewing
-                read.expected_total = plan.price + (plan.admission_fee if first else 0)
+                everyone = [row.member_id] + [
+                    uuid.UUID(i) for i in row.with_member_ids or []
+                ]
+                firsts = sum(1 for m in everyone if m not in renewing)
+                read.expected_total = plan.price + plan.admission_fee * firsts
         if row.reviewed_by:
             read.reviewed_by_name = reviewer_names.get(row.reviewed_by)
     return reads

@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { staffPushApi, type NotificationKind, type StaffPushStatus } from "@/lib/api";
-import { isIos, isStandalone, keyBytes, supported, type PushState } from "@/lib/push";
+import {
+  activated,
+  isIos,
+  isStandalone,
+  keyBytes,
+  supported,
+  type PushState,
+} from "@/lib/push";
 
 /**
  * Notifications on a staff member's phone or computer (PLAN.md §18.6): what
@@ -19,10 +26,11 @@ import { isIos, isStandalone, keyBytes, supported, type PushState } from "@/lib/
 
 const SCOPE = "/staff";
 
+/** Registered the first time someone turns them on, so maybe still installing. */
 async function registration(): Promise<ServiceWorkerRegistration> {
-  return (
+  return activated(
     (await navigator.serviceWorker.getRegistration(SCOPE)) ??
-    (await navigator.serviceWorker.register("/staff-sw.js", { scope: SCOPE }))
+      (await navigator.serviceWorker.register("/staff-sw.js", { scope: SCOPE })),
   );
 }
 

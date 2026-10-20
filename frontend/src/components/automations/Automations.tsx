@@ -115,7 +115,11 @@ function RuleEditor({
         onChange={setTemplate}
         rows={3}
       />
-      <SmsCounter text={template} />
+      {info.pushOnly ? (
+        <p className="text-xs text-slate-500">{t("automations.pushOnly")}</p>
+      ) : (
+        <SmsCounter text={template} />
+      )}
       {error && <Notice tone="error">{error}</Notice>}
       {dirty && (
         <Button
@@ -192,7 +196,11 @@ function AddRule({ info, onAdded }: { info: TriggerInfo; onAdded: () => void }) 
         rows={3}
         required
       />
-      <SmsCounter text={template} />
+      {info.pushOnly ? (
+        <p className="text-xs text-slate-500">{t("automations.pushOnly")}</p>
+      ) : (
+        <SmsCounter text={template} />
+      )}
       {error && <Notice tone="error">{error}</Notice>}
       <div className="flex gap-2">
         <Button type="submit" variant="secondary">

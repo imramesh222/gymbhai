@@ -40,6 +40,7 @@ def test_a_new_gym_starts_with_trial_credits_and_rules(
         ("expiry", 3, True),
         ("lapsed", 30, False),
         ("not_visiting", 14, False),
+        ("progress", 30, False),
         ("pt_dues", 7, False),
         ("pt_ending", -3, False),
         ("pt_ending", 1, False),

@@ -5,8 +5,9 @@ import type { Trigger } from "@/lib/api";
 /** What each automation's `days` means, and what it may say (PLAN.md §16.3, 8.2). */
 export interface TriggerInfo {
   trigger: Trigger;
-  /** Memberships', or personal training's (§18.3): shown under its own heading. */
-  group: "membership" | "pt";
+  /** Memberships', personal training's (§18.3) or progress's (§19.5): each
+   * under its own heading. */
+  group: "membership" | "pt" | "progress";
   title: MessageKey;
   help: MessageKey;
   min: number;
@@ -15,6 +16,8 @@ export interface TriggerInfo {
   placeholders: string[];
   /** A starting wording for a new one. */
   example: MessageKey;
+  /** Sent by push only, free: no SMS count to show (§19.5). */
+  pushOnly?: boolean;
 }
 
 const COMMON = ["name", "gym", "link", "code"];
@@ -90,6 +93,17 @@ export const TRIGGERS: TriggerInfo[] = [
     placeholders: [...COMMON, "amount", "plan", "trainer", "end_date"],
     example: "automations.ptDues.example",
   },
+  {
+    trigger: "progress",
+    group: "progress",
+    title: "automations.progress.title",
+    help: "automations.progress.help",
+    min: 7,
+    max: 180,
+    placeholders: [...COMMON, "days"],
+    example: "automations.progress.example",
+    pushOnly: true,
+  },
 ];
 
 /** "3 days before it ends", "After 14 days away", "On their birthday". */
@@ -118,5 +132,11 @@ export function when(trigger: Trigger, days: number): string {
       );
     case "birthday":
       return t("automations.when.birthday");
+    case "progress":
+      return plural(
+        days,
+        "automations.when.progress.one",
+        "automations.when.progress.other",
+      );
   }
 }

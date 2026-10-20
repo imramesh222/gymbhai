@@ -111,6 +111,17 @@ export default function Home() {
               {state.plan_name}
             </Txt>
           ) : null}
+          {/* A family or couple plan (§19.1). */}
+          {state.plan_with && state.plan_with.length > 0 ? (
+            <Txt size={14} color={colors.muted}>
+              {t("app.home.with", { names: state.plan_with.join(", ") })}
+            </Txt>
+          ) : null}
+          {state.paid_by ? (
+            <Txt size={14} color={colors.muted}>
+              {t("app.home.paidBy", { name: state.paid_by })}
+            </Txt>
+          ) : null}
           {state.valid_until ? (
             <Txt size={14} color={colors.muted}>
               {state.status === "expired"
@@ -133,28 +144,10 @@ export default function Home() {
             </Txt>
           ) : null}
           {state.dues > 0 ? (
-            <View
-              style={{
-                alignSelf: "flex-start",
-                flexDirection: "row",
-                gap: space(1),
-                marginTop: space(1),
-                backgroundColor: colors.amberBg,
-                borderRadius: 999,
-                paddingHorizontal: space(2.5),
-                paddingVertical: space(1),
-              }}
-            >
-              <Txt size={13} weight="semibold" color={colors.amberInk}>
-                {t("app.home.owes")}
-              </Txt>
-              <Money
-                paisa={state.dues}
-                size={13}
-                weight="semibold"
-                color={colors.amberInk}
-              />
-            </View>
+            <Owing label={t("app.home.owes")} paisa={state.dues} />
+          ) : null}
+          {state.group_dues ? (
+            <Owing label={t("app.home.groupOwes")} paisa={state.group_dues} />
           ) : null}
         </View>
       </Card>
@@ -254,6 +247,48 @@ export default function Home() {
 
       <PushPrompt />
 
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push("/progress")}
+        style={{
+          backgroundColor: colors.surface,
+          borderRadius: radius.lg,
+          padding: space(4),
+          gap: space(1),
+          borderWidth: 1,
+          borderColor: colors.hairline,
+        }}
+      >
+        <Txt weight="semibold" color={colors.ink}>
+          {t("app.home.progress")}
+        </Txt>
+        <Txt size={14} color={colors.muted}>
+          {t("app.home.progressHelp")}
+        </Txt>
+      </Pressable>
+
+      {me.data.has_classes ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/classes")}
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: radius.lg,
+            padding: space(4),
+            gap: space(1),
+            borderWidth: 1,
+            borderColor: colors.hairline,
+          }}
+        >
+          <Txt weight="semibold" color={colors.ink}>
+            {t("app.home.classes")}
+          </Txt>
+          <Txt size={14} color={colors.muted}>
+            {t("app.home.classesHelp")}
+          </Txt>
+        </Pressable>
+      ) : null}
+
       {me.data.latest_notice ? (
         <Pressable
           accessibilityRole="button"
@@ -336,5 +371,28 @@ function Training({ pt, display }: { pt: MemberTraining; display: DateDisplay })
         </View>
       ) : null}
     </Card>
+  );
+}
+
+/** Money still owed, as an amber pill. */
+function Owing({ label, paisa }: { label: string; paisa: number }) {
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        flexDirection: "row",
+        gap: space(1),
+        marginTop: space(1),
+        backgroundColor: colors.amberBg,
+        borderRadius: 999,
+        paddingHorizontal: space(2.5),
+        paddingVertical: space(1),
+      }}
+    >
+      <Txt size={13} weight="semibold" color={colors.amberInk}>
+        {label}
+      </Txt>
+      <Money paisa={paisa} size={13} weight="semibold" color={colors.amberInk} />
+    </View>
   );
 }

@@ -30,6 +30,8 @@ import { SendSms } from "@/components/member/SendSms";
 import { SignInQr } from "@/components/member/SignInQr";
 import { WhatsAppDialog } from "@/components/member/WhatsApp";
 import { VisitsCalendar } from "@/components/member/VisitsCalendar";
+import { MemberClassesTab } from "@/components/classes/MemberClassesTab";
+import { ProgressTab } from "@/components/progress/ProgressTab";
 import { TrainingTab } from "@/components/training/TrainingTab";
 import { Avatar } from "@/components/ui/Avatar";
 import { Card, EmptyState, Row } from "@/components/ui/Card";
@@ -82,12 +84,15 @@ function MembershipsList({ member }: { member: MemberDetail }) {
                     limit: m.visit_limit,
                   })}`}
               </p>
+              {m.group && <GroupLine membership={m} />}
             </div>
             <div className="shrink-0 text-right">
               <StatusBadge status={m.status} />
-              <p className="mt-1 text-xs text-slate-500">
-                <Money paisa={m.paid} /> / <Money paisa={m.total} />
-              </p>
+              {(!m.group || m.group.payer_member_id === m.member_id) && (
+                <p className="mt-1 text-xs text-slate-500">
+                  <Money paisa={m.paid} /> / <Money paisa={m.total} />
+                </p>
+              )}
               {m.dues > 0 && (
                 <p className="text-xs font-medium text-amber-700">
                   {t("members.owes")} <Money paisa={m.dues} />
@@ -98,6 +103,31 @@ function MembershipsList({ member }: { member: MemberDetail }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A family or couple plan (§19.1): who else is on it, and who pays. */
+function GroupLine({
+  membership,
+}: {
+  membership: MemberDetail["memberships"][number];
+}) {
+  const group = membership.group!;
+  const others = group.people.filter(
+    (p) => p.member_id !== membership.member_id && !p.cancelled,
+  );
+  const someoneElsePays = group.payer_member_id !== membership.member_id;
+  return (
+    <p className="text-xs text-slate-500">
+      {others.length > 0 &&
+        t("membership.with", { names: others.map((p) => p.name).join(", ") })}
+      {someoneElsePays && (
+        <>
+          {others.length > 0 && " · "}
+          {t("membership.paysForIt", { name: group.payer_name })}
+        </>
+      )}
+    </p>
   );
 }
 
@@ -172,6 +202,12 @@ export default function MemberPage() {
     ...(can("pt.sell") || (training.data?.length ?? 0) > 0
       ? [{ id: "training", label: t("pt.title"), count: training.data?.length }]
       : []),
+    ...(can("classes.book") || can("classes.manage") || can("classes.teach")
+      ? [{ id: "classes", label: t("member.classes") }]
+      : []),
+    ...(can("progress.record")
+      ? [{ id: "progress", label: t("member.progress") }]
+      : []),
     { id: "payments", label: t("member.payments"), count: member?.payments.length },
     { id: "visits", label: t("member.tab.visits") },
     ...(can("messages.sms")
@@ -188,6 +224,10 @@ export default function MemberPage() {
   // Erased at their request: nothing left to edit or contact.
   const erased = member.erased_at !== null;
   const current = member.memberships.find((m) => m.id === member.current?.id);
+  // Whoever pays for a family or couple plan they're on, if not them (§19.1).
+  const groupPayer = member.memberships.find(
+    (m) => m.group && m.group.payer_member_id !== member.id && m.status !== "cancelled",
+  )?.group?.payer_name;
 
   async function act(action: () => Promise<unknown>, done: MessageKey) {
     try {
@@ -405,6 +445,12 @@ export default function MemberPage() {
                     {t("members.owes")} <Money paisa={member.dues} />
                   </span>
                 )}
+                {member.group_dues > 0 && groupPayer && (
+                  <span className="font-semibold text-amber-700">
+                    {t("member.groupOwes", { name: groupPayer })}{" "}
+                    <Money paisa={member.group_dues} />
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -540,6 +586,8 @@ export default function MemberPage() {
           ) : (
             <ListSkeleton rows={2} />
           ))}
+        {tab === "classes" && <MemberClassesTab memberId={member.id} />}
+        {tab === "progress" && <ProgressTab memberId={member.id} />}
         {tab === "payments" && (
           <Card>
             <PaymentsTable payments={member.payments} />

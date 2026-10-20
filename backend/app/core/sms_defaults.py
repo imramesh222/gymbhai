@@ -104,6 +104,13 @@ RULES: dict[str, list[tuple[str, int, str, bool]]] = {
             "for your personal training. Pay at the desk.",
             False,
         ),
+        (
+            "progress",
+            30,
+            "Hi {name}, it's been {days} days since your last check at {gym}. "
+            "Time to weigh and measure, and see how far you've come!",
+            False,
+        ),
     ],
     "ne": [
         (
@@ -168,6 +175,13 @@ RULES: dict[str, list[tuple[str, int, str, bool]]] = {
             7,
             "नमस्ते {name}, {gym} मा पर्सनल ट्रेनिङको रु {amount} तिर्न बाँकी छ। "
             "डेस्कमा तिर्नुहोस्।",
+            False,
+        ),
+        (
+            "progress",
+            30,
+            "नमस्ते {name}, {gym} मा अन्तिम जाँचको {days} दिन भयो। "
+            "तौल र नाप लिएर आफ्नो प्रगति हेर्नुहोस्!",
             False,
         ),
     ],

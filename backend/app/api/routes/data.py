@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require
-from app.api.tenancy import StaffContext, get_in_gym
+from app.api.tenancy import StaffContext, get_in_gym, in_branches
 from app.core.calendar import format_bs
 from app.core.errors import AppError
 from app.core.permissions import Permission
@@ -20,14 +20,23 @@ from app.db.session import get_db
 from app.models.expense import Expense
 from app.models.gym import Branch, Gym
 from app.models.member import Member
-from app.models.member_app import REQUEST_PENDING, CheckIn, PaymentRequest
+from app.models.member_app import (
+    DEVICE_KIOSK,
+    REQUEST_PENDING,
+    CheckIn,
+    Device,
+    PaymentRequest,
+)
 from app.models.membership import SOURCE_IMPORT, Membership, MembershipFreeze
 from app.models.payment import Payment
 from app.models.platform import MemberImport
 from app.models.staff import StaffUser
 from app.schemas.reports import (
+    ClassesMonthRead,
+    ClassTypeMonth,
     ImportCommit,
     ImportPreview,
+    InstructorMonth,
     LeadDue,
     MemberBrief,
     MemberOwing,
@@ -35,12 +44,14 @@ from app.schemas.reports import (
     Person,
     PtMonthRead,
     PtTrainerMonth,
+    QuietKiosk,
     SetupChecklist,
     TodayRead,
     TrendMonth,
     TrendRead,
 )
 from app.services import activity, excel, live, reports
+from app.services import classes as classes_service
 from app.services import expenses as expenses_service
 from app.services import leads as leads_service
 from app.services import members as members_service
@@ -50,6 +61,33 @@ router = APIRouter(tags=["reports and data"])
 
 
 # --- Today and reports -------------------------------------------------------
+
+
+# A kiosk asks for its roster every 5 minutes (§19.2): quiet for longer, it
+# has lost the internet or been switched off. After 12 hours it's the night.
+KIOSK_QUIET = dt.timedelta(minutes=15)
+KIOSK_NIGHT = dt.timedelta(hours=12)
+
+
+def _quiet_kiosks(db: Session, ctx: StaffContext) -> list[QuietKiosk]:
+    now = utcnow()
+    rows = db.execute(
+        in_branches(
+            select(Device.name, Branch.name, Device.last_seen_at)
+            .join(Branch, Branch.id == Device.branch_id)
+            .where(
+                Device.gym_id == ctx.gym_id,
+                Device.kind == DEVICE_KIOSK,
+                Device.revoked_at.is_(None),
+                Device.last_seen_at < now - KIOSK_QUIET,
+                Device.last_seen_at > now - KIOSK_NIGHT,
+            )
+            .order_by(Device.last_seen_at),
+            Device.branch_id,
+            ctx,
+        )
+    ).all()
+    return [QuietKiosk(name=n, branch_name=b, last_seen_at=at) for n, b, at in rows]
 
 
 @router.get("/dashboard/today", response_model=TodayRead)
@@ -93,6 +131,7 @@ def today(
         ]
     return TodayRead(
         date=data.date,
+        quiet_kiosks=_quiet_kiosks(db, ctx),
         leads_due=leads_due,
         leads_due_list=leads_due_list,
         check_ins=data.check_ins,
@@ -150,6 +189,32 @@ def monthly(
         )
         if pt
         else None,
+        classes=_classes_month(db, ctx, data.first_day, data.last_day),
+    )
+
+
+def _classes_month(
+    db: Session, ctx: StaffContext, first: dt.date, last: dt.date
+) -> ClassesMonthRead | None:
+    found = classes_service.month(
+        db,
+        ctx,
+        reports.day_start(first),
+        reports.day_start(last + dt.timedelta(days=1)),
+    )
+    if found is None:
+        return None
+    return ClassesMonthRead(
+        held=found.held,
+        places=found.places,
+        booked=found.booked,
+        came=found.came,
+        no_shows=found.no_shows,
+        by_type=[ClassTypeMonth(**t.__dict__) for t in found.by_type],
+        by_instructor=[
+            InstructorMonth(instructor_id=i, name=n, held=h, came=c)
+            for i, n, h, c in found.by_instructor
+        ],
     )
 
 

@@ -11,7 +11,7 @@ from app.models.job import Job
 from app.models.lead import Lead
 from app.models.member_app import MemberSession, MemberSignInLink, OtpCode
 from app.models.staff import LoginAttempt, StaffPasswordReset, StaffSession
-from app.services import owner_messages, reminders
+from app.services import classes, owner_messages, reminders
 from app.services.push import service as push
 from app.services.push import staff as staff_push
 from app.services.sms import service as sms
@@ -23,6 +23,8 @@ handler(sms.JOB_SEND, on_give_up=sms.give_up)(sms.handle_send)
 handler(push.JOB_PUSH, on_give_up=push.give_up)(push.handle_send)
 handler(staff_push.JOB_STAFF_PUSH)(staff_push.handle_send)
 handler(reminders.JOB_DAILY)(reminders.handle_daily)
+handler(classes.JOB_GENERATE)(classes.handle_generate)
+handler(classes.JOB_REMINDER)(classes.handle_reminder)
 handler(owner_messages.JOB_SUBSCRIPTION)(
     lambda db, payload: owner_messages.subscription_reminders(db)
 )
@@ -64,6 +66,8 @@ def cleanup(db: Session, payload: dict) -> None:
 DAILY.extend(
     [
         (reminders.JOB_DAILY, dt.time(9, 0)),
+        # The timetable's classes, 4 weeks ahead (§19.4).
+        (classes.JOB_GENERATE, dt.time(1, 0)),
         (JOB_CLEANUP, dt.time(3, 0)),
         (owner_messages.JOB_SUBSCRIPTION, dt.time(10, 0)),
         (owner_messages.JOB_SETUP_NUDGE, dt.time(10, 30)),
