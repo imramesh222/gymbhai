@@ -520,3 +520,71 @@ def test_door_readers(engine, client: TestClient, db: Session, gym_a) -> None:
         add_member(n)
     assert len(readers.wanted(db, device)) == MORE + 1
     assert queries(engine, lambda: readers.wanted(db, device)) == one
+
+
+def test_kiosk_roster(engine, client: TestClient, db: Session, gym_a) -> None:
+    """The kiosk's roster (PLAN.md §19.2): fourteen days of state per member,
+    from the same few queries."""
+    sign_in(db, client, gym_a.owner)
+    token = client.post(
+        "/api/v1/devices", json={"branch_id": str(gym_a.branch.id), "name": "Door"}
+    ).json()["token"]
+    door = TestClient(client.app)
+    door.headers["X-Device-Token"] = token
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98123400{n:02d}")
+        sell(db, gym_a, member, paid=500_00 * (n % 2))
+
+    def get() -> list:
+        response = door.get("/api/v1/kiosk/roster")
+        assert response.status_code == 200, response.text
+        return response.json()["members"]
+
+    add(99)
+    one = queries(engine, get)
+    for n in range(MORE):
+        add(n)
+    assert len(get()) == 1 + MORE
+    assert queries(engine, get) == one
+
+
+def test_classes(engine, client: TestClient, db: Session, gym_a) -> None:
+    """A week of classes with their counts (PLAN.md §19.4)."""
+    import datetime as dt
+
+    from app.core.time import utcnow
+    from app.models.classes import ClassBooking, ClassType, GymClass
+
+    sign_in(db, client, gym_a.owner)
+    kind = ClassType(gym_id=gym_a.gym.id, name="Zumba")
+    db.add(kind)
+    db.commit()
+
+    def add(n: int) -> None:
+        start = utcnow() + dt.timedelta(days=1, hours=n)
+        row = GymClass(
+            gym_id=gym_a.gym.id,
+            branch_id=gym_a.branch.id,
+            type_id=kind.id,
+            starts_at=start,
+            ends_at=start + dt.timedelta(hours=1),
+            places=5,
+            instructor_id=gym_a.owner.id,
+        )
+        db.add(row)
+        db.flush()
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98123400{n:02d}")
+        db.add(
+            ClassBooking(
+                gym_id=gym_a.gym.id,
+                class_id=row.id,
+                member_id=member.id,
+                status="booked",
+                booked_at=utcnow(),
+            )
+        )
+        db.commit()
+
+    add(99)
+    same_cost(engine, client, "/api/v1/classes", add)

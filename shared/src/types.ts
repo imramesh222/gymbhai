@@ -28,6 +28,11 @@ export interface Plan {
   visit_limit: number | null;
   /** Off-peak hours (9.4); null is any time. */
   access_hours: AccessWindow[] | null;
+  /** People one sale covers: 2 for a couple, up to 6 for a family (§19.1). */
+  seats: number;
+  /** The classes it lets one book (§19.4): none, all, or the chosen types. */
+  classes?: "none" | "all" | "chosen";
+  class_type_ids?: string[] | null;
 }
 
 export interface Payment {
@@ -133,6 +138,13 @@ export interface MemberMe {
     visit_limit: number | null;
     visits_left: number | null;
     access_hours: AccessWindow[] | null;
+    /** A family or couple plan (§19.1): the others on it. Missing from a
+     * copy the phone app saved before these plans. */
+    plan_with?: string[];
+    /** Who pays for it, when someone else does. */
+    paid_by?: string | null;
+    /** Still owed on it by whoever pays. */
+    group_dues?: number;
   };
   qr: QrIdentity;
   gym: PublicGym;
@@ -148,6 +160,8 @@ export interface MemberMe {
   digits: Digits;
   /** Missing from a copy the phone app saved before personal training. */
   training?: MemberTraining[];
+  /** Classes at their branch in the next week: Home offers to book (§19.4). */
+  has_classes?: boolean;
 }
 
 export interface MemberSignIn {
@@ -178,6 +192,8 @@ export interface PaymentRequest {
   member_code: string | null;
   expected_total: number | null;
   reviewed_by_name: string | null;
+  /** A family or couple plan's others, renewed with the payer (§19.1). */
+  with_names?: string[];
 }
 
 export interface PushStatus {
@@ -199,6 +215,7 @@ export type MemberLiveType =
   | "freeze_request"
   | "check_in"
   | "notice"
+  | "class"
   | "resync";
 
 export interface Visit {
@@ -218,7 +235,72 @@ export interface RenewOptions {
   payment_methods: PaymentMethodAccount[];
   renewal_starts_on: string;
   first_membership: boolean;
+  /** Whoever pays for a family or couple plan renews it for these too
+   * (§19.1); plans for several are offered only then. */
+  renew_with?: { id: string; name: string; first_membership: boolean }[];
 }
+
+/** A class in the member app's week (§19.4). */
+export interface AppClass {
+  id: string;
+  type_name: string;
+  color: string;
+  starts_at: string;
+  ends_at: string;
+  instructor_name: string | null;
+  places: number;
+  places_left: number;
+  waiting: number;
+  cancelled: boolean;
+  mine: "booked" | "waitlist" | null;
+  booking_id: string | null;
+  /** Why they can't book it: no_membership, plan_no_class, branch, frozen,
+   * no_shows. */
+  blocked: string | null;
+}
+
+export interface AppClasses {
+  classes: AppClass[];
+  booking_days: number;
+  closes_minutes: number;
+  cancel_hours: number;
+  no_shows: number;
+}
+
+/** Progress (§19.5): whole numbers, as stored: grams, tenths of a percent, mm. */
+export interface ProgressEntry {
+  id: string;
+  measured_on: string;
+  weight_g: number | null;
+  body_fat: number | null;
+  chest_mm: number | null;
+  waist_mm: number | null;
+  hips_mm: number | null;
+  arm_mm: number | null;
+  thigh_mm: number | null;
+  note: string | null;
+  /** Staff who recorded it; null when the member did. */
+  recorded_by_name: string | null;
+  created_at: string;
+}
+
+export interface ProgressPhoto {
+  id: string;
+  taken_on: string;
+  pose: "front" | "side" | "back";
+  url: string;
+  shared: boolean;
+}
+
+export interface Progress {
+  height_mm: number | null;
+  entries: ProgressEntry[];
+  photos: ProgressPhoto[];
+}
+
+export type ProgressInput = Partial<
+  Omit<ProgressEntry, "id" | "recorded_by_name" | "created_at">
+>;
 
 export interface JoinOptions {
   plans: { id: string; name: string; price: number | null }[];

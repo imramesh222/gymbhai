@@ -24,12 +24,12 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.api import idempotency
 from app.api.deps import current_member
-from app.api.presenters import payments_read, staff_names
+from app.api.presenters import groups_read, payments_read, staff_names
 from app.api.routes.freeze_requests import reads as freeze_reads
 from app.api.routes.payment_methods import read as method_read
 from app.api.routes.plans import branch_ids_for, plans_read
@@ -41,9 +41,11 @@ from app.core.push_keys import public_key
 from app.core.time import NEPAL, today_in_nepal, utcnow
 from app.db.session import get_db
 from app.models.activity import ACTOR_MEMBER
+from app.models.classes import ClassBooking, GymClass
 from app.models.gym import GYM_ACTIVE, Branch, Gym
 from app.models.member import Member
 from app.models.member_app import LET_IN, CheckIn, FreezeRequest, PaymentRequest
+from app.models.membership import Membership
 from app.models.messaging import Notice
 from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
@@ -75,6 +77,7 @@ from app.schemas.member_app import (
     PushStatus,
     PushSubscriptionIn,
     QrIdentity,
+    RenewMate,
     RenewOptions,
     Visit,
 )
@@ -211,11 +214,29 @@ def member_training(db: Session, member: Member) -> list[MemberTraining]:
     return shown
 
 
+def _plan_with(
+    db: Session, member: Member, current: Membership | None
+) -> tuple[list[str], str | None]:
+    """On a family or couple plan: the others on it, and who pays if someone
+    else does."""
+    if current is None or current.group_id is None:
+        return [], None
+    group = groups_read(db, [current.group_id]).get(current.group_id)
+    if group is None:
+        return [], None
+    others = [
+        p.name for p in group.people if p.member_id != member.id and not p.cancelled
+    ]
+    paid_by = group.payer_name if group.payer_member_id != member.id else None
+    return others, paid_by
+
+
 def build_me(db: Session, member: Member) -> MemberMe:
     gym = db.get(Gym, member.gym_id)
     assert gym is not None
     state = members_service.state(db, member)
     visits, streak = visits_and_streak(db, member)
+    plan_with, paid_by = _plan_with(db, member, state.current)
     latest = db.scalars(
         member_notices(db, member).order_by(Notice.published_at.desc()).limit(1)
     ).first()
@@ -236,12 +257,16 @@ def build_me(db: Session, member: Member) -> MemberMe:
             visit_limit=state.visit_limit,
             visits_left=state.visits_left,
             access_hours=state.current.access_hours if state.current else None,
+            plan_with=plan_with,
+            paid_by=paid_by,
+            group_dues=state.group_dues,
         ),
         qr=QrIdentity(
             member_hex=member.id.hex,
             key=qr.app_key(member.qr_secret, member.qr_version),
             version=member.qr_version,
             window_seconds=qr.WINDOW_SECONDS,
+            signing_key=qr.signing_key(member.qr_secret, member.qr_version),
         ),
         gym=public_gym(db, gym),
         visits_this_month=visits,
@@ -255,6 +280,32 @@ def build_me(db: Session, member: Member) -> MemberMe:
         if gym.config.show_busyness
         else None,
         training=member_training(db, member),
+        has_classes=_has_classes(db, member),
+    )
+
+
+def _has_classes(db: Session, member: Member) -> bool:
+    now = utcnow()
+    return bool(
+        db.scalar(
+            select(GymClass.id)
+            .where(
+                GymClass.gym_id == member.gym_id,
+                # Their branch's, or one they're booked into elsewhere.
+                or_(
+                    GymClass.branch_id == member.home_branch_id,
+                    exists().where(
+                        ClassBooking.class_id == GymClass.id,
+                        ClassBooking.member_id == member.id,
+                        ClassBooking.status != "cancelled",
+                    ),
+                ),
+                GymClass.cancelled_at.is_(None),
+                GymClass.starts_at > now,
+                GymClass.starts_at < now + dt.timedelta(days=7),
+            )
+            .limit(1)
+        )
     )
 
 
@@ -784,8 +835,13 @@ def renew_options(
         .order_by(Plan.sort_order, Plan.created_at)
     ).all()
     branches = branch_ids_for(db, plans)
+    mates = ms.renewal_group(db, member)
     visible = [
-        p for p in plans if p.all_branches or member.home_branch_id in branches[p.id]
+        p
+        for p in plans
+        if (p.all_branches or member.home_branch_id in branches[p.id])
+        # Plans for several: for whoever pays for one, if everyone fits.
+        and (p.seats == 1 or (mates is not None and len(mates) < p.seats))
     ]
     methods = db.scalars(
         select(GymPaymentMethod)
@@ -797,6 +853,12 @@ def renew_options(
         payment_methods=[method_read(m) for m in methods],
         renewal_starts_on=ms.renewal_start(db, member),
         first_membership=ms.is_first_membership(db, member),
+        renew_with=[
+            RenewMate(
+                id=m.id, name=m.name, first_membership=ms.is_first_membership(db, m)
+            )
+            for m in mates or []
+        ],
     )
 
 
@@ -821,9 +883,24 @@ def requests_read(
         if method_ids
         else {}
     )
+    with_ids = {uuid.UUID(i) for r in rows for i in r.with_member_ids or []}
+    with_names = (
+        dict(
+            db.execute(
+                select(Member.id, Member.name).where(Member.id.in_(with_ids))
+            ).all()
+        )
+        if with_ids
+        else {}
+    )
     reads = []
     for row in rows:
         read = PaymentRequestRead.model_validate(row)
+        read.with_names = [
+            with_names[uuid.UUID(i)]
+            for i in row.with_member_ids or []
+            if uuid.UUID(i) in with_names
+        ]
         read.screenshot_url = storage.signed_url(row.screenshot_key)
         read.plan_name = plan_names.get(row.plan_id)
         if row.payment_method_id:

@@ -36,7 +36,7 @@ from app.core.sms_text import render
 from app.core.time import NEPAL, today_in_nepal
 from app.models.gym import GYM_ACTIVE, Gym
 from app.models.member import Member
-from app.models.membership import Membership
+from app.models.membership import Membership, MembershipGroup
 from app.models.messaging import (
     SMS_MEMBERSHIP,
     SMS_REMINDER,
@@ -156,8 +156,27 @@ def after_sale(
     *,
     new_member: bool,
     staff_id: uuid.UUID | None = None,
+    sms_allowed: bool = True,
 ) -> None:
-    """The SMS from §5.3 step 5: welcome for a new member, else "active until"."""
+    """The SMS from §5.3 step 5: welcome for a new member, else "active until".
+
+    On a family or couple plan, `membership` is the payer's: the others on it
+    hear by push only (§19.1), as one SMS per family is enough."""
+    if membership.group_id is not None and sms_allowed:
+        for other in ms.group_memberships(db, membership.group_id):
+            if other.member_id == member.id or other.cancelled_at is not None:
+                continue
+            person = db.get(Member, other.member_id)
+            if person is not None:
+                after_sale(
+                    db,
+                    gym,
+                    person,
+                    other,
+                    new_member=False,
+                    staff_id=staff_id,
+                    sms_allowed=False,
+                )
     if not member.app_access:
         return
     state = members_service.state(db, member)
@@ -187,6 +206,7 @@ def after_sale(
         sms_body=body,
         sms_kind=SMS_MEMBERSHIP,
         created_by=staff_id,
+        sms_allowed=sms_allowed,
     )
 
 
@@ -446,6 +466,7 @@ def _chain_ends(
         )
     )
     states = members_service.states_for(db, candidates, today)
+    payers = _payers(db, {m.group_id for st in states.values() for m in st.memberships})
 
     queued = 0
     for member in candidates:
@@ -464,6 +485,10 @@ def _chain_ends(
             default=None,
         )
         if last is None:
+            continue
+        # A family or couple plan is renewed by whoever pays: only they're
+        # reminded, not everyone on the same phone (§19.1).
+        if payers.get(last.group_id, member.id) != member.id:
             continue
         for rule in rules:
             target = end + dt.timedelta(days=_offset(rule))
@@ -487,6 +512,22 @@ def _chain_ends(
                 quiet=overtaken,
             )
     return queued
+
+
+def _payers(
+    db: Session, group_ids: Iterable[uuid.UUID | None]
+) -> dict[uuid.UUID | None, uuid.UUID]:
+    """Who pays for each family or couple plan; no query without one."""
+    wanted = {g for g in group_ids if g is not None}
+    if not wanted:
+        return {}
+    return dict(
+        db.execute(
+            select(MembershipGroup.id, MembershipGroup.payer_member_id).where(
+                MembershipGroup.id.in_(wanted)
+            )
+        ).all()
+    )
 
 
 def _dues(

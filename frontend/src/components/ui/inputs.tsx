@@ -206,6 +206,7 @@ export function Select<T extends string>({
   options,
   required,
   compact,
+  help,
 }: {
   label: string;
   value: T | "";
@@ -214,6 +215,7 @@ export function Select<T extends string>({
   required?: boolean;
   /** In a table row, where the column heading already says what it is. */
   compact?: boolean;
+  help?: string;
 }) {
   const id = useId();
   return (
@@ -245,6 +247,7 @@ export function Select<T extends string>({
           </option>
         ))}
       </select>
+      {help && <p className="mt-1 text-xs text-slate-500">{help}</p>}
     </div>
   );
 }

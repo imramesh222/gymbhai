@@ -11,7 +11,12 @@ from app.core.permissions import Permission
 from app.db.session import get_db
 from app.models.gym import Gym
 from app.schemas.auth import GymRead
-from app.schemas.gym import CheckInRulesUpdate, GymUpdate, SecurityUpdate
+from app.schemas.gym import (
+    CheckInRulesUpdate,
+    ClassRulesUpdate,
+    GymUpdate,
+    SecurityUpdate,
+)
 from app.services import activity, live, reminders, storage
 
 router = APIRouter(prefix="/gym", tags=["gym"])
@@ -104,6 +109,34 @@ def update_check_in_rules(
             db,
             ctx.staff,
             "gym.check_in_rules_updated",
+            entity="gym",
+            entity_id=gym.id,
+            changes=diff,
+            request=request,
+        )
+    db.commit()
+    db.refresh(gym)
+    return gym_read(gym)
+
+
+@router.patch("/class-rules", response_model=GymRead)
+def update_class_rules(
+    payload: ClassRulesUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.CLASSES_MANAGE)),
+) -> GymRead:
+    """How far ahead classes open, when booking closes, late cancels, no-shows."""
+    gym = _own_gym(db, ctx)
+    before = dict(gym.settings)
+    update = payload.model_dump(exclude_unset=True, exclude_none=True)
+    gym.settings = GymSettings.model_validate({**gym.settings, **update}).model_dump()
+    diff = activity.diff(before, gym.settings)
+    if diff:
+        activity.staff_action(
+            db,
+            ctx.staff,
+            "gym.class_rules_updated",
             entity="gym",
             entity_id=gym.id,
             changes=diff,

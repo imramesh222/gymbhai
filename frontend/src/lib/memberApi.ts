@@ -1,17 +1,19 @@
 /** The member app's API (PLAN.md §8 "Member app"). */
 import type { Locale } from "@/i18n";
 import type {
+  AppClasses,
+  Progress,
+  ProgressInput,
   FreezeRequest,
   MemberMe,
   MemberSignIn,
   Notice,
   Payment,
-  PaymentMethodAccount,
   PaymentRequest,
-  Plan,
   PublicGym,
   PushStatus,
   ReceiptLink,
+  RenewOptions,
 } from "@shared/types";
 import { createClient } from "./api";
 
@@ -98,13 +100,18 @@ export const memberApi = {
       `/api/v1/m/me/visits${month ? `?month=${month}` : ""}`,
     ),
   notices: () => request<Notice[]>("/api/v1/m/notices"),
-  renewOptions: () =>
-    request<{
-      plans: Plan[];
-      payment_methods: PaymentMethodAccount[];
-      renewal_starts_on: string;
-      first_membership: boolean;
-    }>("/api/v1/m/renew"),
+  renewOptions: () => request<RenewOptions>("/api/v1/m/renew"),
+  /** A week of classes at their branch (§19.4). */
+  classes: (from?: string) =>
+    request<AppClasses>(`/api/v1/m/classes${from ? `?from=${from}` : ""}`),
+  /** A place or the waitlist; `key` makes a double tap one booking. */
+  bookClass: (classId: string, key: string) =>
+    request<AppClasses>(`/api/v1/m/classes/${classId}/book`, {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+    }),
+  cancelClassBooking: (bookingId: string) =>
+    request<AppClasses>(`/api/v1/m/class-bookings/${bookingId}/cancel`, post()),
   createRequest: (body: {
     plan_id: string;
     payment_method_id: string | null;
@@ -129,6 +136,38 @@ export const memberApi = {
     form.append("file", file, "photo.jpg");
     return request<MemberMe>("/api/v1/m/me/photo", { method: "POST", body: form });
   },
+  /** Their own progress (§19.5). */
+  progress: () => request<Progress>("/api/v1/m/progress"),
+  recordProgress: (body: ProgressInput, key: string) =>
+    request<Progress>("/api/v1/m/progress", {
+      ...post(body),
+      headers: { "Idempotency-Key": key },
+    }),
+  updateProgress: (id: string, body: ProgressInput) =>
+    request<Progress>(`/api/v1/m/progress/${id}`, { ...post(body), method: "PATCH" }),
+  deleteProgress: (id: string) =>
+    request<Progress>(`/api/v1/m/progress/${id}`, { method: "DELETE" }),
+  setHeight: (height_mm: number | null) =>
+    request<Progress>("/api/v1/m/progress/height", {
+      ...post({ height_mm }),
+      method: "PUT",
+    }),
+  addProgressPhoto: (file: Blob, pose: string) => {
+    const form = new FormData();
+    form.append("file", file, "progress.jpg");
+    form.append("pose", pose);
+    return request<Progress>("/api/v1/m/progress/photos", {
+      method: "POST",
+      body: form,
+    });
+  },
+  shareProgressPhoto: (id: string, shared: boolean) =>
+    request<Progress>(`/api/v1/m/progress/photos/${id}`, {
+      ...post({ shared }),
+      method: "PATCH",
+    }),
+  deleteProgressPhoto: (id: string) =>
+    request<Progress>(`/api/v1/m/progress/photos/${id}`, { method: "DELETE" }),
   latestFreeze: () => request<FreezeRequest | null>("/api/v1/m/freeze-requests/latest"),
   askToFreeze: (body: { from_date: string; to_date: string; reason: string }) =>
     request<FreezeRequest>("/api/v1/m/freeze-requests", post(body)),

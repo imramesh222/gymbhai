@@ -43,6 +43,8 @@ class Member(IdMixin, TimestampMixin, GymOwned, Base):
     emergency_contact: Mapped[str | None] = mapped_column(String(120))
     # A storage key, not a URL: photos are served through signed links (§11).
     photo_key: Mapped[str | None] = mapped_column(String(255))
+    # For BMI on their progress (§19.5), computed, never stored.
+    height_mm: Mapped[int | None] = mapped_column(Integer)
     joined_on: Mapped[date] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text)
     app_access: Mapped[bool] = mapped_column(

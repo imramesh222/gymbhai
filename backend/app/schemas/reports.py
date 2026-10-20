@@ -45,6 +45,12 @@ class LeadDue(BaseModel):
     follow_up_on: dt.date
 
 
+class QuietKiosk(BaseModel):
+    name: str
+    branch_name: str
+    last_seen_at: dt.datetime
+
+
 class TodayRead(BaseModel):
     date: dt.date
     check_ins: int
@@ -76,6 +82,8 @@ class TodayRead(BaseModel):
     # Enquiries to follow up today or overdue; only with Enquiries (9.1).
     leads_due: int | None = None
     leads_due_list: list[LeadDue] = []
+    # Door kiosks gone quiet today: no internet, or switched off (§19.2).
+    quiet_kiosks: list[QuietKiosk] = []
 
 
 class TrendMonth(BaseModel):
@@ -116,6 +124,33 @@ class PtMonthRead(BaseModel):
     by_trainer: list[PtTrainerMonth]
 
 
+class ClassTypeMonth(BaseModel):
+    name: str
+    held: int
+    places: int
+    booked: int
+    came: int
+
+
+class InstructorMonth(BaseModel):
+    instructor_id: uuid.UUID
+    name: str
+    held: int
+    came: int
+
+
+class ClassesMonthRead(BaseModel):
+    """Classes held in the month (§19.4)."""
+
+    held: int
+    places: int
+    booked: int
+    came: int
+    no_shows: int
+    by_type: list[ClassTypeMonth]
+    by_instructor: list[InstructorMonth]
+
+
 class MonthlyRead(BaseModel):
     month: str
     calendar: str
@@ -139,6 +174,7 @@ class MonthlyRead(BaseModel):
     by_plan: dict[str, int]
     # Only for a gym with PT plans.
     personal_training: PtMonthRead | None = None
+    classes: ClassesMonthRead | None = None
 
 
 class ImportPreview(BaseModel):

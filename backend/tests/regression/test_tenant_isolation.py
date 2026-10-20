@@ -16,14 +16,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.time import today_in_nepal, utcnow
+from app.models.classes import ClassSlot, ClassType, GymClass
 from app.models.expense import Expense
 from app.models.gym import Gym
 from app.models.lead import Lead
 from app.models.member_app import Device, FreezeRequest, PaymentRequest
 from app.models.messaging import Notice, ReminderRule
 from app.models.payment import GymPaymentMethod
+from app.models.plan import Plan
 from app.models.platform import MemberImport
+from app.models.progress import ProgressEntry
 from app.models.training import PtPackage, PtPlan, PtSession
+from app.services import classes as classes_service
 from app.services import memberships as ms
 from app.services import sessions
 from tests.conftest import (
@@ -140,6 +144,42 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
     )
     db.add(b_session)
     db.commit()
+    # A couple plan (§19.1), sold to the member and one more.
+    couple = Plan(
+        gym_id=gym_b.gym.id, name="B couple", duration_months=1, price=2_500_00, seats=2
+    )
+    db.add(couple)
+    db.commit()
+    partner = make_member(db, gym_b, name="B partner", phone="9819999998")
+    shared, _ = sell(db, gym_b, member, plan=couple, with_member_ids=[partner.id])
+    # Classes (§19.4): a type, the timetable, a class tomorrow with a booking.
+    b_type = ClassType(gym_id=gym_b.gym.id, name="B Zumba")
+    db.add(b_type)
+    db.flush()
+    b_slot = ClassSlot(
+        gym_id=gym_b.gym.id,
+        branch_id=gym_b.branch.id,
+        type_id=b_type.id,
+        weekday=(today_in_nepal() + dt.timedelta(days=1)).weekday(),
+        starts="07:00",
+        minutes=60,
+        places=10,
+    )
+    db.add(b_slot)
+    db.flush()
+    classes_service.generate(db, slot_id=b_slot.id)
+    b_class = db.scalars(select(GymClass).where(GymClass.slot_id == b_slot.id)).first()
+    b_booking = classes_service.book(db, db.get(Gym, gym_b.gym.id), member, b_class)
+    # Progress (§19.5).
+    b_entry = ProgressEntry(
+        gym_id=gym_b.gym.id,
+        member_id=member.id,
+        measured_on=today_in_nepal(),
+        weight_g=70_000,
+        recorded_by=gym_b.owner.id,
+    )
+    db.add(b_entry)
+    db.commit()
     return World(
         ids={
             "branch_id": gym_b.branch.id,
@@ -162,6 +202,12 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
             "pt_plan_id": b_pt_plan.id,
             "package_id": b_package.id,
             "pt_session_id": b_session.id,
+            "group_id": shared.group_id,
+            "type_id": b_type.id,
+            "slot_id": b_slot.id,
+            "class_id": b_class.id,
+            "booking_id": b_booking.id,
+            "entry_id": b_entry.id,
         }
     )
 
@@ -244,6 +290,22 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("POST", "/api/v1/pt/packages/{package_id}/cancel", {"reason": "taken over"}),
     ("POST", "/api/v1/pt/packages/{package_id}/sessions", {}),
     ("POST", "/api/v1/pt/sessions/{pt_session_id}/void", {"reason": "taken over"}),
+    ("GET", "/api/v1/membership-groups/{group_id}", None),
+    ("POST", "/api/v1/membership-groups/{group_id}/members", "own_member"),
+    ("PATCH", "/api/v1/class-types/{type_id}", {"name": "Taken"}),
+    ("PATCH", "/api/v1/class-slots/{slot_id}", {"starts": "05:00"}),
+    ("GET", "/api/v1/classes/{class_id}", None),
+    ("PATCH", "/api/v1/classes/{class_id}", {"places": 1}),
+    ("POST", "/api/v1/classes/{class_id}/cancel", {"reason": "taken over"}),
+    ("POST", "/api/v1/classes/{class_id}/bookings", "own_member"),
+    ("POST", "/api/v1/class-bookings/{booking_id}/cancel", None),
+    ("POST", "/api/v1/class-bookings/{booking_id}/attended", {"came": True}),
+    ("GET", "/api/v1/members/{member_id}/classes", None),
+    ("GET", "/api/v1/members/{member_id}/progress", None),
+    ("POST", "/api/v1/members/{member_id}/progress", {"weight_g": 60_000}),
+    ("PUT", "/api/v1/members/{member_id}/progress/height", {"height_mm": 1700}),
+    ("PATCH", "/api/v1/progress/{entry_id}", {"weight_g": 60_000}),
+    ("DELETE", "/api/v1/progress/{entry_id}", None),
 ]
 
 # Id routes whose permission is not the gym at all.
@@ -281,6 +343,12 @@ NOT_GYM_SCOPED = {
     ("POST", "/api/v1/m/payment-requests/{request_id}/withdraw"),
     ("POST", "/api/v1/m/me/payments/{payment_id}/receipt-link"),
     ("POST", "/api/v1/m/freeze-requests/{freeze_request_id}/withdraw"),
+    ("POST", "/api/v1/m/classes/{class_id}/book"),
+    ("POST", "/api/v1/m/class-bookings/{booking_id}/cancel"),
+    ("PATCH", "/api/v1/m/progress/{entry_id}"),
+    ("DELETE", "/api/v1/m/progress/{entry_id}"),
+    ("PATCH", "/api/v1/m/progress/photos/{photo_id}"),
+    ("DELETE", "/api/v1/m/progress/photos/{photo_id}"),
 }
 
 
@@ -310,6 +378,10 @@ def test_another_gyms_record_is_not_found(
 
         plan = priced_plan(db, gym_a.gym)
         response = client.request(method, url, json={"plan_id": str(plan.id)})
+    elif body == "own_member":
+        # Gym A's own member, gym B's family plan: still not found.
+        mine = make_member(db, gym_a, name="A member", phone="9811111111")
+        response = client.request(method, url, json={"member_id": str(mine.id)})
     elif body == "own_pt_plan":
         # Gym A's own PT plan and trainer, gym B's member: still not found.
         pt_plan = PtPlan(

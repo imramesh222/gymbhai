@@ -21,6 +21,8 @@ export default function SignedIn() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="notices" options={{ title: t("app.notices") }} />
         <Stack.Screen name="freeze" options={{ title: t("app.freeze.title") }} />
+        <Stack.Screen name="classes" options={{ title: t("app.classes.title") }} />
+        <Stack.Screen name="progress" options={{ title: t("progress.title") }} />
         <Stack.Screen
           name="qr"
           options={{ presentation: "fullScreenModal", headerShown: false }}

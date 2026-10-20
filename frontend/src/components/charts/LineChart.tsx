@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 import { ChartFrame, Legend, Tooltip, useWidth } from "./Frame";
+import { niceRange } from "@shared/niceRange";
+
 import { AXIS_TEXT, GRID, SERIES, compact, niceTicks } from "./scale";
 
 export interface LineSeries {
@@ -27,6 +29,7 @@ export function LineChart({
   tickFormat = compact,
   height = 200,
   max: fixedMax,
+  fit = false,
 }: {
   title: string;
   labels: string[];
@@ -37,17 +40,24 @@ export function LineChart({
   height?: number;
   /** A fixed top for the scale, e.g. 100 for percentages. */
   max?: number;
+  /** The scale fits the values instead of starting at zero (body weight,
+   * §19.5); then there is no wash under the line, which would imply zero. */
+  fit?: boolean;
 }) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [at, setAt] = useState<number | null>(null);
   const values = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
-  const ticks = niceTicks(fixedMax ?? Math.max(0, ...values));
+  const ticks = fit
+    ? niceRange(Math.min(...values), Math.max(...values))
+    : niceTicks(fixedMax ?? Math.max(0, ...values));
+  const bottom = fit ? ticks[0] : 0;
   const top = ticks[ticks.length - 1];
   const plotW = width - PAD.left - PAD.right;
   const plotH = height - PAD.top - PAD.bottom;
   const x = (index: number) =>
     PAD.left + (labels.length < 2 ? plotW / 2 : (index / (labels.length - 1)) * plotW);
-  const y = (value: number) => PAD.top + plotH - (value / top) * plotH;
+  const y = (value: number) =>
+    PAD.top + plotH - ((value - bottom) / (top - bottom)) * plotH;
   const step = Math.max(1, Math.ceil(labels.length / (plotW / 56)));
 
   function path(points: (number | null)[]): string {
@@ -152,7 +162,7 @@ export function LineChart({
             index === labels.length - 1 ||
             (index % step === 0 && labels.length - 1 - index >= Math.ceil(step / 2)) ? (
               <text
-                key={label}
+                key={index}
                 x={x(index)}
                 y={height - 6}
                 textAnchor="middle"
@@ -178,7 +188,7 @@ export function LineChart({
             const line = path(s.values);
             return (
               <g key={s.key}>
-                {series.length === 1 && end > 0 && (
+                {series.length === 1 && end > 0 && !fit && (
                   <path
                     d={`${line}L${x(end)},${PAD.top + plotH}L${x(
                       s.values.findIndex((v) => v !== null),

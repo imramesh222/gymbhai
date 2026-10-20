@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -6,6 +7,9 @@ from app.schemas.auth import Strict
 
 # Paisa. Rs 1,00,00,000 is far beyond any gym fee and still fits an int column.
 MAX_PAISA = 10_000_000_00
+
+VISITS_FOR_ONE = "A visit pack is for one person: whose visits would they be?"
+CHOOSE_CLASSES = "Choose the classes this plan includes."
 
 
 class AccessWindow(Strict):
@@ -57,6 +61,14 @@ class PlanRead(BaseModel):
     sort_order: int
     visit_limit: int | None = None
     access_hours: list[dict] | None = None
+    # People one sale covers (§19.1).
+    seats: int = 1
+    # The classes it lets one book (§19.4).
+    classes: str = "all"
+    class_type_ids: list[uuid.UUID] | None = None
+
+
+ClassAccess = Literal["none", "all", "chosen"]
 
 
 class PlanCreate(Strict):
@@ -70,6 +82,9 @@ class PlanCreate(Strict):
     sort_order: int = 0
     visit_limit: int | None = Field(default=None, ge=1, le=1000)
     access_hours: AccessHours | None = Field(default=None, max_length=14)
+    seats: int = Field(default=1, ge=1, le=6)
+    classes: ClassAccess = "all"
+    class_type_ids: list[uuid.UUID] | None = Field(default=None, max_length=50)
 
     @model_validator(mode="after")
     def one_duration(self) -> "PlanCreate":
@@ -77,6 +92,10 @@ class PlanCreate(Strict):
             raise ValueError("Give a duration in months or in days.")
         if not self.all_branches and not self.branch_ids:
             raise ValueError("Choose at least one branch.")
+        if self.seats > 1 and self.visit_limit is not None:
+            raise ValueError(VISITS_FOR_ONE)
+        if self.classes == "chosen" and not self.class_type_ids:
+            raise ValueError(CHOOSE_CLASSES)
         return self
 
 
@@ -95,3 +114,6 @@ class PlanUpdate(Strict):
     # Null clears it (unlimited / any time): sent explicitly, so not dropped.
     visit_limit: int | None = Field(default=None, ge=1, le=1000)
     access_hours: AccessHours | None = Field(default=None, max_length=14)
+    seats: int | None = Field(default=None, ge=1, le=6)
+    classes: ClassAccess | None = None
+    class_type_ids: list[uuid.UUID] | None = Field(default=None, max_length=50)

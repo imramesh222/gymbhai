@@ -321,6 +321,15 @@ export default function TodayPage() {
       {data && (
         <>
           {data.setup && <SetupChecklist steps={data.setup} onDismissed={reload} />}
+          {data.quiet_kiosks?.map((k) => (
+            <Notice key={k.name + k.last_seen_at} tone="warning">
+              {t("today.kioskQuiet", {
+                name: k.name,
+                branch: k.branch_name,
+                time: formatDateTime(k.last_seen_at, display).split(", ")[1],
+              })}
+            </Notice>
+          ))}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat

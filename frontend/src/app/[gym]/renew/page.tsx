@@ -106,7 +106,13 @@ export default function RenewPage() {
   if (!options.data)
     return <p className="text-sm text-slate-500">{t("common.loading")}</p>;
   const { plans, payment_methods: methods } = options.data;
-  const admission = options.data.first_membership ? (plan?.admission_fee ?? 0) : 0;
+  // Whoever pays for a family or couple plan renews it for everyone on it
+  // (§19.1): each newcomer's admission fee too.
+  const mates = plan && plan.seats > 1 ? (options.data.renew_with ?? []) : [];
+  const newcomers =
+    (options.data.first_membership ? 1 : 0) +
+    mates.filter((m) => m.first_membership).length;
+  const admission = (plan?.admission_fee ?? 0) * newcomers;
   const total = (plan?.price ?? 0) + admission;
   const method = methods.find((m) => m.id === methodId);
 
@@ -173,6 +179,11 @@ export default function RenewPage() {
               />
               <span className="min-w-0">
                 <span className="block font-medium">{p.name}</span>
+                {p.seats > 1 && (
+                  <span className="block text-xs text-slate-500">
+                    {t("plans.forPeople", { count: p.seats })}
+                  </span>
+                )}
                 {monthly !== null && p.duration_months! > 1 && (
                   <span className="block text-xs text-slate-500">
                     {t("app.renew.perMonth", { amount: formatRs(monthly) })}
@@ -195,6 +206,13 @@ export default function RenewPage() {
       {plan && (
         <>
           <div className="rounded-xl bg-white p-3 text-sm">
+            {mates.length > 0 && (
+              <p className="mb-1 text-slate-600">
+                {t("app.renew.forEveryone", {
+                  names: mates.map((m) => m.name).join(", "),
+                })}
+              </p>
+            )}
             {admission > 0 && (
               <p className="flex justify-between">
                 <span>{t("sale.admissionFee")}</span>

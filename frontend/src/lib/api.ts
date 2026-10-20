@@ -57,6 +57,14 @@ export interface GymSettings {
   grace_days: number;
   rescan_minutes: number;
   not_visiting_days: number;
+  /** How long the kiosk works with no internet (§19.2). */
+  kiosk_offline_days: number;
+  /** Booking classes (§19.4). */
+  class_booking_days: number;
+  class_closes_minutes: number;
+  class_cancel_hours: number;
+  no_show_limit: number;
+  no_show_block_days: number;
   language: Locale;
   digits: Digits;
   member_code_prefix: string;
@@ -450,6 +458,24 @@ export interface Membership {
   paid: number;
   dues: number;
   freezes: Freeze[];
+  /** A family or couple plan (§19.1). */
+  group_id: string | null;
+  group: MembershipGroup | null;
+}
+
+/** A family or couple plan: everyone on it, the payer first (§19.1). */
+export interface MembershipGroup {
+  id: string;
+  seats: number;
+  payer_member_id: string;
+  payer_name: string;
+  people: {
+    member_id: string;
+    name: string;
+    member_code: string;
+    membership_id: string;
+    cancelled: boolean;
+  }[];
 }
 
 export interface Member {
@@ -484,6 +510,8 @@ export interface Member {
   valid_until: string | null;
   days_left: number;
   dues: number;
+  /** Owed by whoever pays for a family or couple plan they're on (§19.1). */
+  group_dues: number;
   /** Lists only: the last time they were let in. */
   last_visit_at?: string | null;
 }
@@ -542,6 +570,8 @@ export interface SaleInput {
   discount?: number;
   admission_fee?: number | null;
   payment?: PaymentInput | null;
+  /** A family or couple plan's others; the member it's sold to pays (§19.1). */
+  with_member_ids?: string[];
 }
 
 export interface MemberInput {
@@ -653,6 +683,8 @@ export const gymApi = {
     request<Gym>("/api/v1/gym", send("PATCH", patch)),
   updateCheckInRules: (patch: Partial<GymSettings>) =>
     request<Gym>("/api/v1/gym/check-in-rules", send("PATCH", patch)),
+  updateClassRules: (patch: Partial<GymSettings>) =>
+    request<Gym>("/api/v1/gym/class-rules", send("PATCH", patch)),
   updateSecurity: (require_two_step: boolean) =>
     request<Gym>("/api/v1/gym/security", send("PATCH", { require_two_step })),
   uploadLogo: (file: Blob) => upload<Gym>("/api/v1/gym/logo", file),
@@ -759,6 +791,12 @@ export const membershipsApi = {
     ),
   remove: (id: string) => request<void>(`/api/v1/memberships/${id}`, send("DELETE")),
   history: (id: string) => request<HistoryEntry[]>(`/api/v1/memberships/${id}/history`),
+  /** Someone joins a family or couple plan with a free place (§19.1). */
+  addToGroup: (groupId: string, member_id: string, start_date?: string | null) =>
+    request<MembershipGroup>(
+      `/api/v1/membership-groups/${groupId}/members`,
+      send("POST", { member_id, start_date: start_date || null }),
+    ),
 };
 
 export const paymentsApi = {
@@ -945,6 +983,166 @@ export interface PtSaleInput {
   discount: number;
   payment: PaymentInput | null;
 }
+
+// --- classes (PLAN.md §19.4) ---
+
+export const CLASS_COLORS = [
+  "blue",
+  "teal",
+  "green",
+  "amber",
+  "orange",
+  "red",
+  "pink",
+  "purple",
+] as const;
+export type ClassColor = (typeof CLASS_COLORS)[number];
+
+export interface ClassType {
+  id: string;
+  name: string;
+  minutes: number;
+  places: number;
+  color: ClassColor;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface ClassSlot {
+  id: string;
+  branch_id: string;
+  type_id: string;
+  /** 0 is Monday. */
+  weekday: number;
+  /** "HH:MM" in Nepal. */
+  starts: string;
+  minutes: number;
+  places: number;
+  instructor_id: string | null;
+  is_active: boolean;
+}
+
+export interface GymClass {
+  id: string;
+  branch_id: string;
+  type_id: string;
+  type_name: string;
+  color: ClassColor;
+  slot_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  instructor_id: string | null;
+  instructor_name: string | null;
+  places: number;
+  booked: number;
+  waiting: number;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+}
+
+export interface ClassBooking {
+  id: string;
+  class_id: string;
+  member_id: string;
+  member_name: string;
+  member_code: string;
+  photo_url: string | null;
+  status: "booked" | "waitlist" | "cancelled";
+  booked_at: string;
+  cancelled_at: string | null;
+  late: boolean;
+  source: string;
+  attended: boolean | null;
+  /** Ticked, or checked in at the door for it. */
+  came: boolean;
+}
+
+export interface ClassDetail extends GymClass {
+  bookings: ClassBooking[];
+}
+
+export interface MemberClassBooking {
+  id: string;
+  class_id: string;
+  type_name: string;
+  starts_at: string;
+  status: ClassBooking["status"];
+  late: boolean;
+  cancelled: boolean;
+  came: boolean | null;
+}
+
+export const classesApi = {
+  types: () => request<ClassType[]>("/api/v1/class-types"),
+  createType: (body: Partial<ClassType>) =>
+    request<ClassType>("/api/v1/class-types", send("POST", body)),
+  updateType: (id: string, body: Partial<ClassType>) =>
+    request<ClassType>(`/api/v1/class-types/${id}`, send("PATCH", body)),
+  slots: (branchId?: string) =>
+    request<ClassSlot[]>(`/api/v1/class-slots${query({ branch_id: branchId })}`),
+  createSlot: (body: Partial<ClassSlot>) =>
+    request<ClassSlot>("/api/v1/class-slots", send("POST", body)),
+  updateSlot: (id: string, body: Partial<ClassSlot>) =>
+    request<ClassSlot>(`/api/v1/class-slots/${id}`, send("PATCH", body)),
+  instructors: () =>
+    request<{ id: string; name: string }[]>("/api/v1/class-instructors"),
+  week: (from: string, branchId?: string) =>
+    request<GymClass[]>(`/api/v1/classes${query({ from, branch_id: branchId })}`),
+  /** An instructor's own classes. */
+  mine: (from: string) => request<GymClass[]>(`/api/v1/classes/mine${query({ from })}`),
+  get: (id: string) => request<ClassDetail>(`/api/v1/classes/${id}`),
+  update: (id: string, body: Record<string, unknown>) =>
+    request<ClassDetail>(`/api/v1/classes/${id}`, send("PATCH", body)),
+  cancel: (id: string, reason: string, sms: boolean) =>
+    request<ClassDetail>(`/api/v1/classes/${id}/cancel`, send("POST", { reason, sms })),
+  book: (id: string, member_id: string, key?: string) =>
+    request<ClassDetail>(
+      `/api/v1/classes/${id}/bookings`,
+      once(send("POST", { member_id }), key),
+    ),
+  cancelBooking: (id: string) =>
+    request<ClassDetail>(`/api/v1/class-bookings/${id}/cancel`, send("POST")),
+  attended: (id: string, came: boolean) =>
+    request<ClassDetail>(
+      `/api/v1/class-bookings/${id}/attended`,
+      send("POST", { came }),
+    ),
+  ofMember: (memberId: string) =>
+    request<{ bookings: MemberClassBooking[]; no_shows: number }>(
+      `/api/v1/members/${memberId}/classes`,
+    ),
+};
+
+// --- progress (PLAN.md §19.5) ---
+
+export const progressApi = {
+  ofMember: (memberId: string) =>
+    request<import("@shared/types").Progress>(`/api/v1/members/${memberId}/progress`),
+  record: (
+    memberId: string,
+    body: import("@shared/types").ProgressInput,
+    key?: string,
+  ) =>
+    request<import("@shared/types").Progress>(
+      `/api/v1/members/${memberId}/progress`,
+      once(send("POST", body), key),
+    ),
+  update: (entryId: string, body: import("@shared/types").ProgressInput) =>
+    request<import("@shared/types").Progress>(
+      `/api/v1/progress/${entryId}`,
+      send("PATCH", body),
+    ),
+  remove: (entryId: string) =>
+    request<import("@shared/types").Progress>(
+      `/api/v1/progress/${entryId}`,
+      send("DELETE"),
+    ),
+  setHeight: (memberId: string, height_mm: number | null) =>
+    request<import("@shared/types").Progress>(
+      `/api/v1/members/${memberId}/progress/height`,
+      send("PUT", { height_mm }),
+    ),
+};
 
 export const ptApi = {
   plans: (includeHidden = false) =>
@@ -1453,6 +1651,8 @@ export interface TodayData {
     status: string;
     follow_up_on: string;
   }[];
+  /** Door kiosks gone quiet today (§19.2). */
+  quiet_kiosks?: { name: string; branch_name: string; last_seen_at: string }[];
   unique_visitors: number;
   inside_now: { member_id: string; name: string; at: string }[];
   due_today: number;
@@ -1490,6 +1690,25 @@ export interface MonthlyReport {
   by_plan: Record<string, number>;
   /** Only for a gym with PT plans (§18.3). */
   personal_training: PtMonth | null;
+  /** Only for a gym with classes (§19.4). */
+  classes?: ClassesMonth | null;
+}
+
+/** Classes held in a report month (§19.4). */
+export interface ClassesMonth {
+  held: number;
+  places: number;
+  booked: number;
+  came: number;
+  no_shows: number;
+  by_type: {
+    name: string;
+    held: number;
+    places: number;
+    booked: number;
+    came: number;
+  }[];
+  by_instructor: { instructor_id: string; name: string; held: number; came: number }[];
 }
 
 /** Personal training in a report month (§18.3). */

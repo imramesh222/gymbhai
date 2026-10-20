@@ -2,6 +2,7 @@ import {
   BarChart3,
   CalendarCheck,
   CalendarClock,
+  CalendarDays,
   ClipboardList,
   CreditCard,
   Dumbbell,
@@ -82,6 +83,13 @@ export const NAV: NavGroup[] = [
         label: "nav.pt",
         icon: Dumbbell,
         anyOf: ["pt.train", "pt.sell"],
+      },
+      {
+        // The week's classes; an instructor's own (§19.4).
+        href: "/staff/classes",
+        label: "nav.classes",
+        icon: CalendarDays,
+        anyOf: ["classes.teach", "classes.book", "classes.manage"],
       },
       {
         href: "/staff/payment-requests",

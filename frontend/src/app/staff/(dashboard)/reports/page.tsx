@@ -16,7 +16,12 @@ import { Money } from "@/components/ui/Money";
 import { MonthSwitcher } from "@/components/ui/MonthSwitcher";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 import { t } from "@/i18n";
-import { reportsApi, type PtMonth, type TrendMonth } from "@/lib/api";
+import {
+  reportsApi,
+  type ClassesMonth,
+  type PtMonth,
+  type TrendMonth,
+} from "@/lib/api";
 import { formatDate } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { formatRs } from "@/lib/money";
@@ -248,6 +253,7 @@ export default function ReportsPage() {
         </Card>
       </div>
       {data.personal_training && <PersonalTraining pt={data.personal_training} />}
+      {data.classes && <Classes month={data.classes} />}
     </div>
   );
 }
@@ -294,6 +300,87 @@ function PersonalTraining({ pt }: { pt: PtMonth }) {
             </tbody>
           </table>
         </Card>
+      )}
+    </section>
+  );
+}
+
+/** Classes held in the month (PLAN.md §19.4). */
+function Classes({ month }: { month: ClassesMonth }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="pt-2 text-[0.9375rem] font-semibold text-slate-900">
+        {t("reports.classes")}
+      </h2>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat value={month.held} label={t("reports.classes.held")} />
+        <Stat
+          value={month.booked}
+          label={t("reports.classes.filled")}
+          hint={t("reports.classes.filledOf", { places: month.places })}
+        />
+        <Stat value={month.came} label={t("reports.classes.came")} />
+        <Stat value={month.no_shows} label={t("reports.classes.noShows")} />
+      </div>
+      {month.by_type.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Card title={t("reports.classes.byType")}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500">
+                  <th className="py-1 font-medium">{t("classes.name")}</th>
+                  <th className="py-1 text-right font-medium">
+                    {t("reports.classes.heldCol")}
+                  </th>
+                  <th className="py-1 text-right font-medium">
+                    {t("reports.classes.bookedCol")}
+                  </th>
+                  <th className="py-1 text-right font-medium">
+                    {t("reports.classes.cameCol")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-hairline">
+                {month.by_type.map((row) => (
+                  <tr key={row.name}>
+                    <td className="py-2">{row.name}</td>
+                    <td className="py-2 text-right font-semibold">{row.held}</td>
+                    <td className="py-2 text-right font-semibold">
+                      {row.booked} / {row.places}
+                    </td>
+                    <td className="py-2 text-right font-semibold">{row.came}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          {month.by_instructor.length > 0 && (
+            <Card title={t("reports.classes.byInstructor")}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500">
+                    <th className="py-1 font-medium">{t("classes.instructor")}</th>
+                    <th className="py-1 text-right font-medium">
+                      {t("reports.classes.heldCol")}
+                    </th>
+                    <th className="py-1 text-right font-medium">
+                      {t("reports.classes.cameCol")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-hairline">
+                  {month.by_instructor.map((row) => (
+                    <tr key={row.instructor_id}>
+                      <td className="py-2">{row.name}</td>
+                      <td className="py-2 text-right font-semibold">{row.held}</td>
+                      <td className="py-2 text-right font-semibold">{row.came}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </div>
       )}
     </section>
   );

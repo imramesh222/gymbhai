@@ -1,5 +1,6 @@
 from app.models.activity import ActivityLog
 from app.models.billing import GymSubscription, PlatformPlan
+from app.models.classes import ClassBooking, ClassSlot, ClassType, GymClass
 from app.models.expense import Expense
 from app.models.gym import Branch, Gym
 from app.models.idempotency import IdempotencyKey
@@ -16,7 +17,7 @@ from app.models.member_app import (
     PaymentRequest,
     ReaderUser,
 )
-from app.models.membership import Membership, MembershipFreeze
+from app.models.membership import Membership, MembershipFreeze, MembershipGroup
 from app.models.messaging import (
     Notice,
     ReminderLog,
@@ -33,6 +34,7 @@ from app.models.platform import (
     MemberImport,
     SubscriptionPayment,
 )
+from app.models.progress import ProgressEntry, ProgressPhoto
 from app.models.push import PushSubscription, StaffPushSubscription
 from app.models.staff import (
     LoginAttempt,
@@ -49,10 +51,14 @@ __all__ = [
     "Branch",
     "ChangelogEntry",
     "CheckIn",
+    "ClassBooking",
+    "ClassSlot",
+    "ClassType",
     "Device",
     "Expense",
     "FreezeRequest",
     "Gym",
+    "GymClass",
     "GymCounter",
     "GymPaymentMethod",
     "GymReferral",
@@ -67,12 +73,15 @@ __all__ = [
     "MemberSignInLink",
     "Membership",
     "MembershipFreeze",
+    "MembershipGroup",
     "Notice",
     "OtpCode",
     "Payment",
     "PaymentRequest",
     "Plan",
     "PlanBranch",
+    "ProgressEntry",
+    "ProgressPhoto",
     "PlatformPlan",
     "PtPackage",
     "PtPlan",

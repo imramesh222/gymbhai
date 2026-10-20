@@ -51,6 +51,24 @@ export function useNotices() {
   });
 }
 
+export function useProgress() {
+  const { slug, enabled } = useGymKey();
+  return useQuery({
+    queryKey: keys.progress(slug),
+    queryFn: memberApi.progress,
+    enabled,
+  });
+}
+
+export function useClasses(from: string) {
+  const { slug, enabled } = useGymKey();
+  return useQuery({
+    queryKey: keys.classes(slug, from),
+    queryFn: () => memberApi.classes(from),
+    enabled,
+  });
+}
+
 export function useLatestFreeze() {
   const { slug, enabled } = useGymKey();
   return useQuery({

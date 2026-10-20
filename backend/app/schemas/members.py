@@ -34,6 +34,9 @@ class SaleFields(Strict):
     discount: int = Field(default=0, ge=0, le=10_000_000_00)
     admission_fee: int | None = Field(default=None, ge=0, le=10_000_000_00)
     payment: PaymentIn | None = None
+    # A family or couple plan (§19.1): the others it covers. The member it is
+    # sold to pays.
+    with_member_ids: list[uuid.UUID] = Field(default=[], max_length=5)
 
 
 class MemberCreate(MemberFields):
@@ -74,6 +77,30 @@ class FreezeRead(BaseModel):
     reason: str | None
 
 
+class GroupPerson(BaseModel):
+    member_id: uuid.UUID
+    name: str
+    member_code: str
+    membership_id: uuid.UUID
+    cancelled: bool = False
+
+
+class MembershipGroupRead(BaseModel):
+    """A family or couple plan: everyone on it, the payer first (§19.1)."""
+
+    id: uuid.UUID
+    seats: int
+    payer_member_id: uuid.UUID
+    payer_name: str
+    people: list[GroupPerson]
+
+
+class AddToGroupIn(Strict):
+    member_id: uuid.UUID
+    # Today unless given; it ends when the payer's does.
+    start_date: dt.date | None = None
+
+
 class MembershipRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -101,6 +128,8 @@ class MembershipRead(BaseModel):
     paid: int = 0
     dues: int = 0
     freezes: list[FreezeRead] = []
+    group_id: uuid.UUID | None = None
+    group: MembershipGroupRead | None = None
 
 
 class CurrentMembership(BaseModel):
@@ -141,6 +170,9 @@ class MemberRead(BaseModel):
     valid_until: dt.date | None = None
     days_left: int = 0
     dues: int = 0
+    # Owed by whoever pays for a family or couple plan they're on (§19.1):
+    # not theirs to pay, but the door's dues rule counts it.
+    group_dues: int = 0
     # The last time they were let in at the door; lists only.
     last_visit_at: dt.datetime | None = None
     referred_by_id: uuid.UUID | None = None

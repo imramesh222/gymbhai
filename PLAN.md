@@ -62,6 +62,8 @@ There are no fixed roles. The owner creates each staff account — name, phone o
 | Enquiries | Enquiries: add, follow up, convert (§16.4, 9.1; in the *Front desk* starting point) |
 | Memberships | Sell and renew · Edit dates, price, discount and plan · Extend days · **Extend everyone** · Freeze · Cancel · Delete |
 | Personal training | **Train members**: their own clients and sessions, and in the trainer list · **Sell personal training**, change and cancel it, and anyone's sessions (§18.3) |
+| Classes | **Teach classes**: their own rosters and who came, and in the instructor list · **Book classes for members** at the desk · **Manage classes**: the timetable, moving and cancelling a class, the booking rules (§19.4) |
+| Progress | **See and record progress**: members' weight and measurements, at their branches (§19.5; in the *Trainer* starting point). Photos are never this: only the trainer a member shares one with sees it |
 | Money | Collect payments · **Approve app payments** · Edit payments · Void payments · Record refunds · See money totals and reports |
 | Expenses | Record expenses · Edit and void expenses (§18.1) |
 | Door | Check members in · Let someone in despite an expired membership |
@@ -162,6 +164,8 @@ Each member has a personal QR that is scanned at the door. Two forms of the same
 
 **How the app code is made:** at sign-in the phone receives a key derived from the member's secret and `qr_version`; it signs `<member>.<30-second window>` with HMAC-SHA256 in plain JavaScript (not WebCrypto, which only exists on HTTPS pages), so the QR draws offline on any phone. The last membership and key are kept on the phone, and a service worker keeps the app shell, so the app opens and shows the QR with no signal. `backend/app/core/qr.py` and `frontend/src/lib/memberQr.ts` share a test vector.
 
+**gb2, since §19.2:** the same changing code signed with Ed25519, `gb2.<member>.<window>.<signature>`. The phone gets a second key at sign-in (`signing_key`) and signs with `@noble/ed25519`; a kiosk holding only the public key can check the code offline but never make one, which an HMAC can't offer. The server accepts both; an app signs gb2 once it has the key.
+
 **Revoking:** each member has a `qr_version`. Bumping it (lost phone, suspected sharing) invalidates the app secret and the card at once; the member signs in again to get a new one.
 
 ### 4.3 Scanning at the door
@@ -192,7 +196,7 @@ Four ways in v1, all going through one check-in service so more can be added lat
 - For a door that locks, we push the list of members allowed in to the device, so an expired membership is refused at the door even if the internet is down.
 - Which devices to support is decided later (§15); nothing in v1 needs to change for it.
 
-**Offline:** v1 needs internet at the kiosk. If it drops, the kiosk says so and the desk checks people in manually. An offline queue is on the later list.
+**Offline (M17, §19.2):** the kiosk keeps a roster and decides by itself for up to the gym's *kiosk offline days* (3 unless changed), then sends the scans when the internet is back. Without a roster (a new kiosk with no internet yet) the desk checks people in by hand, as before.
 
 ---
 
@@ -332,24 +336,31 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `branches` | `gym_id`, `name`, `address`, `phone`, `is_active` |
 | `staff_users` | `gym_id` (null for platform admin), `name`, `email`, `phone`, `password_hash` — `email` and `phone` unique across all staff, so signing in never needs a gym name — `is_owner` (at most one per gym), `is_platform_admin`, `permissions` (list of permission keys, §2.1), `is_active`, `last_login_at`, `totp_nonce`, `totp_enabled_at`, `totp_last_step` (two-step sign-in, §11); `changelog_seen_at` (What's new, §16.5 10.4); `language` (null = the gym's, §16.6); `muted_notifications` (the kinds of notification turned off, §18.6) |
 | `staff_branch_access` | `staff_user_id`, `branch_id` — empty means all branches |
-| `members` | `gym_id`, `home_branch_id`, `member_code` (e.g. `FZ-0042`, unique per gym; the prefix is a gym setting, derived from the gym's initials at sign-up), `name`, `phone` (**not** unique — family members often share one number), `email`, `gender`, `date_of_birth`, `address`, `emergency_contact`, `photo_key` (a storage key, served by signed link), `joined_on`, `notes`, `app_access` (bool), `qr_secret`, `qr_version`, `card_token`, `is_archived`, `erased_at` (§11); `referred_by_id` (a member who sent them, §16.4 9.6); `language` (null = the gym's) |
+| `members` | `gym_id`, `home_branch_id`, `member_code` (e.g. `FZ-0042`, unique per gym; the prefix is a gym setting, derived from the gym's initials at sign-up), `name`, `phone` (**not** unique — family members often share one number), `email`, `gender`, `date_of_birth`, `address`, `emergency_contact`, `photo_key` (a storage key, served by signed link), `joined_on`, `notes`, `app_access` (bool), `qr_secret`, `qr_version`, `card_token`, `is_archived`, `erased_at` (§11); `referred_by_id` (a member who sent them, §16.4 9.6); `language` (null = the gym's); `height_mm` (for BMI on their progress, §19.5) |
 | `leads` | `gym_id`, `branch_id`, `name`, `phone`, `email`, `source` (walk_in, phone, facebook, instagram, tiktok, referral, other), `plan_id`, `status` (new → contacted → trial → joined, or lost), `follow_up_on`, `lost_reason`, `assigned_to`, `trial_on`, `referred_by_id`, `member_id` (once joined), `notes`, `created_by`, `from_ip` (join form only, cleared after a day) — §16.4, 9.1 |
 
 **Money and memberships**
 
 | Table | Key columns |
 |---|---|
-| `plans` | `gym_id`, `name`, `duration_months` *or* `duration_days`, `price` (null until the owner sets it; such a plan can't be sold without a price entered at the desk), `admission_fee`, `all_branches`, `is_active`, `sort_order` — four seeded on sign-up (§5.1); `visit_limit` (a visit pack, null = unlimited) and `access_hours` (`[{days, from, to}]` in Nepal time, 0 = Monday; null = any time) — §16.4, 9.3, 9.4 |
+| `plans` | `gym_id`, `name`, `duration_months` *or* `duration_days`, `price` (null until the owner sets it; such a plan can't be sold without a price entered at the desk), `admission_fee`, `all_branches`, `is_active`, `sort_order` — four seeded on sign-up (§5.1); `visit_limit` (a visit pack, null = unlimited) and `access_hours` (`[{days, from, to}]` in Nepal time, 0 = Monday; null = any time) — §16.4, 9.3, 9.4; `seats` (people one sale covers, 1–6; never with `visit_limit`) — §19.1; `classes` (none, all, chosen) and `class_type_ids` — the classes it lets one book, §19.4 |
 | `plan_branches` | `plan_id`, `branch_id` — the branches a plan covers when `all_branches` is false |
-| `memberships` | `gym_id`, `member_id`, `plan_id`, `plan_name` (copied at sale, like the price), `branch_id`, `start_date`, `end_date`, `price`, `discount`, `admission_fee`, `cancelled_at`, `cancel_reason`, `created_by`, `source` (desk, app_request, import); `visit_limit` and `access_hours` copied from the plan at sale. A visit pack with every visit used counts as ended, from the let-in check-ins on it |
+| `memberships` | `gym_id`, `member_id`, `plan_id`, `plan_name` (copied at sale, like the price), `branch_id`, `start_date`, `end_date`, `price`, `discount`, `admission_fee`, `cancelled_at`, `cancel_reason`, `created_by`, `source` (desk, app_request, import); `visit_limit` and `access_hours` copied from the plan at sale. A visit pack with every visit used counts as ended, from the let-in check-ins on it; `group_id` (a family or couple plan, §19.1: the payer's membership carries the price and payments, the others 0); `classes` and `class_type_ids` copied from the plan (§19.4) |
+| `membership_groups` | `gym_id`, `plan_id`, `payer_member_id`, `seats` (copied from the plan), `created_by` — one sale for several people; each has their own membership (§19.1) |
 | `membership_freezes` | `gym_id`, `membership_id`, `from_date`, `to_date` (inclusive), `reason` — extends `end_date` by the frozen days; ending a freeze early gives the unused days back |
 | `payments` | `gym_id`, `member_id`, `membership_id` *or* `pt_package_id` (personal training, §18.3; never both), `kind` (payment, refund), `amount`, `method` (cash, esewa, khalti, fonepay, bank), `transaction_ref` (unique per gym when set), `paid_at`, `receipt_no` (sequential per gym), `received_by`, `note`, `voided_at`, `voided_by`, `void_reason` — a payment can't exceed what is owed on its membership or package, nor a refund what was paid |
 | `pt_plans` | `gym_id`, `name`, `kind` (monthly, sessions), `sessions` (a pack's size; null for monthly), `duration_months` *or* `duration_days`, `price`, `is_active`, `sort_order` — the gym's personal training plans (§18.3) |
 | `pt_packages` | `gym_id`, `member_id`, `plan_id`, `plan_name`, `kind`, `sessions` and `price` copied at sale, `discount`, `trainer_id` (a staff account), `branch_id` (the member's home branch unless chosen), `start_date`, `end_date`, `cancelled_at`, `cancel_reason`, `created_by` — personal training sold; status computed, never stored (§18.3) |
+| `class_types` | `gym_id`, `name`, `minutes`, `places`, `color`, `is_active`, `sort_order` — Zumba, yoga (§19.4) |
+| `class_slots` | `gym_id`, `branch_id`, `type_id`, `weekday` (0 is Monday), `starts` ("HH:MM", Nepal), `minutes`, `places`, `instructor_id`, `is_active` — the weekly timetable |
+| `classes` | `gym_id`, `branch_id`, `type_id`, `slot_id` (unique with `starts_at`: made once), `starts_at`, `ends_at`, `instructor_id`, `places`, `cancelled_at`, `cancel_reason` — each class, made 4 weeks ahead |
+| `class_bookings` | `gym_id`, `class_id`, `member_id` (one live booking per class), `status` (booked, waitlist, cancelled), `booked_at` (the queue's order), `cancelled_at`, `late`, `attended` (the instructor's tick; null until then), `source` (app, desk), `booked_by` |
+| `progress_entries` | `gym_id`, `member_id`, `measured_on`, `weight_g`, `body_fat` (tenths of a percent), `chest_mm`, `waist_mm`, `hips_mm`, `arm_mm`, `thigh_mm`, `note`, `recorded_by` (staff; null when the member recorded it) — §19.5 |
+| `progress_photos` | `gym_id`, `member_id`, `taken_on`, `pose` (front, side, back), `photo_key`, `shared` (with the trainers of their personal training) — private to the member; deleted with them when erased |
 | `pt_sessions` | `gym_id`, `package_id`, `trained_on` (a Nepal day within the package's dates), `trainer_id` (the package's trainer that day), `recorded_by`, `note` (cleared when the member is erased), `voided_at`, `voided_by`, `void_reason` — never more than a pack holds; never deleted, only voided (§18.3) |
 | `expenses` | `gym_id`, `branch_id` (null = the whole gym), `category` (rent, salaries, electricity, water, internet, equipment, repairs, cleaning, marketing, fees, other), `amount`, `spent_on` (a Nepal day, not after today), `method` (as payments), `paid_to`, `note`, `created_by`, `voided_at`, `voided_by`, `void_reason` — money the gym spent; never deleted, only voided (§18.1) |
 | `gym_payment_methods` | `gym_id`, `kind` (esewa, khalti, fonepay, bank, other), `label`, `account_name`, `account_number`, `qr_image_key`, `is_active`, `sort_order` — the gym's own accounts, shown to members |
-| `payment_requests` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `membership_id`, `payment_id` — a member's "I've paid" from the app (§5.4) |
+| `payment_requests` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `membership_id`, `payment_id`, `with_member_ids` (a family plan's others, worked out by the server, §19.1) — a member's "I've paid" from the app (§5.4) |
 | `freeze_requests` | `gym_id`, `member_id`, `membership_id` (the one covering the first day), `from_date`, `to_date`, `reason`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `freeze_id` (the freeze approving it made) — one pending per member; the app allows up to 90 days, longer at the desk |
 | `idempotency_keys` | `gym_id`, `key` (unique per gym), `route`, `request_hash`, `status_code`, `response` — the answer to each money request, saved in the same transaction as the payment so a repeat replays it (§11); kept a day |
 | `gym_counters` | `gym_id`, `name` (`member_code`, `receipt_no`), `value` — row-locked increment so two desks never issue the same number |
@@ -367,7 +378,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 
 | Table | Key columns |
 |---|---|
-| `check_ins` | `gym_id`, `branch_id`, `member_id`, `membership_id`, `at`, `method` (app_qr, card_qr, manual; later fingerprint, face), `result` (allowed, warned, override, duplicate, denied_expired, denied_frozen, denied_branch, denied_dues, denied_visits_used, denied_hours), `device_id`, `staff_user_id`, `note` (the reason for an override) |
+| `check_ins` | `gym_id`, `branch_id`, `member_id`, `membership_id`, `at`, `method` (app_qr, card_qr, manual; later fingerprint, face), `result` (allowed, warned, override, duplicate, denied_expired, denied_frozen, denied_branch, denied_dues, denied_visits_used, denied_hours), `device_id`, `staff_user_id`, `note` (the reason for an override); `offline` and `client_id` (unique per device): decided by a kiosk with no internet and sent later (§19.2) |
 | `devices` | `gym_id`, `branch_id`, `name`, `kind` (kiosk, zkteco, hikvision; §18.2), `serial` (a reader's, unique), `token_hash`, `last_seen_at`, `revoked_at`; for a reader `synced_at` and `command_seq` |
 | `reader_users` | `gym_id`, `device_id`, `member_id`, `pin` (their reader number: the digits of their member code), `name`, `on_reader`, `until` (the last day the reader should let them in), `command_id`, `sent_at`, `done_at`, `error` — what GymBhai last told a reader about a member (§18.2); fingerprints and faces stay on the reader |
 | `notices` | `gym_id`, `branch_id` (null = all), `title`, `body`, `published_at`, `send_sms` (also SMS the members push can't reach; push to the rest goes with every notice, free), `sms_count`, `push_count` |
@@ -516,7 +527,9 @@ Our subscription
   POST  /subscription/payment        transaction ID for us to verify
 
 Memberships & money
-  POST  /members/{id}/memberships     new or renewal (+ optional payment)
+  POST  /members/{id}/memberships     new or renewal (+ optional payment; with_member_ids for a family plan, §19.1)
+  GET   /membership-groups/{id}       a family or couple plan: everyone on it, the payer first
+  POST  /membership-groups/{id}/members   someone joins it, to the payer's end date
   POST  /memberships/{id}/freeze
   POST  /memberships/{id}/cancel
   PATCH /memberships/{id}             edit dates, price, discount, plan, branch (§5.6)
@@ -555,10 +568,34 @@ Personal training (§18.3)
   POST  /pt/packages/{id}/sessions    record one, Idempotency-Key
   POST  /pt/sessions/{id}/void        reason
 
+Classes (§19.4)
+  GET   /class-types  POST /class-types  PATCH /class-types/{id}
+  GET   /class-slots?branch_id=  POST /class-slots  PATCH /class-slots/{id}   the weekly timetable
+  GET   /class-instructors
+  GET   /classes?from=&days=&branch_id=  GET /classes/mine (an instructor's own)
+  POST  /classes  GET /classes/{id}  PATCH /classes/{id}  POST /classes/{id}/cancel
+  POST  /classes/{id}/bookings        book a member at the desk (Idempotency-Key)
+  POST  /class-bookings/{id}/cancel   POST /class-bookings/{id}/attended
+  GET   /members/{id}/classes         their bookings and no-shows
+  PATCH /gym/class-rules              booking opens, closes, late cancels, no-shows
+  GET   /m/classes?from=  POST /m/classes/{id}/book  POST /m/class-bookings/{id}/cancel
+
+Progress (§19.5)
+  GET   /members/{id}/progress        checks, height, and photos shared with the caller if they train them
+  POST  /members/{id}/progress        a check (Idempotency-Key)   PUT /members/{id}/progress/height
+  PATCH /progress/{id}  DELETE /progress/{id}   only what staff recorded
+  GET   /m/progress  POST /m/progress  PATCH|DELETE /m/progress/{id}  PUT /m/progress/height
+  POST  /m/progress/photos            multipart: file, pose; shrunk, location stripped
+  PATCH /m/progress/photos/{id}       {shared}   DELETE /m/progress/photos/{id}
+
 Check-in
   POST  /check-ins/scan               from kiosk (device token) or staff
   POST  /check-ins/manual
   GET   /check-ins
+
+The kiosk offline (§19.2), with its device token
+  GET   /kiosk/roster                 who could come, a letter a day for 14 days
+  POST  /kiosk/scans                  what it decided with no internet, recorded as decided
 
 Door readers (§18.2, docs/READERS.md)
   POST  /devices/readers              add one: brand, branch, serial
@@ -698,6 +735,11 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | **M13** | Expenses | What the gym spends, by category; spent and profit on Reports; export (§18.1) | 2–3 days | Owners see profit, not only income |
 | **M14** | Door readers | Fingerprint and face readers, ZKTeco / eSSL or Hikvision, chosen per reader: members added to the reader and removed from it as memberships start and end; its scans become check-ins (§18.2) | ~2 weeks per brand + a reader of each to test with | Expired members stopped at a door that unlocks by itself |
 | **M15** | Personal training | Monthly PT and packs of sessions, trainers' own screens (§18.3) | ~2 weeks | PT sold and tracked at the desk |
+| **M16** | Family and couple plans | One sale for several people, one payer, each with their own membership and QR; the door applies the group's dues (§19.1) | ~1.5 weeks | Couples and families sold as gyms sell them |
+| **M17** | Offline kiosk | A roster on the kiosk, the door rules in shared code, an Ed25519 member QR (`gb2`), offline scans sent when back online (§19.2) | ~1.5 weeks | The door keeps working when the internet drops |
+| **M18** | WhatsApp messages | Meta's Cloud API between push and SMS for utility messages, approved templates, members agreeing, message credits (§19.3) | ~1 week + Meta's approvals | Reminders members read, often for less than a Nepali SMS |
+| **M19** | Classes | Timetable, booking with places and a waitlist, instructors' rosters, classes in plans (§19.4) | ~2.5 weeks | Classes booked from the app, places counted |
+| **M20** | Progress tracking | Weight, measurements and private photos, charts in the app and on the profile (§19.5) | ~1.5 weeks | A reason to open the app between renewals |
 
 **Progress**
 
@@ -716,10 +758,15 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M10 | Done 2026-10-17: the /admin numbers and each gym's health and setup, setup nudges by SMS on trial days 3 and 10, Help (WhatsApp / Viber and guides), What's new with an unread dot, and gym referrals with a free month each. Before launch: `SUPPORT_WHATSAPP` in `.env.prod` |
 | M11 | Done 2026-10-17, **waiting on a native speaker's review**: `ne.json` with every string (a test keeps its keys and {placeholders} in step with `en.json`) and Nepali help guides; a language for each staff account and each member, the gym's as the default, chosen at sign-up and in Settings → Gym; English / नेपाली on every sign-in screen, kept in a cookie; Noto Sans Devanagari through `next/font`; Nepali month names, रु, and Nepali or Western digits (a gym setting); SMS wording seeded in the gym's language, and wording the gym never edited follows a change of language. The server renders English and the browser renders Nepali, so one request's language never leaks into another's. The legal pages and the receipt PDF stay English until a lawyer and the review sign them off |
 | M12 | Done (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019). 12.3–12.8 done 2026-10-18 — `mobile/` (Expo SDK 58): every screen of 17.5 but *signed-in devices*, checked on the iPhone simulator and an Android emulator: the QR it draws passes the door's check, offline too; three taps on *I've paid* made one request; a notice and an approval arrived with no tap; Nepali throughout. Jest covers double taps, the socket, the API client and links. Push needs `EAS_PROJECT_ID` (mobile/README.md) and is untested until then. 12.9 done 2026-10-18 — 34 Jest tests, a lint rule that refuses API calls from a control without `useAction`, eight Maestro flows (`mobile/e2e/`, `make e2e-mobile`, on a fresh gym from `make seed-app`) passing on the iPhone simulator in Expo Go and on the Android emulator with the `.apk`, `make apk` (60 MB, 64- and 32-bit ARM, debug-signed, built on the Mac), the GymBhai icon, and `docs/MOBILE.md`: running, tests, sending the `.apk` to Android testers, and Expo Go for iPhone testers. Push set up 2026-10-18 (Expo project `@mero-gym/mero-gym`, Firebase `gymbhai-69df8`, FCM V1 key in Expo) and working end to end on the Play Store emulator: *Turn on*, a notice from the desk arrives as a notification, tapping it opens Notices. **Waiting on:** a real Android phone, real testers; iPhone push at publishing |
-| M13 | Done 2026-10-19, on the branch `rameshdev`: expenses by category in the gym's own months, with *Same again* and void with a reason; spent, profit and spent by category on Reports, and money in and out on its chart; `expenses.xlsx`; *Add an expense* in search; *Record expenses* and *Edit and void expenses* in an *Expenses* area of the staff form; an `expense` live event and a query-count test. Also fixed: the staff form never showed the *Enquiries* permission (its area was missing from the form's list); it now shows any area it doesn't know, at the end |
+| M13 | Done 2026-10-19: expenses by category in the gym's own months, with *Same again* and void with a reason; spent, profit and spent by category on Reports, and money in and out on its chart; `expenses.xlsx`; *Add an expense* in search; *Record expenses* and *Edit and void expenses* in an *Expenses* area of the staff form; an `expense` live event and a query-count test. Also fixed: the staff form never showed the *Enquiries* permission (its area was missing from the form's list); it now shows any area it doesn't know, at the end |
 | Pilot helpers | Done: signing in at the desk with a QR (§18.4), WhatsApp buttons (§18.5) and notifications for staff (§18.6) on 2026-10-19; a demo gym (§18.7, `make seed-demo`) on 2026-10-20. **Waiting on** real phones: staff and member web notifications on an Android phone and an iPhone's Home Screen, by the checks in `docs/PUSH.md` (a tunnel to the Mac gives the `https://` they need) |
 | M14 | Built before a reader, 2026-10-20 (§18.2, docs/READERS.md): readers in Settings → Door scanners, members put on them with their reader number, scans as check-ins under the same rules; ZKTeco over ADMS, Hikvision through a bridge at the gym (`bridge/`), each to its maker's published protocol and tested against a simulated reader. **Waiting on** the pilot gyms' reader models and one reader of each brand, to confirm the protocols and, for ZKTeco, how a reader refuses an expired member |
 | M15 | Done 2026-10-19 (§18.3): PT plans in Settings, monthly or a pack of sessions; *Train members* and *Sell personal training*, and a *Trainer* starting point; selling from the member's profile with a part payment; sessions recorded by the trainer or the desk, voided with a reason; PT payments as ordinary payments with their own dues and receipts; *My clients* and *All* in a Personal training screen; the member's Home on the web and the phone app; a `pt` live event; migration 0022. 2026-10-20: PT reminders (two automations), PT owing in Follow up, PT figures on Reports; migration 0025 |
+| M16 | Done 2026-10-20 (§19.1): plans for up to 6 people; one sale makes everyone's membership, the money on the payer's; the door applies the payer's dues to everyone; adding someone to a free place, removing someone, the payer's plan change and cancel carrying everyone; expiry and win-back to the payer only, the others told by push; the receipt lists everyone; the member's Home and Renew on the web and the phone app, the payer renewing for everyone; migration 0026 |
+| M17 | Done 2026-10-20 (§19.2): the kiosk keeps a roster of 14 days of the door's own decisions and decides by itself for the gym's offline days, sending the scans when back; a new member QR, gb2, signed with Ed25519, which a kiosk checks with public keys alone; a shared table of door cases both sides are tested on; the kiosk's own service worker and manifest; quiet kiosks on Today; migration 0027. **Waiting on** a real tablet at the door with its Wi-Fi switched off, and the phone app's next build for gb2 (older builds keep showing gb1, which works online) |
+| M19 | Done 2026-10-20 (§19.4): class types and a weekly timetable that makes each class 4 weeks ahead; booking from the app and at the desk, places counted under a lock, a waitlist that moves up by itself with a push; plans that include all, some or no classes; booking windows, late cancels and an optional pause after no-shows; the instructor's roster with who came, from their tick or the door; a reminder an hour before; classes on the member's profile and on Reports; the member's Classes on the web and the phone app; three permissions in a *Classes* area; migration 0028 |
+| M20 | Done 2026-10-20 (§19.5), but for the check-up reminder: weight, body fat and five measurements over time with BMI from a height; recorded by the member or by staff with *See and record progress*, each changing only their own; the activity log never holds the figures; photos private to the member unless shared with their trainer, not even the owner seeing them otherwise, shrunk and stripped of location; a weight chart on the profile, the web app and the phone app; erasing a member takes it all; migration 0029 |
+| M18 | Planned 2026-10-20 (§19.3): start Meta's WhatsApp verification now |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -743,18 +790,18 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 
 ## 14. After v1
 
-The next milestones, M6–M11, are planned in §16 (self-service freeze requests and Nepali moved there); M13–M15, from what the pilot gyms asked for, in §18. After them, in rough order, driven by what pilot gyms ask for and will pay for:
+The next milestones, M6–M11, are planned in §16 (self-service freeze requests and Nepali moved there); M13–M15, from what the pilot gyms asked for, in §18; M16–M20, from this list, in §19. After them, in rough order, driven by what pilot gyms ask for and will pay for:
 
 1. Fingerprint and face readers at the door, including turnstiles and door locks (§4.3) — many Nepali gyms already own a ZKTeco reader, so for some this decides whether they buy. **Now M14 (§18.2)**
 2. Automatic payment verification — Fonepay dynamic QR / eSewa merchant APIs confirm an app payment so it activates without staff approval; needs each gym's merchant account
 3. Personal training packages and sessions, with trainer permissions and screens — assigned members, workout and diet plans. **Now M15 (§18.3)**
 4. Supplement / merchandise sales at the desk — not asked for by the pilot gyms (§18)
 5. Expenses (rent, salaries, electricity) so the owner sees profit, not only income. **Now M13 (§18.1)**
-6. Family and couple plans — one sale covering several linked members; needs its own design, because dues and status are per membership today
-7. Class schedule and booking
-8. Offline kiosk — queue scans and sync when the internet returns
-9. Progress tracking — weight, measurements, private photos, charts
-10. WhatsApp messages alongside SMS
+6. Family and couple plans — one sale covering several linked members; needs its own design, because dues and status are per membership today. **Now M16 (§19.1)**
+7. Class schedule and booking. **Now M19 (§19.4)**
+8. Offline kiosk — queue scans and sync when the internet returns. **Now M17 (§19.2)**
+9. Progress tracking — weight, measurements, private photos, charts. **Now M20 (§19.5)**
+10. WhatsApp messages alongside SMS. **Now M18 (§19.3)**
 11. Branded app store app per gym — sold as an add-on; the same code as M12's GymBhai app (§17) with each gym's name and icon
 12. Tax invoices from billing software approved by the Inland Revenue Department, for VAT-registered gyms — needs approval, so only if larger gyms ask
 
@@ -1200,3 +1247,126 @@ The last pilot helper, 2026-10-20: a gym that looks lived-in, for showing GymBha
 | `reminder_rules.trigger` gains `pt_ending`, `pt_dues` | M15 (reminders) |
 | `staff_push_subscriptions`, `staff_users.muted_notifications` | 18.6 |
 | `reader_users`; `devices.kind`, `serial`, `synced_at`, `command_seq` | M14 |
+
+---
+
+## 19. Next: from the later list (M16–M20)
+
+*Planned 2026-10-20*, before the pilot: five items from the later list (§14). Family and couple plans, a kiosk that works offline, WhatsApp messages, classes, and progress tracking. The pilot gyms haven't asked for any of them yet (§18), so first ask them the questions below. Their answers may change the order or cut a step.
+
+**Order.**
+1. **M16, family and couple plans.** Gyms already make plans called "Couple — 1 year" (§5.1). They sell them as two memberships with the price split by hand, so the door can't tell that the second person owes anything. It touches money, so it goes before anything else builds on memberships.
+2. **M17, the kiosk offline.** The kiosk is how most members get in, and a gym's internet drops. A door that stops is the worst day a gym can have with us. Fingerprint and face readers already work offline (§18.2).
+3. **M18, WhatsApp messages.** About a week of code, but Meta's business verification and template approvals take days to weeks. **Start them on the first day of M16.**
+4. **M19, classes.** The largest: the staff dashboard, the member web app and the phone app. Worth it for gyms that run Zumba, yoga or aerobics at fixed times.
+5. **M20, progress tracking.** The least risk: it touches nobody's money or door. It gives members a reason to open the app between renewals.
+
+| To ask the pilot gyms | For |
+|---|---|
+| Do you sell couple or family memberships? For how many people? Does one person pay? Does each newcomer pay the admission fee? | M16's shape |
+| How often does the internet go down at the door, and for how long? | Whether M17 is second, and how long the kiosk must last offline |
+| Do members ask for messages on WhatsApp rather than SMS? | M18 |
+| Which classes do you run at fixed times? Are places limited? Are classes part of the membership, or paid separately? | M19's shape, or whether it waits |
+| Do trainers weigh and measure members now: on paper, or with a machine such as an InBody? | M20 |
+
+v1's rules apply to every step, as in §16 and §18: the gym from the token and a cross-gym 404 test for every new route, one specific permission per endpoint with a 403 test, money in paisa, every change in `activity_log`, every string in `en.json` and `ne.json`, a live event and a query-count test for each new list. Each member-facing step lands in the web app and the phone app (§17) together.
+
+### 19.1 M16 — Family and couple plans
+
+One sale covers two or more people (a couple, or a parent and children) at one price, paid by one of them.
+
+**The idea: everyone has their own membership, and one of them carries the money.** Each person keeps an ordinary membership row: their own dates, status, freezes, QR, visits and door rules, exactly as now. The payer's membership carries the whole price, the discount, the admission fees and every payment; the others carry nothing. A `membership_groups` row ties them together. So the status code doesn't change, the dues code barely does, and Reports counts people as people and money once.
+
+| | |
+|---|---|
+| Plans | A plan gains **People** (`plans.seats`, 1 to 6, 1 as now): *Couple — 1 year* is 2, *Family — 3 months* up to 4. Set in Settings → Plans and prices (*Plans and prices* permission); the price is for everyone together. A plan for several people can't be a visit pack: whose visits would they be? |
+| Selling | Add member and Renew, with such a plan, ask **Who else?**: up to seats − 1 members, found by name, phone or code, or added there (name and phone, with the payer's phone offered for a child). Fewer than seats is fine: a family plan for 3 of 4. The member it's sold from pays, unless changed. One `Idempotency-Key` for the sale. Everyone's membership is made in one transaction, each member locked in id order so two desks can't deadlock. Not for an archived member |
+| Dates | Everyone starts and ends on the sale's dates by default. A renewal starts each person the day after their own current membership ends (§5.3), so nobody loses days. Their dates can then differ, for example when a freeze moves one person's end date |
+| Money | On the payer's membership: the price, the discount, and the plan's admission fee for each person on their first membership (the desk can change it). The others carry 0. The group's dues are the payer's membership's dues. **The door uses the group's dues**: the gym's dues rule (§5.3) applies to everyone in the group, not only the payer. The receipt names the payer and lists everyone covered |
+| Changes | **Add someone** to a free place: from today (or a chosen day) to the payer's end date, price unchanged unless edited (*Sell and renew*). **Remove someone**: cancels their membership with a reason, price unchanged unless edited (*Cancel*). Any refund goes to the payer, as now. **Change plan** only to a plan for the same number of people. Freezes, extensions, *Extend everyone* and dates stay per person. Cancelling the payer's membership cancels the whole group, after one confirmation that lists everyone. Every change is in the activity log and on everyone's History |
+| The member | Each person sees their own membership: *Couple — 1 year, with Ram Rai*. Only the payer sees the dues; the others see *Ram pays for this*. **Renew from the app**: the payer renews the group (the payment request carries the people, and approving it sells to all of them, §5.4). The others may buy a plan for themselves, or ask the payer |
+| Reminders | Expiry and dues messages go to the payer only, naming the plan: one message per family, not one per person to the same phone. The others still get notices, birthday messages and not-visiting messages |
+| Lists and reports | Members and Follow up's *ending soon* and *lapsed* list everyone, under the plan's name. *Owe money* lists the payer. On Reports, new members and renewals count people, and income counts the money once, since it's all on the payer's membership |
+| Import | A register's couple rows import as single memberships, as now (imports carry no price anyway) |
+| API | `seats` in the plan routes · `POST /members/{id}/memberships` takes `with_member_ids` · `GET /membership-groups/{id}` · `POST /membership-groups/{id}/members` (add someone) · removing someone is `POST /memberships/{id}/cancel`, as now |
+| Built | 2026-10-20. `memberships.sell` makes the group and everyone's membership in one transaction, the members locked in id order; `group_dues_for` gives the door, the member's profile and the app what the payer still owes (no query without a family plan); the payer's cancel and plan change carry everyone, and the payer's membership is deleted last. The others on a sale hear by push only, free. Desk: *People* in the plan form, *Who else is on it?* in the sale form (find a member, or add someone new with a parent's number), *On this plan* on the membership with *Add someone* and *Remove from plan*. Migration 0026; `tests/integration/test_family_plans.py` |
+| Not yet | Changing who pays; one person's share paid separately; groups of more than 6; groups for personal training |
+
+### 19.2 M17 — The kiosk keeps working offline
+
+Today the kiosk needs the internet (§4.3). When it drops, the kiosk says so and the desk checks people in by hand. From M17 the kiosk keeps letting the right people in for up to **3 days** offline (a gym setting, 1 to 7), and the visits reach GymBhai once it's back online.
+
+| | |
+|---|---|
+| What it keeps | A **roster** for its branch, fetched when the kiosk opens and every 5 minutes while online (`GET /kiosk/roster`). It lists each member with a membership in the last 90 days, or one still to come. For each one: name, member code, a small photo, and the days they may come in the next 14 days, with freezes, a membership starting next week and the branch already applied. Also: grace days, an off-peak plan's hours, visits left on a pack, whether they owe money (and the gym's dues rule), and the re-scan window. No phone numbers, emails, notes or amounts: a stolen kiosk holds as little as possible |
+| Where | In the kiosk browser's own storage. The kiosk becomes an installable app (`/kiosk.webmanifest`, full screen) with its own service worker (`/kiosk-sw.js`, scope `/kiosk`), which keeps the kiosk page, its build assets and members' photos, and nothing else. Revoking the device wipes the roster the next time the kiosk reaches GymBhai |
+| Deciding offline | The roster's **letters**, one a day for 14 days, are the server's own rules for that day (`app/services/kiosk.py`, from the same member state as the door): *a* let in, *g* expired within the grace days, *f* frozen, *x* expired or not started, *b* another branch's plan, *v* every visit used. The kiosk adds the rest (`shared/src/door/offline.ts`): the hour, money owed and the dues rule, visits it let in since the roster came, and the re-scan window. `shared/src/door/cases.json` holds a member in each situation with the server's answer; the server's tests write and check it (`UPDATE_DOOR_CASES=1`), and the kiosk's tests check the kiosk gives the same answers. The kiosk uses the server's clock: it keeps its offset from the roster's `server_time` |
+| Checking a QR | **Printed cards:** the roster holds a hash of each card token. **The app's QR:** today's code is an HMAC, and anything that can check an HMAC can also make one. A kiosk holding members' keys could forge a code for any of them, online too. So the app moves to a **new code, `gb2`, signed with Ed25519**. The phone holds a private key derived from the member's secret and `qr_version`, and the roster holds only the public keys, so a kiosk can check a code but never make one. The code is `gb2.<member>.<window>.<signature>`: about 120 characters, still a small QR. The server accepts both `gb1` and `gb2`; the apps switch to `gb2` the next time they open online. The phone signs with `@noble/ed25519`, plain TypeScript (no WebCrypto, so the QR still draws offline and over plain HTTP). The server uses `cryptography`, already installed with `pywebpush`. One shared test vector, as now. The web app updates itself; the phone app needs an update. Offline, an old app's `gb1` code shows *This code needs the internet. Please see the desk* |
+| Recording | The kiosk keeps each offline scan with its own id and time, and with what it decided: that is what happened at the door. Once online, it sends them in batches to `POST /kiosk/scans`. The server records each one as a check-in with that result and time, and never decides it again. `check_ins.offline` marks them, and `client_id`, unique per device, means a scan sent twice is recorded once. Times are checked as a reader's are (§18.2): not before the roster was fetched, and not in the future |
+| Visit packs | Counted on the kiosk. Two offline kiosks at one branch could both let someone in on their last visit. That rare extra visit is recorded, and not worth a lock |
+| On screen | Offline with a roster, an amber band: *No internet — letting members in from the list saved at 10:42*, and how many visits are waiting to be sent; the same green, orange and red cards (money owed shows orange, without the amount). Past the limit, or with no roster: red, and the desk checks people in by hand. On Today, for every staff member: a kiosk not heard from for 15 minutes to 12 hours (`devices.last_seen_at`). Once it syncs, its visits appear in Attendance at their real times. A scan the server hasn't answered in 4 seconds is decided offline |
+| Built | 2026-10-20. Settings → Check-in rules: *Kiosk works offline for (days)*, 1 to 7. Scans waiting are sent before a new roster is fetched, so the roster's visit counts include them. `gb2` in `app/core/qr.py` and `shared/src/qr/memberQr.ts` (Ed25519 passed in from each app's `lib/ed25519.ts`: `shared/` has no packages), with one test vector on both sides. Migration 0027; `tests/integration/test_offline_kiosk.py`, `frontend/src/lib/doorOffline.test.ts` and `kioskOffline.test.ts`; the phone app bundled for Android with Ed25519 |
+| Not yet | The staff phone's Scan and manual check-in offline (they run in the dashboard, which needs the internet); the money owed on the card offline |
+
+### 19.3 M18 — WhatsApp messages
+
+GymBhai sends reminders and answers by WhatsApp, between push (free) and SMS. Most members read WhatsApp. A Nepali reminder is often 2 or 3 SMS (70 characters each, §10) but always one WhatsApp message. This is separate from §18.5's buttons, which open a chat on the desk's own phone; they stay as they are.
+
+| | |
+|---|---|
+| How | Meta's **WhatsApp Cloud API**, directly, with no reseller. It sits behind a provider interface, as SMS does: `console` in development and tests, `meta` for real (`WHATSAPP_PROVIDER`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`) |
+| Whose number | **One GymBhai number for every gym**, to start: one Meta business to verify (ours), not one per gym. Every message starts with the gym's name. A gym's own number (Meta's Embedded Signup, with us as a Tech Provider) is a later add-on |
+| Which messages | Only Meta's **utility** category, at about **$0.011 (about Rs 1.5) a message** (Rest of Asia Pacific rates, read 2026-10-20 from summaries of Meta's rate card; confirm Nepal's market on the card itself). That covers: membership ending (the expiry automations), money still owed (memberships and PT), payment approved or rejected, freeze request answered, the receipt with its link, and the welcome with the app's link. **Marketing** messages (win-back, birthday, not visiting, notices) cost about $0.084, more than an SMS, so they stay push first, then SMS |
+| The wording | WhatsApp sends only **templates Meta has approved**, so the gym's own SMS wording can't be used. Each message is one of our templates, in English and in Nepali, with the gym's details filled in (`{name}`, `{gym}`, `{date}`, `{amount}`, `{link}`). Messages → Automations shows each rule's WhatsApp wording beside its SMS. The templates live in `app/core/whatsapp_templates.py`; a test checks that each has both languages and the variables Meta approved |
+| The order | `notify` (§16.3) becomes push → WhatsApp → SMS. Push wherever a phone takes it. Otherwise WhatsApp, if the gym turned it on and the member agreed. Otherwise SMS. If WhatsApp answers that the number isn't on WhatsApp, the SMS goes instead, and WhatsApp isn't tried for that member again for 30 days |
+| Agreeing | Meta requires members to agree first. **Settings → Gym → Send messages by WhatsApp** (*Gym settings* permission), off to start. A tick on Add member and Edit, *Agrees to messages on WhatsApp*, and the member's own switch in the app (Profile on the web, Me on the phone). Off for imported members until they're asked |
+| Replies | Members will reply to our number. GymBhai answers at most once a day per member, inside Meta's 24-hour window: *This number only sends messages from Himalayan Fitness Club. To reach them: <a wa.me link to the gym's phone>*. Meta has charged for these replies since October 2026; we pay for them. Replying *STOP* turns WhatsApp off for that member. There is no inbox in GymBhai |
+| Credits | Gyms keep one balance, **message credits**, which is today's SMS credits under a new name. A WhatsApp message costs the number of credits set in `/admin` (`platform_settings`; pricing lives in the database, never in code). Charged when sent, given back if Meta reports it failed |
+| The log | `sms_messages` gains `channel` (sms, whatsapp), `template`, `delivered_at` and `read_at`. The SMS log, the member's Messages tab and the credit ledger show both channels, with *Delivered* and *Read* from Meta's webhook (`GET` and `POST /whatsapp/webhook`, checked against the app secret's signature) |
+| Before it can send | Outside the code: Meta Business verification for GymBhai (company documents), a phone number not already on WhatsApp, the display name approved, each template approved (about a day each), and a payment method on Meta. **Start these with M16** |
+| Not yet | Sign-in codes by WhatsApp (Meta's authentication category costs about what an SMS does); a gym's own number; an inbox for replies; notices by WhatsApp |
+
+### 19.4 M19 — Classes
+
+Group classes at fixed times (Zumba, yoga, aerobics, CrossFit), booked from the app, with places counted.
+
+| | |
+|---|---|
+| Classes | **Settings → Classes** (*Manage classes*): the gym's class types (name, length, places, a colour) and a **weekly timetable** for each branch: type, day, time, instructor (a staff account with *Teach classes*, or the owner), places. The worker makes each class from the timetable 4 weeks ahead (a daily task at 01:00, §9, and at once when the timetable changes). One class can then be moved, given another instructor or cancelled without touching the timetable. Changing the timetable changes only the classes nobody has booked yet |
+| Who may book | A plan gains **Classes**: none, all, or chosen types (`plans.class_access`, copied onto the membership at sale like hours and visits). A class-only plan such as *Zumba — 1 month* is an ordinary plan with only Zumba ticked; the door treats it like any other. A member may book while a membership that allows that class covers its day, at its branch |
+| Booking | From the app (web and phone) or at the desk. Booking opens 7 days ahead and closes 30 minutes before the start (gym settings). One booking per class per member. The class is locked while places are counted, so two people can't both take the last one. The phone app sends an `Idempotency-Key` (§17.4). When a class is **full**, members join the **waitlist**. A freed place goes to the first in line, who gets a push; this stops 2 hours before the start |
+| Cancelling | A member can cancel up to 2 hours before the start (a setting); after that it counts as a late cancel. When the gym cancels a class, everyone booked is told: by push, and by SMS too if the gym ticks it |
+| Attendance | The instructor's **roster**, on their phone: who's booked. Members who checked in at the door in the hour before the class are already ticked *came*; the instructor ticks the rest. Anyone not ticked by the end is a *no-show*. A booking is never a visit by itself: the door's check-in is what counts against a pack |
+| No-shows | Off to start: N no-shows in 30 days means no booking for 7 days. Members see their own count |
+| Staff screens | **Desk → Classes**: today and the week by branch, with time, class, instructor, booked against places, and the waitlist. Open a class for its roster, *Book a member* and *Cancel class*. Instructors see **My classes**. The member profile gains a *Classes* tab: bookings, attended, no-shows. Reports gain classes held, places filled and no-shows, by type and by instructor |
+| The member | **Classes** in the app, opened from a *Book a class* card on Home (no new tab): this week or next, by day, with places left, updated live (`class` events reach the branch's members); Book, Join the waitlist, Cancel. Their branch's classes, and any they were booked into at another. A push an hour before (free, never SMS). Web and phone app |
+| Permissions | A new *Classes* area. **Teach classes** (`classes.teach`): their own rosters and attendance; in the *Trainer* starting point. **Book classes for members** (`classes.book`): in *Front desk*. **Manage classes** (`classes.manage`): the timetable, and moving or cancelling a class; in *Manager* |
+| Live | A `class` event: places left in the app, rosters at the desk |
+| Built | 2026-10-20. `app/services/classes.py` (the timetable, booking, the waitlist, who came, the month), `app/api/routes/classes.py`; Desk → **Classes** (the week by day; a class's roster with *Book a member*, ticks for who came, *Change this class*, *Cancel class*; *My classes* for instructors); the member profile's **Classes** tab; *Classes it includes* in the plan form (a plan change brings the new plan's classes); a **Classes** card on Reports; booking rules in Settings → Classes (`PATCH /gym/class-rules`). Migration 0028; `tests/integration/test_classes.py`, with the cross-gym, permission and query-count tests |
+| Not yet | Paying per class (a day pass or visit pack already covers a drop-in); rooms and equipment; a timetable poster or TV screen; repeating bookings ("every Monday"); telling members booked when a class is moved; classes for a branch's members only |
+
+### 19.5 M20 — Progress tracking
+
+Weight, measurements and photos over time: members see themselves change, and trainers can show them.
+
+| | |
+|---|---|
+| A check | `progress_entries`: a day (today unless changed, never in the future), **weight** in kg to 0.1, **body fat** % (optional), and measurements in cm: chest, waist, hips, arm, thigh, each optional. Plus a note. Stored as whole numbers (grams, tenths of a percent, millimetres), as money is stored in paisa. Height is entered once on the member (`members.height_mm`), and BMI is computed from it, never stored |
+| Who records | The member, in the app. Staff with the new **See and record progress** (`progress.record`, in the *Trainer* starting point), for members at their branches |
+| Photos | Front, side and back, taken in the app. **Private**: only the member sees them, unless they tick *Let my trainer see*, which shares them with the trainers of their personal training (§18.3) and nobody else. Not even the owner can open them. On upload they are shrunk to 1,600 px and stripped of their location data (EXIF; adds Pillow). Short-lived signed links; never in exports or the activity log |
+| Charts | In the member app: weight and each measurement over time (the shared chart kit), the change since the first check and since the last, and two photos side by side by date. Member profile → **Progress** tab: the same figures, and the photos only if shared |
+| Changes | Whoever recorded an entry, or the member, can edit or delete it. The activity log records what was done but not the figures: a body's measurements are the member's own, like a PT session's note (§18.3) |
+| Erasing | Erasing a member deletes their entries, photos and stored files (§11) |
+| Reminder | Not built yet: an automation, off to start, *Time for your monthly check*, N days after the last entry, push only |
+| Built | 2026-10-20. `app/services/progress.py`, `app/api/routes/progress.py`; the profile's **Progress** tab (*See and record progress*); the member's **Progress** from a Home card, on the web and the phone app, with the weight chart, every check, height, and photos to add, share, compare (web) and delete. The chart kit's line can fit its scale to the values (`fit`, `shared/src/niceRange.ts`; no wash under a line that doesn't start at zero); the phone app draws the same line (`mobile/src/components/WeightChart.tsx`). Photos shrunk to 1,600 px and stripped of EXIF with Pillow, served by 15-minute links. Erasing a member deletes it all. Migration 0029; `tests/integration/test_progress.py` |
+| Not yet | The check-up reminder (above); a check's date on the phone app (today; the web can choose); goals; importing a report from a body composition machine (InBody); workout and diet plans |
+
+### 19.6 What the data model gains
+
+| Table / column | Step |
+|---|---|
+| `plans.seats`; `membership_groups` (`gym_id`, `plan_id`, `payer_member_id`, `seats`, `created_by`); `memberships.group_id`; `payment_requests.with_member_ids` | M16 |
+| `check_ins.offline`, `check_ins.client_id` (unique per device, where set); the gym setting `kiosk_offline_days` | M17 |
+| `sms_messages.channel`, `template`, `delivered_at`, `read_at`; `members.whatsapp_agreed_at`, `whatsapp_unreachable_at`; the gym setting `whatsapp`; `platform_settings` (credits per WhatsApp message) | M18 |
+| `class_types`; `class_slots` (the timetable); `classes` (`gym_id`, `branch_id`, `type_id`, `slot_id`, `starts_at`, `ends_at`, `instructor_id`, `places`, `cancelled_at`, `cancel_reason`); `class_bookings` (`gym_id`, `class_id`, `member_id`, `status`: booked, waitlist or cancelled; `late`, `attended`, `booked_at`, `cancelled_at`, `source`, `booked_by`); `plans.classes` and `class_type_ids`, copied to `memberships`; gym settings `class_booking_days`, `class_closes_minutes`, `class_cancel_hours`, `no_show_limit`, `no_show_block_days` | M19 |
+| `progress_entries`; `progress_photos` (`gym_id`, `member_id`, `taken_on`, `pose`, `photo_key`, `shared`); `members.height_mm` | M20 |

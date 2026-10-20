@@ -13,9 +13,17 @@ from app.api.tenancy import StaffContext, for_gym, get_in_gym
 from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.db.session import get_db
+from app.models.classes import ClassType
 from app.models.gym import Branch
 from app.models.plan import Plan, PlanBranch
-from app.schemas.plans import PlanCreate, PlanRead, PlanUpdate, stored_hours
+from app.schemas.plans import (
+    CHOOSE_CLASSES,
+    VISITS_FOR_ONE,
+    PlanCreate,
+    PlanRead,
+    PlanUpdate,
+    stored_hours,
+)
 from app.services import activity
 
 router = APIRouter(prefix="/plans", tags=["plans"])
@@ -31,6 +39,9 @@ FIELDS = (
     "sort_order",
     "visit_limit",
     "access_hours",
+    "seats",
+    "classes",
+    "class_type_ids",
 )
 
 
@@ -86,6 +97,24 @@ def _set_branches(
         db.add(PlanBranch(plan_id=plan.id, branch_id=branch_id))
 
 
+def _class_types(
+    db: Session, ctx: StaffContext, ids: list[uuid.UUID] | None
+) -> list[str] | None:
+    """The gym's own class types, as stored (strings); another gym's is refused."""
+    if not ids:
+        return None
+    found = set(
+        db.scalars(
+            select(ClassType.id).where(
+                ClassType.gym_id == ctx.gym_id, ClassType.id.in_(ids)
+            )
+        )
+    )
+    if found != set(ids):
+        raise AppError(422, "bad_class_type", "That class doesn't exist.")
+    return [str(i) for i in ids]
+
+
 @router.get("", response_model=list[PlanRead])
 def list_plans(
     include_hidden: bool = False,
@@ -108,8 +137,9 @@ def create_plan(
 ) -> PlanRead:
     plan = Plan(
         gym_id=ctx.gym_id,
-        **payload.model_dump(exclude={"branch_ids", "access_hours"}),
+        **payload.model_dump(exclude={"branch_ids", "access_hours", "class_type_ids"}),
         access_hours=stored_hours(payload.access_hours),
+        class_type_ids=_class_types(db, ctx, payload.class_type_ids),
     )
     db.add(plan)
     db.flush()
@@ -137,9 +167,13 @@ def update_plan(
     ctx: StaffContext = Depends(require(Permission.SETUP_PLANS)),
 ) -> PlanRead:
     plan = get_in_gym(db, Plan, plan_id, ctx, message="No such plan.")
-    changes = payload.model_dump(exclude_unset=True, exclude={"access_hours"})
+    changes = payload.model_dump(
+        exclude_unset=True, exclude={"access_hours", "class_type_ids"}
+    )
     if "access_hours" in payload.model_fields_set:
         changes["access_hours"] = stored_hours(payload.access_hours)
+    if "class_type_ids" in payload.model_fields_set:
+        changes["class_type_ids"] = _class_types(db, ctx, payload.class_type_ids)
     before = {name: getattr(plan, name) for name in FIELDS}
     before["branch_ids"] = _branch_ids(db, plan.id)
 
@@ -156,11 +190,16 @@ def update_plan(
                 "duration_days",
                 "visit_limit",
                 "access_hours",
+                "class_type_ids",
             ):
                 continue
             setattr(plan, name, changes[name])
     if plan.duration_months is None and plan.duration_days is None:
         raise AppError(422, "needs_duration", "Give a duration in months or in days.")
+    if plan.seats > 1 and plan.visit_limit is not None:
+        raise AppError(422, "visits_for_one", VISITS_FOR_ONE)
+    if plan.classes == "chosen" and not plan.class_type_ids:
+        raise AppError(422, "choose_classes", CHOOSE_CLASSES)
     if changes.get("branch_ids") is not None:
         _set_branches(db, ctx, plan, changes["branch_ids"])
     db.flush()

@@ -98,6 +98,8 @@ class Receipt(BaseModel):
     date_display: str
     # For personal training (§18.3): the dates are its, not a membership's.
     training: bool = False
+    # A family or couple plan (§19.1): the others it covers, by name.
+    covers: list[str] = []
 
 
 class ReceiptLink(BaseModel):

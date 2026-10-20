@@ -60,3 +60,40 @@ def test_known_vector_for_the_frontend() -> None:
     assert qr.app_code(MEMBER, key, 59_666_666) == (
         "gb1.12345678123456781234567812345678.59666666.uD4CqX4EAlGpxzdJ"
     )
+
+
+# --- gb2: Ed25519, checkable offline (PLAN.md §19.2) -------------------------------
+
+
+def code2_at(unix: float, version: int = 1) -> str:
+    return qr.app_code2(MEMBER, qr.signing_key(SECRET, version), qr.window_at(unix))
+
+
+def test_a_gb2_code_verifies_and_drifts_like_gb1() -> None:
+    scanned = qr.parse(code2_at(NOW))
+    assert scanned is not None and scanned.kind == "app2"
+    assert qr.verify_app_code2(scanned, SECRET, 1, now=NOW)
+    for offset in (-30, 30):
+        assert qr.verify_app_code2(qr.parse(code2_at(NOW + offset)), SECRET, 1, now=NOW)
+    assert not qr.verify_app_code2(qr.parse(code2_at(NOW - 90)), SECRET, 1, now=NOW)
+
+
+def test_a_gb2_code_is_revoked_and_unforgeable() -> None:
+    assert not qr.verify_app_code2(qr.parse(code2_at(NOW, 1)), SECRET, 2, now=NOW)
+    code = code2_at(NOW)
+    forged = code[:-2] + ("AA" if code[-2:] != "AA" else "BB")
+    assert not qr.verify_app_code2(qr.parse(forged), SECRET, 1, now=NOW)
+    # A gb1 signature under a gb2 label is still a bad signature.
+    gb1 = code_at(NOW).replace("gb1.", "gb2.")
+    assert not qr.verify_app_code2(qr.parse(gb1), SECRET, 1, now=NOW)
+
+
+def test_known_gb2_vector_for_the_apps() -> None:
+    """frontend/src/lib/hmac.test.ts signs and checks the same numbers."""
+    key = qr.signing_key("00" * 32, 1)
+    assert key == "mtbJK1LD-vbZuDVIEk8nqscuQojfRzEG9KZys-cjASc"
+    assert qr.public_key("00" * 32, 1) == "p6tHitkllt09ERnscZwAyjqc2nL8DGBHkUO5H1VwTfQ"
+    assert qr.app_code2(MEMBER, key, 59_666_666) == (
+        "gb2.12345678123456781234567812345678.59666666."
+        "na-qDqQPKYTID_k4B7bDXQjSYeixck8XrS4Ig5B5D6eydcFyeyP8B3SX6BHZDMAsXtSKkWCrVtbG4HbpV4YYAw"
+    )

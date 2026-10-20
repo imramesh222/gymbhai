@@ -227,6 +227,7 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
     grace_days: String(gym.settings.grace_days),
     rescan_minutes: String(gym.settings.rescan_minutes),
     not_visiting_days: String(gym.settings.not_visiting_days),
+    kiosk_offline_days: String(gym.settings.kiosk_offline_days ?? 3),
   });
   const [message, setMessage] = useState<{
     tone: "success" | "error";
@@ -241,6 +242,7 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
         grace_days: Number(form.grace_days),
         rescan_minutes: Number(form.rescan_minutes),
         not_visiting_days: Number(form.not_visiting_days),
+        kiosk_offline_days: Number(form.kiosk_offline_days),
       });
       await refreshMe();
       setMessage({ tone: "success", text: t("common.saved") });
@@ -286,6 +288,14 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
             type="number"
             inputMode="numeric"
             help={t("settings.notVisitingDaysHelp")}
+          />
+          <Field
+            label={t("settings.kioskOfflineDays")}
+            value={form.kiosk_offline_days}
+            onChange={(kiosk_offline_days) => setForm({ ...form, kiosk_offline_days })}
+            type="number"
+            inputMode="numeric"
+            help={t("settings.kioskOfflineDaysHelp")}
           />
         </div>
         {message && <Notice tone={message.tone}>{message.text}</Notice>}

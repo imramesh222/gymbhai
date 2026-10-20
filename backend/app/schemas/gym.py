@@ -30,6 +30,18 @@ class CheckInRulesUpdate(Strict):
     rescan_minutes: int | None = Field(default=None, ge=0, le=24 * 60)
     # Follow up's "not visiting" (§16.3, 8.1).
     not_visiting_days: int | None = Field(default=None, ge=3, le=90)
+    # The kiosk offline (§19.2).
+    kiosk_offline_days: int | None = Field(default=None, ge=1, le=7)
+
+
+class ClassRulesUpdate(Strict):
+    """Booking classes (§19.4): with Manage classes."""
+
+    class_booking_days: int | None = Field(default=None, ge=1, le=30)
+    class_closes_minutes: int | None = Field(default=None, ge=0, le=240)
+    class_cancel_hours: int | None = Field(default=None, ge=0, le=48)
+    no_show_limit: int | None = Field(default=None, ge=0, le=10)
+    no_show_block_days: int | None = Field(default=None, ge=1, le=30)
 
 
 class SecurityUpdate(Strict):

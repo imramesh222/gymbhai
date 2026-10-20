@@ -1,6 +1,9 @@
 /** The member app's API (PLAN.md §8 "Member app", §17), as the phone calls it. */
 import type { Locale } from "@shared/i18n";
 import type {
+  AppClasses,
+  Progress,
+  ProgressInput,
   CodeSent,
   FreezeRequest,
   JoinOptions,
@@ -102,6 +105,52 @@ export const memberApi = {
   notices: () => request<Notice[]>("/api/v1/m/notices"),
 
   renewOptions: () => request<RenewOptions>("/api/v1/m/renew"),
+  /** Their own progress (§19.5): checks, height, and their private photos. */
+  progress: () => request<Progress>("/api/v1/m/progress"),
+  recordProgress: (body: ProgressInput, key: string) =>
+    request<Progress>("/api/v1/m/progress", { body, idempotencyKey: key }),
+  deleteProgress: (id: string, key: string) =>
+    request<Progress>(`/api/v1/m/progress/${id}`, {
+      method: "DELETE",
+      idempotencyKey: key,
+    }),
+  setHeight: (height_mm: number | null, key: string) =>
+    request<Progress>("/api/v1/m/progress/height", {
+      method: "PUT",
+      body: { height_mm },
+      idempotencyKey: key,
+    }),
+  addProgressPhoto: (file: UploadFile, pose: string, key: string) => {
+    const form = formWith(file);
+    form.append("pose", pose);
+    return request<Progress>("/api/v1/m/progress/photos", {
+      form,
+      idempotencyKey: key,
+    });
+  },
+  shareProgressPhoto: (id: string, shared: boolean, key: string) =>
+    request<Progress>(`/api/v1/m/progress/photos/${id}`, {
+      method: "PATCH",
+      body: { shared },
+      idempotencyKey: key,
+    }),
+  deleteProgressPhoto: (id: string, key: string) =>
+    request<Progress>(`/api/v1/m/progress/photos/${id}`, {
+      method: "DELETE",
+      idempotencyKey: key,
+    }),
+  /** A week of classes at their branch (§19.4). */
+  classes: (from: string) => request<AppClasses>(`/api/v1/m/classes?from=${from}`),
+  bookClass: (classId: string, key: string) =>
+    request<AppClasses>(`/api/v1/m/classes/${classId}/book`, {
+      method: "POST",
+      idempotencyKey: key,
+    }),
+  cancelClassBooking: (bookingId: string, key: string) =>
+    request<AppClasses>(`/api/v1/m/class-bookings/${bookingId}/cancel`, {
+      method: "POST",
+      idempotencyKey: key,
+    }),
   createRequest: (
     body: {
       plan_id: string;

@@ -11,8 +11,8 @@ The rules, in order:
 * A visit pack with every visit used       -> denied_visits_used (§16.4, 9.3)
 * Plan not sold at this branch             -> denied_branch
 * An off-peak plan, outside its hours      -> denied_hours (9.4)
-* Owes money                               -> the gym's dues rule: allow, warn
-                                              (the default) or refuse (denied_dues)
+* Owes money (or whoever pays for their     -> the gym's dues rule: allow, warn
+  family or couple plan does, §19.1)          (the default) or refuse (denied_dues)
 * Otherwise                                -> allowed
 
 Every scan is recorded, allowed or not: denied scans are how owners see who
@@ -84,9 +84,8 @@ def find_by_code(
     member = db.get(Member, scanned.member_id)
     if member is None or member.gym_id != gym_id:
         return None
-    if not qr.verify_app_code(
-        scanned, member.qr_secret, member.qr_version, time.time()
-    ):
+    verify = qr.verify_app_code if scanned.kind == "app" else qr.verify_app_code2
+    if not verify(scanned, member.qr_secret, member.qr_version, time.time()):
         return None
     return member, METHOD_APP_QR
 
@@ -130,7 +129,7 @@ def _decide(
     if not within_hours(current.access_hours, now):
         return DENIED_HOURS, "hours", state
 
-    if state.dues > 0:
+    if state.dues + state.group_dues > 0:
         if config.dues_rule == "refuse":
             return DENIED_DUES, "dues", state
         if config.dues_rule == "warn":

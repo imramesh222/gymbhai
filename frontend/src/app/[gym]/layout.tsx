@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { MemberShell } from "@/components/memberApp/MemberShell";
+import { UiProviders } from "@/components/ui/Providers";
 
 export async function generateMetadata({
   params,
@@ -23,5 +24,10 @@ export default async function MemberLayout({
   params: Promise<{ gym: string }>;
 }) {
   const { gym } = await params;
-  return <MemberShell slug={gym}>{children}</MemberShell>;
+  // Confirmations (deleting a progress photo, §19.5) and toasts, as staff have.
+  return (
+    <UiProviders>
+      <MemberShell slug={gym}>{children}</MemberShell>
+    </UiProviders>
+  );
 }

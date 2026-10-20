@@ -85,6 +85,7 @@ export default function RenewPage() {
           calendar={calendar}
           display={display}
           firstMembership={member.first_membership}
+          payer={{ id: member.id, name: member.name, phone: member.phone }}
         />
       </Card>
       {saveError && <Notice tone="error">{saveError}</Notice>}
