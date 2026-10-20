@@ -368,7 +368,8 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | Table | Key columns |
 |---|---|
 | `check_ins` | `gym_id`, `branch_id`, `member_id`, `membership_id`, `at`, `method` (app_qr, card_qr, manual; later fingerprint, face), `result` (allowed, warned, override, duplicate, denied_expired, denied_frozen, denied_branch, denied_dues, denied_visits_used, denied_hours), `device_id`, `staff_user_id`, `note` (the reason for an override) |
-| `devices` | `gym_id`, `branch_id`, `name`, `token_hash`, `last_seen_at`, `revoked_at` |
+| `devices` | `gym_id`, `branch_id`, `name`, `kind` (kiosk, zkteco, hikvision; §18.2), `serial` (a reader's, unique), `token_hash`, `last_seen_at`, `revoked_at`; for a reader `synced_at` and `command_seq` |
+| `reader_users` | `gym_id`, `device_id`, `member_id`, `pin` (their reader number: the digits of their member code), `name`, `on_reader`, `until` (the last day the reader should let them in), `command_id`, `sent_at`, `done_at`, `error` — what GymBhai last told a reader about a member (§18.2); fingerprints and faces stay on the reader |
 | `notices` | `gym_id`, `branch_id` (null = all), `title`, `body`, `published_at`, `send_sms` (also SMS the members push can't reach; push to the rest goes with every notice, free), `sms_count`, `push_count` |
 | `push_subscriptions` | `gym_id`, `member_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, `last_ok_at`, `revoked_at` — one per browser per member (a shared phone has one each); revoked on turning off, signing out, or when the push service answers 404/410; deleted when the member is erased |
 | `reminder_rules` | `gym_id`, `trigger` (expiry · lapsed · dues · not_visiting · birthday), `days` (for expiry: from the chain's end, −7, −3, 0, +3…; lapsed: days since it ended; dues: days since the sale; not visiting: days without a visit; birthday: 0), `template`, `enabled`. Unique per gym, trigger and days |
@@ -435,7 +436,7 @@ Staff screens are light and dense — read all day in a bright room, with white 
 | **Automations** | Messages → Automations: one card per trigger (before/on the day it ends · win back · money still owed · not visiting · birthday), each rule with an on/off tick, its days, its wording and SMS count; added ones start off. Also the desk SMS wording (welcome, membership sold). Was *Settings → Reminders*, which redirects |
 | **Staff** | Staff accounts: add, disable, reset password; permission checklist and branch access per person, with *Manager* / *Front desk* / *Trainer* / *Blank* starting points |
 | **Subscription** | Their plan with us, days left, pay and submit transaction ID, SMS credit balance and top-up |
-| **Settings** | One page each, with a menu: gym profile and calendar (warns before leaving with unsaved changes), plans and prices, personal training plans (§18.3), payment accounts and QR images, branches, check-in rules (including "not visiting" days), door scanners and the QR poster, security (owner). Plans can be visit packs (*Visits allowed*) and off-peak (*Only at certain hours*: days and times). Settings → Gym has *Let people ask to join from the gym QR* (off by default) |
+| **Settings** | One page each, with a menu: gym profile and calendar (warns before leaving with unsaved changes), plans and prices, personal training plans (§18.3), payment accounts and QR images, branches, check-in rules (including "not visiting" days), door scanners (kiosks, and fingerprint and face readers, §18.2) and the QR poster, security (owner). Plans can be visit packs (*Visits allowed*) and off-peak (*Only at certain hours*: days and times). Settings → Gym has *Let people ask to join from the gym QR* (off by default) |
 | **Import / Export** | Upload an Excel/CSV register, map columns, preview, import members with their current expiry dates. Download members, memberships, payments, expenses and check-ins as Excel. Dates in a register may be AD or BS (a year of 2050 or more is read as BS). Imported memberships carry no price — what members paid before GymBhai isn't income in GymBhai — and no SMS is sent until the gym chooses "Resend welcome" |
 
 ### Member app (`/<gym-slug>`)
@@ -558,6 +559,13 @@ Check-in
   POST  /check-ins/scan               from kiosk (device token) or staff
   POST  /check-ins/manual
   GET   /check-ins
+
+Door readers (§18.2, docs/READERS.md)
+  POST  /devices/readers              add one: brand, branch, serial
+  GET   /iclock/cdata  POST /iclock/cdata  GET /iclock/getrequest  POST /iclock/devicecmd
+                                      a ZKTeco reader over ADMS, known by its serial
+  GET   /kiosk/reader/commands  POST /kiosk/reader/results  POST /kiosk/reader/events
+                                      a Hikvision reader's bridge, with its device token
 
 Lists & reports
   GET   /dashboard/today
@@ -709,7 +717,7 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M12 | Done (§17): 12.1 done 2026-10-17 — `shared/` holds the strings, QR, dates, money, access hours, plan value and member API types; the web app re-exports them; Docker images build with `shared/` beside `frontend/`. 12.2 done 2026-10-17 — app sessions (refresh token in the body), `/m/ws`, notice events, idempotency keys on member actions, one code per 30 seconds, Expo push subscriptions and provider, `Date` on every response (migration 0019). 12.3–12.8 done 2026-10-18 — `mobile/` (Expo SDK 58): every screen of 17.5 but *signed-in devices*, checked on the iPhone simulator and an Android emulator: the QR it draws passes the door's check, offline too; three taps on *I've paid* made one request; a notice and an approval arrived with no tap; Nepali throughout. Jest covers double taps, the socket, the API client and links. Push needs `EAS_PROJECT_ID` (mobile/README.md) and is untested until then. 12.9 done 2026-10-18 — 34 Jest tests, a lint rule that refuses API calls from a control without `useAction`, eight Maestro flows (`mobile/e2e/`, `make e2e-mobile`, on a fresh gym from `make seed-app`) passing on the iPhone simulator in Expo Go and on the Android emulator with the `.apk`, `make apk` (60 MB, 64- and 32-bit ARM, debug-signed, built on the Mac), the GymBhai icon, and `docs/MOBILE.md`: running, tests, sending the `.apk` to Android testers, and Expo Go for iPhone testers. Push set up 2026-10-18 (Expo project `@mero-gym/mero-gym`, Firebase `gymbhai-69df8`, FCM V1 key in Expo) and working end to end on the Play Store emulator: *Turn on*, a notice from the desk arrives as a notification, tapping it opens Notices. **Waiting on:** a real Android phone, real testers; iPhone push at publishing |
 | M13 | Done 2026-10-19, on the branch `rameshdev`: expenses by category in the gym's own months, with *Same again* and void with a reason; spent, profit and spent by category on Reports, and money in and out on its chart; `expenses.xlsx`; *Add an expense* in search; *Record expenses* and *Edit and void expenses* in an *Expenses* area of the staff form; an `expense` live event and a query-count test. Also fixed: the staff form never showed the *Enquiries* permission (its area was missing from the form's list); it now shows any area it doesn't know, at the end |
 | Pilot helpers | Done: signing in at the desk with a QR (§18.4), WhatsApp buttons (§18.5) and notifications for staff (§18.6) on 2026-10-19; a demo gym (§18.7, `make seed-demo`) on 2026-10-20 |
-| M14 | Waiting on the pilot gyms' reader models and one reader of each brand to test with (§18.2) |
+| M14 | Built before a reader, 2026-10-20 (§18.2, docs/READERS.md): readers in Settings → Door scanners, members put on them with their reader number, scans as check-ins under the same rules; ZKTeco over ADMS, Hikvision through a bridge at the gym (`bridge/`), each to its maker's published protocol and tested against a simulated reader. **Waiting on** the pilot gyms' reader models and one reader of each brand, to confirm the protocols and, for ZKTeco, how a reader refuses an expired member |
 | M15 | Done 2026-10-19 (§18.3): PT plans in Settings, monthly or a pack of sessions; *Train members* and *Sell personal training*, and a *Trainer* starting point; selling from the member's profile with a part payment; sessions recorded by the trainer or the desk, voided with a reason; PT payments as ordinary payments with their own dues and receipts; *My clients* and *All* in a Personal training screen; the member's Home on the web and the phone app; a `pt` live event; migration 0022 |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
@@ -1093,6 +1101,18 @@ Whatever the brand:
 
 The details of each protocol are confirmed on a real reader before a gym relies on it. First step: each pilot gym's brand and model (the label on the back, or Menu → System Info) and whether the reader is connected to the internet; then one reader of each brand to build and test with.
 
+**Built before a reader, 2026-10-20**, to the makers' published protocols and tested against a simulated reader (`docs/READERS.md` has the set-up and the list to confirm):
+
+| | |
+|---|---|
+| Adding one | Settings → Door scanners → *Add a fingerprint or face reader*: brand, name, branch, serial number (needed for ZKTeco). Then how to point it at GymBhai: for ZKTeco the reader's *Cloud Server Setting*; for Hikvision the bridge's settings, with the reader's token shown once. The list shows each reader's members on it and changes waiting |
+| Who goes on it | Every member with a current, upcoming or recent membership, under their **reader number**: the digits of their member code, shown on their profile, to enrol them under. Taken off 90 days after they stopped coming, or when archived or erased. Each carries the last day it should let them in: none while expired, frozen, not started, or on a plan not sold at that branch |
+| How it's kept up to date | Pulled, not pushed: the reader (or bridge) asks every few seconds, and GymBhai works out then what it should hold, at most every 30 seconds, and hands out the changes not yet answered (again after 2 minutes without an answer). Nothing to schedule; an offline reader catches up |
+| Scans | Check-ins under the same rules as a QR scan, dated when the member was at the door (`fingerprint`, `face`, `card`, `pin`); sent twice, recorded once. Ignored: scans from before the reader was added, users who aren't members, and times in the future |
+| ZKTeco / eSSL | ADMS at `/iclock/*` (HTTPS through Caddy; plain HTTP for old firmware is an opt-in Caddy site, docs/READERS.md). Members are put on with their number and name. **It doesn't yet refuse an expired member by itself**: GymBhai records the scan as denied, so the desk sees it. How a model refuses someone without losing their fingerprints is the first thing to confirm |
+| Hikvision | The bridge (`bridge/hikvision_bridge.py`, Python with nothing to install) makes the changes over ISAPI with each member's end date, so **the reader refuses an expired or frozen member by itself**, and reads the reader's event log for scans. It signs in with the reader's device token, as a kiosk does; a reader's token can't use the kiosk's routes, nor a kiosk's the bridge's. The reader pushing scans out by itself (no bridge for scans) is left for when we have one to try |
+| Not yet | Mapping a reader's existing users (enrolled before GymBhai, under other numbers) to members: until then GymBhai manages a reader's users from its own numbers, and ignores others; door control for ZKTeco; Hikvision's ISUP (no bridge); readers that only speak the local protocol |
+
 ### 18.3 M15 — Personal training
 
 Built before M14, which waits on hardware. From the pilot gyms: PT is sold both as a monthly fee and as packs of sessions; trainers are on a salary (an expense, 18.1), so there is no commission to work out.
@@ -1174,3 +1194,4 @@ The last pilot helper, 2026-10-20: a gym that looks lived-in, for showing GymBha
 | `member_sign_in_links` | 18.4 |
 | `pt_plans`, `pt_packages`, `pt_sessions`, `payments.pt_package_id` | M15 |
 | `staff_push_subscriptions`, `staff_users.muted_notifications` | 18.6 |
+| `reader_users`; `devices.kind`, `serial`, `synced_at`, `command_seq` | M14 |

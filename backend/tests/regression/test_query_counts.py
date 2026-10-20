@@ -429,3 +429,42 @@ def test_who_gets_a_staff_notification(engine, db: Session, gym_a, make_staff) -
         add(n)
     assert len(who()) == MORE + 1
     assert queries(engine, who) == one
+
+
+def test_door_readers(engine, client: TestClient, db: Session, gym_a) -> None:
+    """A reader's members and changes waiting come in one query for every
+    reader on the list; what a reader should hold costs the same however many
+    members (§18.2)."""
+    from app.models.member_app import Device
+    from app.services import readers
+
+    sign_in(db, client, gym_a.owner)
+
+    def add_reader(n: int) -> None:
+        made = client.post(
+            "/api/v1/devices/readers",
+            json={
+                "kind": "zkteco",
+                "name": f"Reader {n}",
+                "branch_id": str(gym_a.branch.id),
+                "serial": f"SERIAL{n:04d}",
+            },
+        )
+        assert made.status_code == 201, made.text
+
+    add_reader(90)
+    same_cost(engine, client, "/api/v1/devices", add_reader)
+
+    device = db.scalars(sa.select(Device).where(Device.serial == "SERIAL0090")).one()
+    plan = priced_plan(db, gym_a.gym)
+
+    def add_member(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98000099{n:02d}")
+        sell(db, gym_a, member, plan=plan, paid=1500_00)
+
+    add_member(90)
+    one = queries(engine, lambda: readers.wanted(db, device))
+    for n in range(MORE):
+        add_member(n)
+    assert len(readers.wanted(db, device)) == MORE + 1
+    assert queries(engine, lambda: readers.wanted(db, device)) == one

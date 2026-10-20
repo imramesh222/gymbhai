@@ -506,6 +506,8 @@ export interface MemberDetail extends Member {
   payments: Payment[];
   renewal_starts_on: string;
   first_membership: boolean;
+  /** Their number on the gym's fingerprint and face readers, if it has any. */
+  reader_pin: string | null;
   /** Their newest app sign-in, still signed in or not. */
   app_signed_in_at: string | null;
 }
@@ -1272,13 +1274,22 @@ export interface ScanResult {
   can_override: boolean;
 }
 
+export type DeviceKind = "kiosk" | "zkteco" | "hikvision";
+export type ReaderKind = Exclude<DeviceKind, "kiosk">;
+
 export interface Device {
   id: string;
   branch_id: string;
   name: string;
+  /** A kiosk, or a fingerprint and face reader (PLAN.md §18.2). */
+  kind: DeviceKind;
+  serial: string | null;
   last_seen_at: string | null;
   revoked_at: string | null;
   created_at: string;
+  /** A reader's members on it, and changes not yet made there. */
+  on_reader: number | null;
+  waiting: number | null;
 }
 
 export interface CheckInRow {
@@ -1313,6 +1324,17 @@ export const doorApi = {
     ),
   revokeDevice: (id: string) =>
     request<Device>(`/api/v1/devices/${id}/revoke`, send("POST")),
+  /** A fingerprint or face reader; the token is for a Hikvision reader's bridge. */
+  addReader: (body: {
+    kind: ReaderKind;
+    name: string;
+    branch_id: string;
+    serial: string | null;
+  }) =>
+    request<{ device: Device; token: string }>(
+      "/api/v1/devices/readers",
+      send("POST", body),
+    ),
   scan: (code: string, branch_id: string) =>
     request<ScanResult>("/api/v1/check-ins/scan", send("POST", { code, branch_id })),
   manual: (body: {

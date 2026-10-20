@@ -1,7 +1,7 @@
 """Checking members in at the door (PLAN.md §4.3).
 
-One service for every way in — kiosk, staff phone, USB scanner, manual — so
-fingerprint and face readers can be added later as just another source.
+One service for every way in — kiosk, staff phone, USB scanner, manual, and
+fingerprint and face readers (§18.2) — under the same rules.
 
 The rules, in order:
 * Scanned again within the re-scan window  -> duplicate ("already checked in")
@@ -149,11 +149,14 @@ def check_in(
     staff_id: uuid.UUID | None = None,
     override: bool = False,
     note: str | None = None,
+    at: dt.datetime | None = None,
 ) -> Outcome:
+    """`at` is when it happened, for a reader that reports a scan late (its
+    internet was down): the rules are those of that moment's day and hour."""
     # A camera often reads the same QR twice in a second: locked, the second
     # scan sees the first and is marked a duplicate instead of a second visit.
     ms.lock_member(db, member)
-    now = utcnow()
+    now = at or utcnow()
     result, reason, state = _decide(db, gym, member, branch_id, now)
 
     if result in LET_IN and gym.config.rescan_minutes:

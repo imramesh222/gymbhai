@@ -14,6 +14,7 @@ from app.models.member_app import (
     MemberSignInLink,
     OtpCode,
     PaymentRequest,
+    ReaderUser,
 )
 from app.models.membership import Membership, MembershipFreeze
 from app.models.messaging import (
@@ -77,6 +78,7 @@ __all__ = [
     "PtPlan",
     "PtSession",
     "PushSubscription",
+    "ReaderUser",
     "ReminderLog",
     "ReminderRule",
     "ScheduledRun",

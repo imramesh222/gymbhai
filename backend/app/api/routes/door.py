@@ -21,7 +21,13 @@ from app.core.time import NEPAL, utcnow
 from app.db.session import get_db
 from app.models.gym import Branch, Gym
 from app.models.member import Member
-from app.models.member_app import LET_IN, METHOD_MANUAL, CheckIn, Device
+from app.models.member_app import (
+    DEVICE_KIOSK,
+    LET_IN,
+    METHOD_MANUAL,
+    CheckIn,
+    Device,
+)
 from app.models.staff import StaffUser
 from app.schemas.member_app import (
     AttendanceSummary,
@@ -36,7 +42,8 @@ from app.schemas.member_app import (
     ScanResult,
     StaffScanIn,
 )
-from app.services import activity, checkins, storage
+from app.schemas.readers import ReaderIn
+from app.services import activity, checkins, readers, storage
 
 router = APIRouter(tags=["door"])
 
@@ -79,12 +86,73 @@ UNKNOWN = ScanResult(result="unknown", let_in=False, reason="unknown_code")
 # --- devices ---
 
 
+def devices_read(db: Session, devices: list[Device]) -> list[DeviceRead]:
+    """With a reader's members on it and changes waiting: one query for all."""
+    counted = readers.counts(db, [d.id for d in devices if d.kind != DEVICE_KIOSK])
+    reads = []
+    for device in devices:
+        read = DeviceRead.model_validate(device)
+        if device.kind != DEVICE_KIOSK:
+            read.on_reader, read.waiting = counted.get(device.id, (0, 0))
+        reads.append(read)
+    return reads
+
+
 @router.get("/devices", response_model=list[DeviceRead])
 def list_devices(
     db: Session = Depends(get_db), ctx: StaffContext = Depends(DEVICES)
-) -> list[Device]:
+) -> list[DeviceRead]:
     stmt = in_branches(for_gym(select(Device), Device, ctx), Device.branch_id, ctx)
-    return list(db.scalars(stmt.order_by(Device.created_at.desc())))
+    return devices_read(db, list(db.scalars(stmt.order_by(Device.created_at.desc()))))
+
+
+@router.post(
+    "/devices/readers",
+    response_model=DeviceRegistered,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_reader(
+    payload: ReaderIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(DEVICES),
+) -> DeviceRegistered:
+    """A fingerprint or face reader at a branch (§18.2). The token is for a
+    Hikvision reader's bridge; a ZKTeco reader is known by its serial."""
+    branch = _branch(db, ctx, payload.branch_id)
+    serial = payload.serial.strip().upper() if payload.serial else None
+    if serial and db.scalar(select(Device.id).where(Device.serial == serial)):
+        raise AppError(
+            409, "serial_taken", "A reader with that serial number is already added."
+        )
+    token = new_refresh_token()
+    device = Device(
+        gym_id=ctx.gym_id,
+        branch_id=branch.id,
+        name=payload.name,
+        kind=payload.kind,
+        serial=serial,
+        token_hash=hash_refresh_token(token),
+        created_by=ctx.staff.id,
+    )
+    db.add(device)
+    db.flush()
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "device.reader_added",
+        entity="device",
+        entity_id=device.id,
+        changes={
+            "name": device.name,
+            "kind": device.kind,
+            "serial": serial,
+            "branch_id": branch.id,
+        },
+        request=request,
+    )
+    db.commit()
+    return DeviceRegistered(device=devices_read(db, [device])[0], token=token)
 
 
 @router.post(
@@ -153,10 +221,15 @@ def revoke_device(
 # --- the kiosk (device token) ---------------------------------------------------------
 
 
+def kiosk(device: Device = Depends(current_device)) -> Device:
+    """A kiosk, not a reader: a reader's token opens only its bridge's routes."""
+    if device.kind != DEVICE_KIOSK:
+        raise AppError(409, "not_a_kiosk", "This device isn't a kiosk.")
+    return device
+
+
 @router.get("/kiosk/me", response_model=KioskMe)
-def kiosk_me(
-    device: Device = Depends(current_device), db: Session = Depends(get_db)
-) -> KioskMe:
+def kiosk_me(device: Device = Depends(kiosk), db: Session = Depends(get_db)) -> KioskMe:
     gym = db.get(Gym, device.gym_id)
     branch = db.get(Branch, device.branch_id)
     assert gym is not None and branch is not None
@@ -171,7 +244,7 @@ def kiosk_me(
 @router.post("/kiosk/scan", response_model=ScanResult)
 def kiosk_scan(
     payload: ScanIn,
-    device: Device = Depends(current_device),
+    device: Device = Depends(kiosk),
     db: Session = Depends(get_db),
 ) -> ScanResult:
     gym = db.get(Gym, device.gym_id)

@@ -4,6 +4,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -75,8 +77,17 @@ class MemberSession(IdMixin, TimestampMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# A kiosk (a phone or tablet scanning QR codes), or a fingerprint and face
+# reader of either brand the pilot gyms have (PLAN.md §18.2).
+DEVICE_KIOSK = "kiosk"
+DEVICE_ZKTECO = "zkteco"
+DEVICE_HIKVISION = "hikvision"
+READERS = (DEVICE_ZKTECO, DEVICE_HIKVISION)
+
+
 class Device(IdMixin, TimestampMixin, GymOwned, Base):
-    """A registered door scanner (kiosk). It can only check people in (§4.3)."""
+    """A registered door scanner: a kiosk, or a fingerprint and face reader.
+    It can only check people in (§4.3)."""
 
     __tablename__ = "devices"
 
@@ -84,6 +95,17 @@ class Device(IdMixin, TimestampMixin, GymOwned, Base):
         UUID(as_uuid=True), ForeignKey("branches.id"), index=True
     )
     name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(
+        String(16), default=DEVICE_KIOSK, server_default=DEVICE_KIOSK
+    )
+    # A reader's serial number: how a ZKTeco reader says who it is (ADMS).
+    serial: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # For a reader: when what it should hold was last worked out, and the
+    # number of the last command made for it.
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    command_seq: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -92,10 +114,15 @@ class Device(IdMixin, TimestampMixin, GymOwned, Base):
     )
 
 
-# Check-in methods. Fingerprint and face readers are later sources (§4.3).
+# Check-in methods.
 METHOD_APP_QR = "app_qr"
 METHOD_CARD_QR = "card_qr"
 METHOD_MANUAL = "manual"
+# At a reader (§18.2): how the member proved who they were.
+METHOD_FINGERPRINT = "fingerprint"
+METHOD_FACE = "face"
+METHOD_CARD = "card"
+METHOD_PIN = "pin"
 
 # Results. Every scan is recorded, allowed or not (§4.3).
 ALLOWED = "allowed"
@@ -208,3 +235,37 @@ class FreezeRequest(IdMixin, TimestampMixin, GymOwned, Base):
     freeze_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("membership_freezes.id", ondelete="SET NULL")
     )
+
+
+class ReaderUser(IdMixin, TimestampMixin, GymOwned, Base):
+    """A member as a fingerprint or face reader knows them (PLAN.md §18.2):
+    their number there, and what GymBhai last told the reader. Fingerprints
+    and faces stay on the reader; nothing of them is kept here.
+
+    A change to send has `done_at` empty; `command_id` is the number it was
+    sent under, which the reader's answer quotes.
+    """
+
+    __tablename__ = "reader_users"
+    __table_args__ = (
+        UniqueConstraint("device_id", "member_id", name="uq_reader_users_member"),
+        UniqueConstraint("device_id", "pin", name="uq_reader_users_pin"),
+    )
+
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), index=True
+    )
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id", ondelete="CASCADE"), index=True
+    )
+    # Their number on the reader: the digits of their member code.
+    pin: Mapped[str] = mapped_column(String(24))
+    name: Mapped[str] = mapped_column(String(48))
+    # On the reader at all; and the last day it should let them in (none: not
+    # now). Taken off only long after they stopped coming.
+    on_reader: Mapped[bool] = mapped_column(Boolean, default=True)
+    until: Mapped[date | None] = mapped_column(Date)
+    command_id: Mapped[int | None] = mapped_column(Integer)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)

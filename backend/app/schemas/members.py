@@ -173,6 +173,9 @@ class MemberDetail(MemberRead):
     # Their newest app sign-in, still signed in or not: do they use the app?
     # The desk's QR dialog watches it to say "signed in" (§18.4).
     app_signed_in_at: dt.datetime | None = None
+    # Their number on the gym's fingerprint and face readers, if it has any
+    # (§18.2): what the desk enrols them under.
+    reader_pin: str | None = None
 
 
 class PhoneMatch(BaseModel):
