@@ -9,6 +9,10 @@ Automations run daily at 09:00 Nepal time. Each enabled rule has a trigger:
 - dues: money still owed on a membership `days` after it was sold.
 - not_visiting: active, and no visit for `days` days.
 - birthday: on the member's birthday.
+- pt_ending: personal training ends `days` away, counted like expiry from the
+  end of the member's last package; a pack used up early ends on the day of
+  its last session (§18.3).
+- pt_dues: money still owed on personal training `days` after it was sold.
 
 Nothing is sent twice: reminder_log holds one row per rule and occasion (its
 `dedupe_key`). A day the worker missed is caught up for up to CATCH_UP_DAYS;
@@ -19,6 +23,7 @@ import calendar
 import datetime as dt
 import uuid
 from collections import defaultdict
+from collections.abc import Iterable
 
 from sqlalchemy import extract, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
@@ -41,11 +46,16 @@ from app.models.messaging import (
     TRIGGER_EXPIRY,
     TRIGGER_LAPSED,
     TRIGGER_NOT_VISITING,
+    TRIGGER_PT_DUES,
+    TRIGGER_PT_ENDING,
     ReminderLog,
     ReminderRule,
 )
+from app.models.staff import StaffUser
+from app.models.training import PtPackage
 from app.services import members as members_service
 from app.services import memberships as ms
+from app.services import training
 from app.services.push import service as push
 from app.services.sms import service as sms
 
@@ -108,6 +118,27 @@ def values_for(
         "code": member.member_code,
         **extra,
     }
+
+
+def pt_values(
+    gym: Gym,
+    member: Member,
+    package: PtPackage | None,
+    end: dt.date | None,
+    trainer: str | None,
+    **extra: object,
+) -> dict[str, object]:
+    """As values_for, with {plan} the PT plan and {trainer} the trainer's
+    first name (§18.3)."""
+    return values_for(
+        gym,
+        member,
+        None,
+        end,
+        plan=package.plan_name if package else "",
+        trainer=trainer.split()[0] if trainer else "",
+        **extra,
+    )
 
 
 def rupees(paisa: int) -> str:
@@ -205,30 +236,54 @@ def reminder_text(db: Session, gym: Gym, member: Member) -> str:
 
 
 # Messages staff send from their own phone, on WhatsApp (§18.5).
-MESSAGE_PURPOSES = ("reminder", "dues", "not_visiting", "welcome")
+MESSAGE_PURPOSES = ("reminder", "dues", "not_visiting", "welcome", "pt_dues")
+
+
+def _wording(db: Session, gym: Gym, trigger: str) -> str:
+    """The gym's wording for an automation (its first rule), else the default."""
+    rule = db.scalars(
+        select(ReminderRule)
+        .where(ReminderRule.gym_id == gym.id, ReminderRule.trigger == trigger)
+        .order_by(ReminderRule.days)
+    ).first()
+    if rule:
+        return rule.template
+    return next(
+        text
+        for kind, _, text, _ in sms_defaults.RULES[gym.config.language]
+        if kind == trigger
+    )
+
+
+def pt_dues_text(db: Session, gym: Gym, member: Member) -> str:
+    """What they owe on personal training, in the gym's PT dues wording."""
+    packages = [p for p in training.of_member(db, member) if p.cancelled_at is None]
+    paid = training.payments_by_package(db, [p.id for p in packages])
+    owed = {p.id: training.dues_of(p, paid[p.id]) for p in packages}
+    package = max(packages, key=lambda p: (owed[p.id], p.start_date), default=None)
+    trainer = db.get(StaffUser, package.trainer_id) if package else None
+    values = pt_values(
+        gym,
+        member,
+        package,
+        package.end_date if package else None,
+        trainer.name if trainer else None,
+        amount=rupees(sum(max(amount, 0) for amount in owed.values())),
+    )
+    return render(_wording(db, gym, TRIGGER_PT_DUES), values)
 
 
 def message_text(db: Session, gym: Gym, member: Member, purpose: str) -> str:
     """The gym's own wording, as its SMS or automation would say it now."""
     if purpose == "reminder":
         return reminder_text(db, gym, member)
+    if purpose == "pt_dues":
+        return pt_dues_text(db, gym, member)
     state = members_service.state(db, member)
     if purpose == "welcome":
         return welcome_text(gym, member, state)
-    trigger = TRIGGER_DUES if purpose == "dues" else TRIGGER_NOT_VISITING
-    rule = db.scalars(
-        select(ReminderRule)
-        .where(ReminderRule.gym_id == gym.id, ReminderRule.trigger == trigger)
-        .order_by(ReminderRule.days)
-    ).first()
-    template = (
-        rule.template
-        if rule
-        else next(
-            text
-            for kind, _, text, _ in sms_defaults.RULES[gym.config.language]
-            if kind == trigger
-        )
+    template = _wording(
+        db, gym, TRIGGER_DUES if purpose == "dues" else TRIGGER_NOT_VISITING
     )
     if purpose == "dues":
         extra = {"amount": rupees(state.dues)}
@@ -328,6 +383,9 @@ TAP_OPENS = {
     TRIGGER_DUES: "/payments",
     TRIGGER_NOT_VISITING: "",
     TRIGGER_BIRTHDAY: "",
+    # Home shows their personal training, and what they owe on it.
+    TRIGGER_PT_ENDING: "",
+    TRIGGER_PT_DUES: "",
 }
 
 
@@ -356,6 +414,8 @@ def _run_gym(db: Session, gym: Gym, today: dt.date) -> int:
         + _dues(db, gym, today, by_trigger[TRIGGER_DUES], pushable)
         + _not_visiting(db, gym, today, by_trigger[TRIGGER_NOT_VISITING], pushable)
         + _birthdays(db, gym, today, by_trigger[TRIGGER_BIRTHDAY], pushable)
+        + _pt_ending(db, gym, today, by_trigger[TRIGGER_PT_ENDING], pushable)
+        + _pt_dues(db, gym, today, by_trigger[TRIGGER_PT_DUES], pushable)
     )
 
 
@@ -565,6 +625,144 @@ def _birthdays(
                 member,
                 f"birthday:{member.id}:{day.year}",
                 render(rule.template, values_for(gym, member, None, None)),
+                pushable=pushable,
+            )
+    return queued
+
+
+def _trainer_names(db: Session, ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
+    ids = set(ids)
+    if not ids:
+        return {}
+    return {
+        row.id: row.name
+        for row in db.execute(
+            select(StaffUser.id, StaffUser.name).where(StaffUser.id.in_(ids))
+        )
+    }
+
+
+def _pt_ending(
+    db: Session,
+    gym: Gym,
+    today: dt.date,
+    rules: list[ReminderRule],
+    pushable: set[uuid.UUID],
+) -> int:
+    """Before, on or after the day a member's personal training ends (§18.3):
+    counted from their last package, so someone who has bought more isn't
+    told. A pack used up early ends on the day of its last session."""
+    if not rules:
+        return 0
+    earliest = min(today - dt.timedelta(days=r.days + CATCH_UP_DAYS) for r in rules)
+    latest = max(today - dt.timedelta(days=r.days) for r in rules)
+    # Who has a package that may end in the window (a pack used up early
+    # ends before its end date, never after), and all their packages: a
+    # later one means they have renewed.
+    ending = select(PtPackage.member_id).where(
+        PtPackage.gym_id == gym.id,
+        PtPackage.cancelled_at.is_(None),
+        PtPackage.end_date >= earliest,
+        PtPackage.start_date <= latest,
+    )
+    rows = db.execute(
+        select(PtPackage, Member)
+        .join(Member, Member.id == PtPackage.member_id)
+        .where(
+            *_reachable(gym),
+            PtPackage.gym_id == gym.id,
+            PtPackage.cancelled_at.is_(None),
+            PtPackage.member_id.in_(ending),
+        )
+    ).all()
+    end_of = training.ends(db, [row.PtPackage for row in rows])
+    last: dict[uuid.UUID, tuple[PtPackage, Member]] = {}
+    for package, member in rows:
+        held = last.get(member.id)
+        if held is None or (end_of[package.id], package.start_date) > (
+            end_of[held[0].id],
+            held[0].start_date,
+        ):
+            last[member.id] = (package, member)
+    trainers = _trainer_names(db, (p.trainer_id for p, _ in last.values()))
+
+    queued = 0
+    for package, member in last.values():
+        end = end_of[package.id]
+        for rule in rules:
+            target = end + dt.timedelta(days=rule.days)
+            if not (target <= today <= target + dt.timedelta(days=CATCH_UP_DAYS)):
+                continue
+            # Several rules due at once (a missed day): send only the latest.
+            overtaken = any(
+                r.days > rule.days and end + dt.timedelta(days=r.days) <= today
+                for r in rules
+            )
+            values = pt_values(
+                gym, member, package, end, trainers.get(package.trainer_id)
+            )
+            queued += _send(
+                db,
+                gym,
+                rule,
+                member,
+                f"pt:{package.id}",
+                render(rule.template, values),
+                pushable=pushable,
+                quiet=overtaken,
+            )
+    return queued
+
+
+def _pt_dues(
+    db: Session,
+    gym: Gym,
+    today: dt.date,
+    rules: list[ReminderRule],
+    pushable: set[uuid.UUID],
+) -> int:
+    """Still owed on personal training `days` after the sale: one message per
+    rule and package."""
+    queued = 0
+    for rule in rules:
+        sold_from = dt.datetime.combine(
+            today - dt.timedelta(days=rule.days + CATCH_UP_DAYS), dt.time(), NEPAL
+        )
+        sold_to = dt.datetime.combine(
+            today - dt.timedelta(days=rule.days - 1), dt.time(), NEPAL
+        )
+        rows = db.execute(
+            select(PtPackage, Member)
+            .join(Member, Member.id == PtPackage.member_id)
+            .where(
+                *_reachable(gym),
+                PtPackage.gym_id == gym.id,
+                PtPackage.cancelled_at.is_(None),
+                PtPackage.created_at >= sold_from,
+                PtPackage.created_at < sold_to,
+            )
+        ).all()
+        paid = training.payments_by_package(db, [row.PtPackage.id for row in rows])
+        trainers = _trainer_names(db, (row.PtPackage.trainer_id for row in rows))
+        for package, member in rows:
+            owed = training.dues_of(package, paid[package.id])
+            if owed <= 0:
+                continue
+            values = pt_values(
+                gym,
+                member,
+                package,
+                package.end_date,
+                trainers.get(package.trainer_id),
+                amount=rupees(owed),
+            )
+            queued += _send(
+                db,
+                gym,
+                rule,
+                member,
+                f"pt:{package.id}",
+                render(rule.template, values),
                 pushable=pushable,
             )
     return queued

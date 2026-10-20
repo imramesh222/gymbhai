@@ -396,6 +396,8 @@ def test_lists_only_show_your_own_gym(
         "lapsed": [],
         "owing": [],
         "owing_total": 0,
+        "pt_owing": [],  # gym B's member owes on personal training
+        "pt_owing_total": 0,
         "not_visiting": [],
         "not_visiting_total": 0,
         "not_visiting_days": 14,
@@ -411,6 +413,24 @@ def test_lists_only_show_your_own_gym(
     ]
     assert client.get("/api/v1/pt/packages").json() == []
     assert client.get("/api/v1/pt/clients").json() == []
+    # Reports' PT figures: none of gym B's sale, session or trainer.
+    db.add(
+        PtPlan(
+            gym_id=gym_a.gym.id,
+            name="A monthly PT",
+            kind="monthly",
+            duration_months=1,
+            price=8_000_00,
+        )
+    )
+    db.commit()
+    assert client.get("/api/v1/reports/monthly").json()["personal_training"] == {
+        "income": 0,
+        "sold": 0,
+        "sessions": 0,
+        "members": 0,
+        "by_trainer": [],
+    }
     # Phone lookups too: another gym's member is never "already on file".
     assert client.get("/api/v1/members/phone-check?phone=9819999999").json() == []
 

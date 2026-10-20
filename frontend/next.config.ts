@@ -25,9 +25,18 @@ const nextConfig: NextConfig = {
   // agent runs it; the project's instructions live in the root CLAUDE.md.
   agentRules: false,
   // `next dev` serves its scripts to localhost only. Allow phones on the same
-  // Wi-Fi (http://192.168.x.x:3000) for testing the member app and the door.
-  // Development only: a production build ignores this.
-  allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
+  // Wi-Fi (http://192.168.x.x:3000) for testing the member app and the door,
+  // and a tunnel to this Mac for notifications, which need https
+  // (docs/PUSH.md). Development only: a production build ignores this.
+  allowedDevOrigins: [
+    "192.168.*.*",
+    "10.*.*.*",
+    "172.*.*.*",
+    "*.trycloudflare.com",
+    "*.ngrok-free.app",
+    "*.ngrok-free.dev",
+    "*.ngrok.app",
+  ],
   async redirects() {
     // Expiring became Follow up (PLAN.md §16.3, 8.1): old bookmarks still work.
     return [

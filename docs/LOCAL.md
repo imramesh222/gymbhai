@@ -68,6 +68,7 @@ address: `ipconfig getifaddr en0`.
 | A notification to your phone | Dashboard → Notices → publish: members with notifications on always get one (the SMS tick only adds SMS for the rest) |
 | An enquiry | `http://localhost:3000/e2e-app/join`, or *Ask to join* in the app; it shows under Enquiries |
 | Pushes only logged, not sent | `PUSH_PROVIDER=console` in `.env`, then `make up` (`webpush` sends for real) |
+| Web notifications on a real phone | They need `https://`: a tunnel to the Mac, `docs/PUSH.md` |
 
 ## When something doesn't start
 

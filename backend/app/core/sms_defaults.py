@@ -83,6 +83,27 @@ RULES: dict[str, list[tuple[str, int, str, bool]]] = {
             "Happy birthday, {name}! Have a great day. From all of us at {gym}",
             False,
         ),
+        (
+            "pt_ending",
+            -3,
+            "Hi {name}, your personal training at {gym} ends on {end_date}. "
+            "To keep training with {trainer}, renew at the desk.",
+            False,
+        ),
+        (
+            "pt_ending",
+            1,
+            "Hi {name}, your personal training at {gym} ended on {end_date}. "
+            "To keep training with {trainer}, renew at the desk.",
+            False,
+        ),
+        (
+            "pt_dues",
+            7,
+            "Hi {name}, a reminder from {gym}: Rs {amount} is still to pay "
+            "for your personal training. Pay at the desk.",
+            False,
+        ),
     ],
     "ne": [
         (
@@ -128,6 +149,27 @@ RULES: dict[str, list[tuple[str, int, str, bool]]] = {
             False,
         ),
         ("birthday", 0, "जन्मदिनको शुभकामना, {name}! — {gym} परिवार", False),
+        (
+            "pt_ending",
+            -3,
+            "नमस्ते {name}, {gym} मा {trainer} सँगको ट्रेनिङ {end_date} मा सकिँदैछ। "
+            "नवीकरण डेस्कमा।",
+            False,
+        ),
+        (
+            "pt_ending",
+            1,
+            "नमस्ते {name}, {gym} मा {trainer} सँगको ट्रेनिङ {end_date} मा सकियो। "
+            "नवीकरण डेस्कमा।",
+            False,
+        ),
+        (
+            "pt_dues",
+            7,
+            "नमस्ते {name}, {gym} मा पर्सनल ट्रेनिङको रु {amount} तिर्न बाँकी छ। "
+            "डेस्कमा तिर्नुहोस्।",
+            False,
+        ),
     ],
 }
 

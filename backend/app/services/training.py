@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.tenancy import StaffContext
@@ -32,7 +32,7 @@ from app.core.gym_settings import GymSettings
 from app.core.permissions import Permission
 from app.core.time import today_in_nepal, utcnow
 from app.models.member import Member
-from app.models.payment import KIND_REFUND, Payment
+from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
 from app.models.staff import StaffUser
 from app.models.training import KIND_SESSIONS, PtPackage, PtPlan, PtSession
 from app.services import activity, live
@@ -96,6 +96,45 @@ def total_of(package: PtPackage) -> int:
 
 def dues_of(package: PtPackage, payments: Iterable[Payment]) -> int:
     return ms.owed(package, payments)
+
+
+def dues_expression():
+    """Per-package dues, as a correlated SQL expression (see dues_of). A
+    cancelled package owes nothing more: leave those out with the filter."""
+    paid = (
+        select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Payment.kind == KIND_PAYMENT, Payment.amount),
+                        else_=-Payment.amount,
+                    )
+                ),
+                0,
+            )
+        )
+        .where(Payment.pt_package_id == PtPackage.id, Payment.voided_at.is_(None))
+        .scalar_subquery()
+    )
+    return PtPackage.price - PtPackage.discount - paid
+
+
+def ends(db: Session, packages: Sequence[PtPackage]) -> dict[uuid.UUID, dt.date]:
+    """The day each package ends: its end date, or for a pack used up before
+    then, the day of its last session. One query however many."""
+    found = {p.id: p.end_date for p in packages}
+    packs = {p.id: p for p in packages if p.sessions is not None}
+    if not packs:
+        return found
+    for package_id, used, last_on in db.execute(
+        select(PtSession.package_id, func.count(), func.max(PtSession.trained_on))
+        .where(PtSession.package_id.in_(list(packs)), PtSession.voided_at.is_(None))
+        .group_by(PtSession.package_id)
+    ):
+        sessions = packs[package_id].sessions
+        if sessions is not None and used >= sessions:
+            found[package_id] = min(last_on, packs[package_id].end_date)
+    return found
 
 
 def snapshot(package: PtPackage) -> dict[str, Any]:

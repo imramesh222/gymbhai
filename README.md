@@ -7,6 +7,7 @@ and QR check-ins, with an installable member app. One product, many gyms.
 - **[CLAUDE.md](CLAUDE.md)** — the rules that are easy to break
 - **[docs/LOCAL.md](docs/LOCAL.md)** — start, stop, and a new Wi-Fi on your Mac
 - **[docs/MOBILE.md](docs/MOBILE.md)** — the phone app: run, test, share with testers
+- **[docs/PUSH.md](docs/PUSH.md)** — notifications on real phones: what to try on Android and iPhone
 - **[docs/DEPLOY.md](docs/DEPLOY.md)** — putting it on a server, backups, updates
 - **[docs/PILOT.md](docs/PILOT.md)** — onboarding a pilot gym
 

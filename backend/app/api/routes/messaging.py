@@ -29,6 +29,8 @@ from app.models.messaging import (
     ReminderRule,
     SmsMessage,
 )
+from app.models.staff import StaffUser
+from app.models.training import PtPackage
 from app.schemas.messaging import (
     BulkSmsIn,
     BulkSmsResult,
@@ -39,6 +41,7 @@ from app.schemas.messaging import (
     NoticeCost,
     NoticeIn,
     NoticeRead,
+    PtOwing,
     ReminderRuleIn,
     ReminderRuleRead,
     ReminderRuleUpdate,
@@ -48,7 +51,7 @@ from app.schemas.messaging import (
     SmsTemplatesUpdate,
     check_days,
 )
-from app.services import activity, live, reminders
+from app.services import activity, live, reminders, training
 from app.services import members as members_service
 from app.services.push import service as push
 from app.services.sms import service as sms
@@ -76,7 +79,8 @@ def follow_up(
     ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
 ) -> FollowUpLists:
     """Who to chase (PLAN.md §16.3, 8.1): ending today or this week, lapsed in
-    the last 30 days, owing money, and active but not visiting."""
+    the last 30 days, owing money (and on personal training, §18.3), and
+    active but not visiting."""
     today = today_in_nepal()
     days = _gym(db, ctx).config.not_visiting_days
     ending = list(
@@ -98,6 +102,28 @@ def follow_up(
     owing = list(
         db.scalars(owing_stmt.order_by(dues.desc(), Member.name).limit(FOLLOW_UP_SHOWN))
     )
+    # Personal training owed, at the branches the caller works at (§18.3).
+    pt_owed = training.dues_expression()
+    pt_owing_stmt = (
+        training.visible(ctx)
+        .join(Member, Member.id == PtPackage.member_id)
+        .where(
+            PtPackage.cancelled_at.is_(None),
+            Member.is_archived.is_(False),
+            pt_owed > 0,
+        )
+    )
+    pt_owing = db.execute(
+        pt_owing_stmt.join(StaffUser, StaffUser.id == PtPackage.trainer_id)
+        .add_columns(
+            Member.name.label("member_name"),
+            Member.phone,
+            StaffUser.name.label("trainer_name"),
+            pt_owed.label("owed"),
+        )
+        .order_by(pt_owed.desc(), Member.name)
+        .limit(FOLLOW_UP_SHOWN)
+    ).all()
     away_stmt = members_service.search(ctx, today=today, not_visiting_days=days)
     last_visit = members_service.last_visit_expression()
     away = list(
@@ -126,6 +152,20 @@ def follow_up(
         lapsed=[],
         owing=[read(m) for m in owing],
         owing_total=count(owing_stmt),
+        pt_owing=[
+            PtOwing(
+                package_id=row.PtPackage.id,
+                member_id=row.PtPackage.member_id,
+                name=row.member_name,
+                phone=row.phone,
+                plan_name=row.PtPackage.plan_name,
+                trainer_name=row.trainer_name,
+                end_date=row.PtPackage.end_date,
+                dues=row.owed,
+            )
+            for row in pt_owing
+        ],
+        pt_owing_total=count(pt_owing_stmt),
         not_visiting=[read(m) for m in away],
         not_visiting_total=count(away_stmt),
         not_visiting_days=days,

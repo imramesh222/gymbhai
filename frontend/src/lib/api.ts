@@ -1168,8 +1168,9 @@ export interface SmsMessage {
   created_at: string;
 }
 
-/** What starts an automation (PLAN.md §16.3, 8.2). */
-export type Trigger = "expiry" | "lapsed" | "dues" | "not_visiting" | "birthday";
+/** What starts an automation (PLAN.md §16.3, 8.2; personal training's, §18.3). */
+export type Trigger =
+  "expiry" | "lapsed" | "dues" | "not_visiting" | "birthday" | "pt_ending" | "pt_dues";
 
 export interface MessageSettings {
   welcome_sms: string;
@@ -1194,6 +1195,18 @@ export interface NoticeInput {
   send_sms: boolean;
 }
 
+/** Personal training with money still owed on it (§18.3). */
+export interface PtOwing {
+  package_id: string;
+  member_id: string;
+  name: string;
+  phone: string;
+  plan_name: string;
+  trainer_name: string;
+  end_date: string;
+  dues: number;
+}
+
 /** Who to chase (PLAN.md §16.3, 8.1). Owing and not visiting: the first 100. */
 export interface FollowUpLists {
   due_today: Member[];
@@ -1201,6 +1214,9 @@ export interface FollowUpLists {
   lapsed: Member[];
   owing: Member[];
   owing_total: number;
+  /** Owed on personal training, apart from memberships (§18.3). */
+  pt_owing: PtOwing[];
+  pt_owing_total: number;
   not_visiting: Member[];
   not_visiting_total: number;
   not_visiting_days: number;
@@ -1212,6 +1228,7 @@ export const MESSAGE_PURPOSES = [
   "dues",
   "not_visiting",
   "welcome",
+  "pt_dues",
 ] as const;
 export type MessagePurpose = (typeof MESSAGE_PURPOSES)[number];
 
@@ -1471,6 +1488,18 @@ export interface MonthlyReport {
   active_members: number;
   visits: number;
   by_plan: Record<string, number>;
+  /** Only for a gym with PT plans (§18.3). */
+  personal_training: PtMonth | null;
+}
+
+/** Personal training in a report month (§18.3). */
+export interface PtMonth {
+  /** Already within the month's income. */
+  income: number;
+  sold: number;
+  sessions: number;
+  members: number;
+  by_trainer: { trainer_id: string; name: string; members: number; sessions: number }[];
 }
 
 export interface TrendMonth {

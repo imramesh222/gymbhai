@@ -98,6 +98,24 @@ class TrendRead(BaseModel):
     months: list[TrendMonth]
 
 
+class PtTrainerMonth(BaseModel):
+    trainer_id: uuid.UUID
+    name: str
+    members: int
+    sessions: int
+
+
+class PtMonthRead(BaseModel):
+    """Personal training in the month (§18.3)."""
+
+    # Already within the month's income.
+    income: int
+    sold: int
+    sessions: int
+    members: int
+    by_trainer: list[PtTrainerMonth]
+
+
 class MonthlyRead(BaseModel):
     month: str
     calendar: str
@@ -119,6 +137,8 @@ class MonthlyRead(BaseModel):
     active_members: int
     visits: int
     by_plan: dict[str, int]
+    # Only for a gym with PT plans.
+    personal_training: PtMonthRead | None = None
 
 
 class ImportPreview(BaseModel):
