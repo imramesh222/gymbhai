@@ -85,11 +85,11 @@ def test_the_member_app_counts_down(
 
 def window(start: dt.datetime, minutes: int) -> dict:
     local = start.astimezone(NEPAL)
-    return {
-        "days": [local.weekday()],
-        "from": local.strftime("%H:%M"),
-        "to": (local + dt.timedelta(minutes=minutes)).strftime("%H:%M"),
-    }
+    end = local + dt.timedelta(minutes=minutes)
+    # A window never runs past midnight (the API refuses one): late in the
+    # evening it ends at 24:00 instead.
+    to = "24:00" if end.date() != local.date() else end.strftime("%H:%M")
+    return {"days": [local.weekday()], "from": local.strftime("%H:%M"), "to": to}
 
 
 def test_off_peak_hours(client: TestClient, db: Session, gym_a: GymFixture) -> None:
@@ -109,7 +109,10 @@ def test_off_peak_hours(client: TestClient, db: Session, gym_a: GymFixture) -> N
     let_in = check_in(client, gym_a, member, override=True, note="Exam week")
     assert let_in["result"] == "override"
 
-    now = utcnow() - dt.timedelta(minutes=1)
+    # From a minute ago, but never from yesterday: just after midnight, from 00:00.
+    local_now = utcnow().astimezone(NEPAL)
+    midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    now = max(local_now - dt.timedelta(minutes=1), midnight)
     open_now = plan(client, name="Now", access_hours=[window(now, 30)])
     other = sold(client, db, gym_a, open_now["id"], "9800000904")
     assert check_in(client, gym_a, other)["result"] == "allowed"
