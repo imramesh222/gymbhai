@@ -77,6 +77,23 @@ export default function PaymentRequestsPage() {
                 {r.method_label ?? "—"} · {t("payment.transactionRef")}:{" "}
                 {r.transaction_ref ?? "—"}
               </p>
+              {r.confirmed_by && (
+                // The wallet itself said the money arrived (§20.2).
+                <p className="mt-1">
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200/70">
+                    {t("requests.confirmedBy", {
+                      wallet: t(`account.${r.confirmed_by}`),
+                    })}
+                  </span>
+                  {r.status === "pending" && (
+                    <span className="mt-1 block text-xs text-slate-600">
+                      {t("requests.confirmedHelp", {
+                        wallet: t(`account.${r.confirmed_by}`),
+                      })}
+                    </span>
+                  )}
+                </p>
+              )}
               <p className="text-xs text-slate-500">
                 {formatDateTime(r.created_at, display)}
               </p>

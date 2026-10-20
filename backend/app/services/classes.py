@@ -310,11 +310,21 @@ def _type_name(db: Session, gym_class: GymClass) -> str:
 
 
 def _remind(db: Session, booking: ClassBooking, gym_class: GymClass) -> None:
+    """An hour before, for the time it starts now: a class moved later gets a
+    new reminder, and the old one, finding the time changed, says nothing."""
     from app.worker import enqueue
 
     at = gym_class.starts_at - REMINDER_BEFORE
     if at > utcnow():
-        enqueue(db, JOB_REMINDER, {"booking_id": str(booking.id)}, run_at=at)
+        enqueue(
+            db,
+            JOB_REMINDER,
+            {
+                "booking_id": str(booking.id),
+                "starts_at": gym_class.starts_at.isoformat(),
+            },
+            run_at=at,
+        )
 
 
 def book(
@@ -490,6 +500,44 @@ def cancel_class(
     return gym_class
 
 
+def moved(
+    db: Session,
+    gym: Gym,
+    gym_class: GymClass,
+    was: dt.datetime,
+    *,
+    sms: bool = False,
+) -> int:
+    """The class starts at another time now: everyone booked or waiting is
+    told, by push (and SMS where the gym asked and push can't reach), and
+    those booked get their reminder for the new time. Returns how many."""
+    local = was.astimezone(NEPAL)
+    old = f"{format_date(local.date(), gym.config.date_display)} {local:%H:%M}"
+    told = 0
+    for booking in db.scalars(
+        select(ClassBooking).where(
+            ClassBooking.class_id == gym_class.id, _live_bookings()
+        )
+    ):
+        member = db.get(Member, booking.member_id)
+        if member is None:
+            continue
+        _tell(
+            db,
+            gym,
+            member,
+            class_text.MOVED,
+            gym_class,
+            url=f"/{gym.slug}/classes",
+            sms=sms,
+            was=old,
+        )
+        if booking.status == BOOKED:
+            _remind(db, booking, gym_class)
+        told += 1
+    return told
+
+
 def set_attended(
     db: Session,
     ctx: StaffContext,
@@ -563,6 +611,7 @@ def _tell(
     url: str,
     reason: str = "",
     sms: bool = False,
+    was: str = "",
 ) -> None:
     language = member.language or gym.config.language
     day, time = _when(gym, gym_class)
@@ -571,6 +620,7 @@ def _tell(
         "day": day,
         "time": time,
         "reason": reason,
+        "was": was,
     }
     text = wording.get(language, wording["en"]).format(**values).strip()
     push.notify(
@@ -596,6 +646,9 @@ def handle_reminder(db: Session, payload: dict) -> None:
     member = db.get(Member, booking.member_id)
     if gym_class is None or gym_class.cancelled_at is not None or member is None:
         return
+    planned = payload.get("starts_at")
+    if planned and dt.datetime.fromisoformat(planned) != gym_class.starts_at:
+        return  # moved since: its own reminder is queued for the new time
     gym = db.get(Gym, gym_class.gym_id)
     assert gym is not None
     _tell(db, gym, member, class_text.REMINDER, gym_class, url=f"/{gym.slug}/classes")

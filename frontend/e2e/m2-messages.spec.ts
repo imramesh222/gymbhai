@@ -35,7 +35,7 @@ test("follow up, a reminder by SMS, and a notice with its cost shown first", asy
   await expect(page.getByText("Ram Thapa")).toHaveCount(0);
 
   // The SMS log shows the welcome and the reminder; the worker sends them.
-  await openFromMenu(page, "SMS");
+  await openFromMenu(page, "Sent messages");
   await page.waitForURL("**/staff/sms");
   await expect(page.getByRole("heading", { name: "Sent messages" })).toBeVisible();
   await expect(page.getByText("· reminder")).toBeVisible();

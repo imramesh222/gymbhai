@@ -37,10 +37,13 @@ export interface Plan {
 
 export interface Payment {
   id: string;
-  member_id: string;
+  /** Null for a walk-in's purchase at the desk (§20.1). */
+  member_id: string | null;
   membership_id: string | null;
   /** Money for personal training (§18.3), not a membership. */
   pt_package_id: string | null;
+  /** Bought at the desk (§20.1). */
+  sale_id?: string | null;
   kind: "payment" | "refund";
   amount: number;
   method: Method;
@@ -63,6 +66,51 @@ export interface PaymentMethodAccount {
   qr_image_url: string | null;
   is_active: boolean;
   sort_order: number;
+  /** Payments to it are confirmed by the wallet itself (§20.2). */
+  online?: boolean;
+  /** Staff only: the merchant keys' state, never the keys. */
+  gateway?: GatewayStatus | null;
+}
+
+export interface GatewayStatus {
+  merchant: string | null;
+  /** The secret key's last four characters. */
+  hint: string | null;
+  test: boolean;
+  ok_at: string | null;
+  error: string | null;
+}
+
+/** A payment through the gym's own merchant account (§20.2). */
+export interface OnlinePayment {
+  id: string;
+  status: "started" | "paid" | "failed" | "expired";
+  provider: "esewa" | "khalti" | "fonepay";
+  amount: number;
+  plan_name: string;
+  /** The wallet's test system: nothing is sold. */
+  test: boolean;
+  /** The checkout page, by its own signed link. */
+  pay_url: string;
+  paid_at: string | null;
+  expires_at: string;
+  approved: boolean;
+  waiting_for_desk: boolean;
+}
+
+/** The checkout page's view of a payment, by its link (no session). */
+export interface PayPage extends OnlinePayment {
+  gym_name: string;
+  gym_slug: string;
+  from_app: boolean;
+  /** The phone app's own link back to Renew, when it gave one. */
+  return_to?: string | null;
+  checkout: {
+    kind: "form" | "redirect" | "qr" | "console";
+    url: string | null;
+    fields: Record<string, string>;
+    qr: string | null;
+  } | null;
 }
 
 export interface Notice {
@@ -102,6 +150,12 @@ export interface PublicGym {
   date_display: "ad" | "bs" | "both";
   branches: { id: string; name: string }[];
   join_form: boolean;
+  /** The gym's own app in the stores, once live (§20.3). */
+  app?: {
+    name: string;
+    play_url: string | null;
+    app_store_url: string | null;
+  } | null;
 }
 
 /** Personal training on the member's Home (§18.3): upcoming or under way. */
@@ -162,6 +216,9 @@ export interface MemberMe {
   training?: MemberTraining[];
   /** Classes at their branch in the next week: Home offers to book (§19.4). */
   has_classes?: boolean;
+  /** WhatsApp messages (§19.3): the gym sends them, and they agreed. */
+  whatsapp?: boolean;
+  whatsapp_agreed?: boolean;
 }
 
 export interface MemberSignIn {
@@ -194,6 +251,8 @@ export interface PaymentRequest {
   reviewed_by_name: string | null;
   /** A family or couple plan's others, renewed with the payer (§19.1). */
   with_names?: string[];
+  /** The wallet itself confirmed the money (§20.2). */
+  confirmed_by?: "esewa" | "khalti" | "fonepay" | null;
 }
 
 export interface PushStatus {
@@ -323,3 +382,14 @@ export const LEAD_SOURCES = [
   "other",
 ] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
+
+/** A device the member is signed in on (PLAN.md §17.5). */
+export interface MemberDevice {
+  id: string;
+  client: "web" | "app";
+  /** The device's User-Agent, for describeDevice. */
+  device_label: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  current: boolean;
+}

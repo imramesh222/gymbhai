@@ -200,6 +200,19 @@ def current_member(
     return member_for_token(db, credentials.credentials)[0]
 
 
+def current_member_session(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    db: Session = Depends(get_db),
+) -> MemberSession:
+    """The sign-in this request came with: "this device" (§17.5)."""
+    if credentials is None:
+        raise unauthorized()
+    _, claims = member_for_token(db, credentials.credentials)
+    session = db.get(MemberSession, claims.session_id)
+    assert session is not None  # member_for_token checked it
+    return session
+
+
 def member_for_token(db: Session, token: str) -> tuple[Member, MemberClaims]:
     """The member a token belongs to, while its session lives. Also used by
     the phone app's socket, which sends its token in a message (§17.3)."""

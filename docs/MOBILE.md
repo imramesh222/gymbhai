@@ -20,6 +20,8 @@ a free Firebase project for Android notifications.
 2. The app's packages: `cd mobile && npm install`.
 3. Tell the app where the API is: `make mobile-env` writes this Mac's Wi-Fi
    address into `mobile/.env.local` (run it again whenever you change Wi-Fi).
+   It also sets `PUBLIC_APP_URL` in `.env` to the same address and restarts the
+   API, so the web pages the app opens (a wallet's checkout) load on the phone.
    By hand: find the Mac's Wi-Fi address
    (System Settings → Wi-Fi → Details, or `ipconfig getifaddr en0`), then:
    ```sh

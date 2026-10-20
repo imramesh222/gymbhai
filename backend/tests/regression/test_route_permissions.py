@@ -50,6 +50,16 @@ PUBLIC = {
     ("POST", "/api/v1/m/{slug}/join"),
     ("POST", "/api/v1/m/auth/refresh"),
     ("POST", "/api/v1/m/auth/logout"),
+    # Meta's WhatsApp webhook (§19.3): the verify token, and on every POST the
+    # app secret's signature, are the proof.
+    ("GET", "/api/v1/whatsapp/webhook"),
+    ("POST", "/api/v1/whatsapp/webhook"),
+    # The checkout page for a payment the wallet confirms (§20.2) opens in
+    # the phone's browser, which has no session: the payment's signed link is
+    # the proof, and it only shows that payment and asks the wallet about it.
+    ("GET", "/api/v1/pay/{token}"),
+    ("POST", "/api/v1/pay/{token}/check"),
+    ("POST", "/api/v1/pay/{token}/pretend"),
 }
 
 # Signed in, but deliberately no permission: every staff member needs these.

@@ -14,6 +14,8 @@ from app.db.base import Base, GymOwned, IdMixin, TimestampMixin
 
 KIND_SUBSCRIPTION = "subscription"
 KIND_SMS = "sms"
+# The one-time fee for a gym's own app (§20.3).
+KIND_APP = "app"
 
 
 class SubscriptionPayment(IdMixin, TimestampMixin, GymOwned, Base):

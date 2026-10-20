@@ -61,7 +61,8 @@ test("the flow that must never break", async ({ browser }) => {
   await expect(prompt).toHaveCount(0);
   const qr = app.getByRole("img", { name: "Your check-in QR code" });
   const code = await qr.getAttribute("data-qr-value");
-  expect(code).toMatch(/^gb1\./);
+  // Signed with Ed25519, which a kiosk can check offline (§19.2).
+  expect(code).toMatch(/^gb2\./);
 
   // Scans the QR at the kiosk -> allowed.
   await scanAtKiosk(kiosk, code!);
@@ -140,11 +141,17 @@ test("renew from the app, approve at the desk", async ({ browser }) => {
   await expect(app.getByText("Saved.")).toBeVisible();
 
   await app.getByRole("link", { name: "Renew" }).first().click();
-  const steps = app.getByRole("list", { name: "Steps" });
-  await expect(steps.locator('[aria-current="step"]')).toHaveText(/Plan/);
+  // Nothing is chosen for them: the bar waits for a plan, then a way to pay.
+  await expect(app.getByRole("button", { name: "Choose a plan" })).toBeDisabled();
   await app.getByText("1 month").click();
-  await expect(steps.locator('[aria-current="step"]')).toHaveText(/Pay/);
-  await app.getByRole("button", { name: "eSewa" }).click();
+  await expect(app.getByRole("radio", { name: "1 month, Rs 1,500" })).toBeChecked();
+  await expect(app.getByRole("button", { name: "Choose how to pay" })).toBeDisabled();
+  await app.getByText("eSewa", { exact: true }).click();
+  // Proof first: nothing is sent without it.
+  await app.getByRole("button", { name: "I've paid" }).click();
+  await expect(
+    app.getByText("Enter the transaction ID or add a screenshot."),
+  ).toBeVisible();
   await app.getByLabel("Transaction ID").fill(`ES-${randomDigits(6)}`);
   await app.getByRole("button", { name: "I've paid" }).click();
   await expect(app.getByText("Sent — waiting for the gym to confirm")).toBeVisible();

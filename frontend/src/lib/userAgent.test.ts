@@ -9,6 +9,9 @@ describe("describeDevice", () => {
       "Chrome",
       "Android",
     ],
+    // The phone app (§17.5).
+    ["GymBhai/1.0.0 (Android 14)", "GymBhai app", "Android"],
+    ["GymBhai/1.0.0 (iPhone 17.5)", "GymBhai app", "iPhone"],
     [
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
       "Safari",

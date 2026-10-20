@@ -4,6 +4,7 @@ import {
   Dumbbell,
   Receipt,
   ScanLine,
+  ShoppingBag,
   Search,
   UserPlus,
   Wallet,
@@ -56,6 +57,14 @@ const ACTIONS: Action[] = [
     href: "/staff/expenses?add=1",
     icon: Receipt,
     anyOf: ["expenses.record"],
+  },
+  {
+    // The till (§20.1).
+    id: "shop",
+    label: "palette.shop",
+    href: "/staff/shop",
+    icon: ShoppingBag,
+    anyOf: ["shop.sell"],
   },
   {
     // A trainer's clients, each with Record session (§18.3).

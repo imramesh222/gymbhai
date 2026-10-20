@@ -8,6 +8,15 @@
 # start.
 x-e2e-database: &e2e-database
   DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gymbhai}:${POSTGRES_PASSWORD:-gymbhai}@db:5432/${POSTGRES_DB:-gymbhai}_e2e
+  # Nothing leaves the machine: a developer's .env may send real email or SMS,
+  # and the tests use made-up addresses and numbers.
+  EMAIL_PROVIDER: console
+  SMS_PROVIDER: console
+  WHATSAPP_PROVIDER: console
+  # The browser running the tests is on this machine: links the API makes (a
+  # wallet's checkout, §20.2) must open here, not at the address
+  # `make mobile-env` gives the phone.
+  PUBLIC_APP_URL: http://localhost:${WEB_PORT:-3000}
   # Push switched on, logged not sent: a key made for the tests alone.
   PUSH_PROVIDER: console
   VAPID_PRIVATE_KEY: r6AP-6DFOTeSWbF00ghu1XlddwGWOeRJmODHuo02Siw

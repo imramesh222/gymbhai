@@ -23,6 +23,7 @@ from app.models.billing import PlatformPlan
 from app.models.gym import GYM_ACTIVE, GYM_SUSPENDED, Gym
 from app.models.messaging import SMS_PLATFORM
 from app.models.platform import (
+    KIND_APP,
     KIND_SMS,
     KIND_SUBSCRIPTION,
     ChangelogEntry,
@@ -44,11 +45,14 @@ from app.schemas.platform import (
     PlatformPlanIn,
     PlatformPlanRead,
     PlatformPlanUpdate,
+    PlatformSettingsRead,
+    PlatformSettingsUpdate,
     ReasonIn,
     SubscriptionPaymentRead,
 )
 from app.services import (
     activity,
+    branded_apps,
     gym_referrals,
     live,
     platform_stats,
@@ -57,6 +61,7 @@ from app.services import (
     two_step,
 )
 from app.services.sms import service as sms
+from app.services.whatsapp import service as whatsapp
 
 router = APIRouter(prefix="/admin", tags=["platform admin"])
 
@@ -451,6 +456,13 @@ def approve_payment(
         credits = payload.sms_credits or row.sms_credits or 0
         sms.add_credits(db, gym.id, credits, "top-up")
         message = f"GymBhai: payment received. {credits} SMS credits added. Thank you!"
+    elif row.kind == KIND_APP:
+        # The one-time fee for the gym's own app (§20.3).
+        app = branded_apps.of_gym(db, gym.id)
+        if app is None:
+            raise AppError(409, "no_app", "This gym hasn't asked for its own app.")
+        app.setup_paid_at = app.setup_paid_at or utcnow()
+        message = "GymBhai: payment received for your own app. Thank you!"
     else:
         raise AppError(422, "bad_kind", "Unknown payment kind.")
     row.status = "approved"
@@ -568,6 +580,60 @@ def update_plan(
         )
     db.commit()
     return plan
+
+
+# --- our settings (§19.3) ------------------------------------------------------------
+
+
+def _settings_read(db: Session) -> PlatformSettingsRead:
+    row = whatsapp.platform_settings(db)
+    return PlatformSettingsRead(
+        whatsapp_credits=row.whatsapp_credits,
+        whatsapp_available=whatsapp.available(),
+        branded_app_setup_price=row.branded_app_setup_price,
+        branded_app_monthly_price=row.branded_app_monthly_price,
+    )
+
+
+@router.get("/settings", response_model=PlatformSettingsRead)
+def read_settings(
+    db: Session = Depends(get_db), admin: StaffUser = ADMIN
+) -> PlatformSettingsRead:
+    answer = _settings_read(db)
+    db.commit()  # the row, if this was its first read
+    return answer
+
+
+@router.patch("/settings", response_model=PlatformSettingsRead)
+def update_settings(
+    payload: PlatformSettingsUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: StaffUser = ADMIN,
+) -> PlatformSettingsRead:
+    row = whatsapp.platform_settings(db)
+    names = ("whatsapp_credits", "branded_app_setup_price", "branded_app_monthly_price")
+    before = {name: getattr(row, name) for name in names}
+    for name, value in payload.model_dump(exclude_unset=True).items():
+        if value is None and name == "whatsapp_credits":
+            continue
+        # A price set back to nothing stops offering the add-on.
+        setattr(row, name, value)
+    db.info.pop("whatsapp_credits", None)  # this session's copy (credits_each)
+    diff = activity.diff(before, {name: getattr(row, name) for name in names})
+    if diff:
+        _log(
+            db,
+            admin,
+            None,
+            "platform_settings.updated",
+            request,
+            entity="platform_settings",
+            entity_id=row.id,
+            changes=diff,
+        )
+    db.commit()
+    return _settings_read(db)
 
 
 # --- What's new (PLAN.md §16.5, 10.4) ------------------------------------------------

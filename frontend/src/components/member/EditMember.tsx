@@ -6,9 +6,11 @@ import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { Dialog } from "@/components/ui/Dialog";
-import { DateInput, Select, TextArea } from "@/components/ui/inputs";
+import { Checkbox, DateInput, Select, TextArea } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import { errorMessage, membersApi, type Branch, type MemberDetail } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { formatDate } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 
 export function EditMember({
@@ -25,6 +27,7 @@ export function EditMember({
   onSaved: (member: MemberDetail) => void;
 }) {
   const { display } = useGymCalendar();
+  const whatsappAvailable = useAuth().me?.gym?.whatsapp_available ?? false;
   const [form, setForm] = useState({
     name: member.name,
     phone: member.phone,
@@ -36,6 +39,7 @@ export function EditMember({
     notes: member.notes ?? "",
     home_branch_id: member.home_branch_id,
   });
+  const [whatsapp, setWhatsapp] = useState(member.whatsapp_agreed);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const set = (key: keyof typeof form) => (value: string) =>
@@ -55,6 +59,7 @@ export function EditMember({
           address: form.address || null,
           emergency_contact: form.emergency_contact || null,
           notes: form.notes || null,
+          ...(whatsapp !== member.whatsapp_agreed ? { whatsapp_agreed: whatsapp } : {}),
         }),
       );
     } catch (err) {
@@ -125,6 +130,20 @@ export function EditMember({
           value={form.notes}
           onChange={set("notes")}
         />
+        {(whatsappAvailable || member.whatsapp_agreed) && (
+          <Checkbox
+            label={t("member.whatsappAgreed")}
+            hint={
+              member.whatsapp_unreachable_at
+                ? t("member.whatsappUnreachable", {
+                    date: formatDate(member.whatsapp_unreachable_at, display),
+                  })
+                : t("member.whatsappAgreedHint")
+            }
+            checked={whatsapp}
+            onChange={setWhatsapp}
+          />
+        )}
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" block disabled={pending}>
           {pending ? t("common.saving") : t("common.save")}

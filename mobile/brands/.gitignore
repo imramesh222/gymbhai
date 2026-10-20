@@ -1,0 +1,5 @@
+# One folder per gym with its own app (PLAN.md §20.3), written by
+# scripts/brand.mjs from the build file in /admin. Kept out of git: the
+# Firebase file in each is the gym's.
+*
+!.gitignore

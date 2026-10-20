@@ -37,6 +37,7 @@ from app.core.calendar import format_date
 from app.core.config import settings
 from app.core.sms_text import render
 from app.core.time import NEPAL, today_in_nepal
+from app.core.whatsapp_templates import WhatsApp, for_rule
 from app.models.gym import GYM_ACTIVE, Gym
 from app.models.member import Member
 from app.models.membership import Membership, MembershipGroup
@@ -62,7 +63,6 @@ from app.services import members as members_service
 from app.services import memberships as ms
 from app.services import training
 from app.services.push import service as push
-from app.services.sms import service as sms
 
 JOB_DAILY = "reminders.daily"
 CATCH_UP_DAYS = 2
@@ -187,16 +187,18 @@ def after_sale(
     state = members_service.state(db, member)
     end = state.valid_until or membership.end_date
     template = gym.config.welcome_sms if new_member else gym.config.membership_sms
-    body = render(template, values_for(gym, member, membership, end))
+    values = values_for(gym, member, membership, end)
+    body = render(template, values)
     if new_member:
-        # The welcome carries the app's link: it goes before they can have push.
-        sms.queue(
+        # The welcome carries the app's link: it goes before they can have
+        # push. By WhatsApp if they agreed (§19.3), else SMS.
+        push.paid_message(
             db,
-            gym_id=gym.id,
-            to=member.phone,
-            body=body,
-            kind=SMS_WELCOME,
-            member_id=member.id,
+            gym,
+            member,
+            sms_body=body,
+            sms_kind=SMS_WELCOME,
+            whatsapp=WhatsApp("welcome", values, button=gym.slug),
             created_by=staff_id,
         )
         return
@@ -212,6 +214,7 @@ def after_sale(
         sms_kind=SMS_MEMBERSHIP,
         created_by=staff_id,
         sms_allowed=sms_allowed,
+        whatsapp=WhatsApp("membership_active", values, button=gym.slug),
     )
 
 
@@ -228,15 +231,21 @@ def welcome_text(gym: Gym, member: Member, state: members_service.MemberState) -
 
 
 def welcome(db: Session, gym: Gym, member: Member, staff_id: uuid.UUID | None) -> None:
-    """For a member added without a membership, or "Resend welcome" (§5.5)."""
-    body = welcome_text(gym, member, members_service.state(db, member))
-    sms.queue(
+    """For a member added without a membership, or "Resend welcome" (§5.5):
+    by WhatsApp if they agreed (§19.3), else SMS."""
+    state = members_service.state(db, member)
+    template = "welcome" if state.current else "welcome_no_plan"
+    push.paid_message(
         db,
-        gym_id=gym.id,
-        to=member.phone,
-        body=body,
-        kind=SMS_WELCOME,
-        member_id=member.id,
+        gym,
+        member,
+        sms_body=welcome_text(gym, member, state),
+        sms_kind=SMS_WELCOME,
+        whatsapp=WhatsApp(
+            template,
+            values_for(gym, member, state.current, state.valid_until),
+            button=gym.slug,
+        ),
         created_by=staff_id,
     )
 
@@ -354,7 +363,7 @@ def _send(
     rule: ReminderRule,
     member: Member,
     key: str,
-    body: str,
+    values: dict[str, object],
     *,
     pushable: set[uuid.UUID],
     membership_id: uuid.UUID | None = None,
@@ -362,7 +371,8 @@ def _send(
     sms_allowed: bool = True,
 ) -> bool:
     """Record the occasion, then send it: by push if the member's phone takes
-    it, else SMS (§16.3, 8.3). False if it was sent before.
+    it, else WhatsApp where the rule has a template (§19.3), else SMS (§16.3,
+    8.3). False if it was sent before.
 
     `quiet` records it without sending: an older rule overtaken by a newer one.
     """
@@ -381,18 +391,22 @@ def _send(
     ).scalar()
     if not inserted or quiet:
         return False
+    body = render(rule.template, values)
+    template = for_rule(rule.trigger, rule.days)
+    path = f"{gym.slug}{TAP_OPENS[rule.trigger]}"
     _, message = push.notify(
         db,
         gym,
         member,
         title=gym.name,
         body=body,
-        url=f"/{gym.slug}{TAP_OPENS[rule.trigger]}",
+        url=f"/{path}",
         tag=f"{rule.trigger}:{rule.id}",
         sms_body=body,
         sms_kind=SMS_REMINDER,
         pushable=pushable,
         sms_allowed=sms_allowed,
+        whatsapp=WhatsApp(template.key, values, button=path) if template else None,
     )
     if message is not None:
         db.execute(
@@ -515,7 +529,7 @@ def _chain_ends(
                 rule,
                 member,
                 f"membership:{last.id}",
-                render(rule.template, values_for(gym, member, last, end)),
+                values_for(gym, member, last, end),
                 pushable=pushable,
                 membership_id=last.id,
                 quiet=overtaken,
@@ -581,7 +595,7 @@ def _dues(
                 rule,
                 member,
                 f"membership:{membership.id}",
-                render(rule.template, values),
+                values,
                 pushable=pushable,
                 membership_id=membership.id,
             )
@@ -625,7 +639,7 @@ def _not_visiting(
                 rule,
                 member,
                 f"visit:{member.id}:{since.isoformat() if last else 'never'}",
-                render(rule.template, values),
+                values,
                 pushable=pushable,
             )
     return queued
@@ -674,7 +688,7 @@ def _birthdays(
                 rule,
                 member,
                 f"birthday:{member.id}:{day.year}",
-                render(rule.template, values_for(gym, member, None, None)),
+                values_for(gym, member, None, None),
                 pushable=pushable,
             )
     return queued
@@ -757,7 +771,7 @@ def _pt_ending(
                 rule,
                 member,
                 f"pt:{package.id}",
-                render(rule.template, values),
+                values,
                 pushable=pushable,
                 quiet=overtaken,
             )
@@ -812,7 +826,7 @@ def _pt_dues(
                 rule,
                 member,
                 f"pt:{package.id}",
-                render(rule.template, values),
+                values,
                 pushable=pushable,
             )
     return queued
@@ -856,7 +870,7 @@ def _progress(
                 rule,
                 member,
                 f"progress:{member.id}:{on.isoformat()}",
-                render(rule.template, values),
+                values,
                 pushable=pushable,
                 sms_allowed=False,
             )

@@ -26,6 +26,7 @@ from app.models.messaging import (
     SmsCreditLedger,
     SmsMessage,
 )
+from app.services import live
 from app.services.sms.providers import SmsError, SmsRejected, get_provider
 
 JOB_SEND = "sms.send"
@@ -57,7 +58,7 @@ def balances(db: Session, gym_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
     )
 
 
-def _lock_gym(db: Session, gym_id: uuid.UUID) -> None:
+def lock_gym(db: Session, gym_id: uuid.UUID) -> None:
     """Serialise credit changes for one gym: two sends can't spend one credit.
 
     FOR NO KEY UPDATE: a send holds it through the gateway's answer, and the
@@ -71,7 +72,7 @@ def _lock_gym(db: Session, gym_id: uuid.UUID) -> None:
 def add_credits(
     db: Session, gym_id: uuid.UUID, change: int, reason: str
 ) -> SmsCreditLedger:
-    _lock_gym(db, gym_id)
+    lock_gym(db, gym_id)
     row = SmsCreditLedger(
         gym_id=gym_id,
         change=change,
@@ -125,10 +126,11 @@ def deliver(db: Session, message: SmsMessage) -> None:
         return
     charged = message.kind not in FREE_KINDS
     if charged:
-        _lock_gym(db, message.gym_id)
+        lock_gym(db, message.gym_id)
         if balance(db, message.gym_id) < message.segments:
             message.status = SMS_NO_CREDIT
             message.error = "No SMS credit left."
+            live.publish(db, gym_id=message.gym_id, kind=live.MESSAGE)
             return
 
     provider = get_provider()
@@ -149,6 +151,7 @@ def deliver(db: Session, message: SmsMessage) -> None:
                 sms_message_id=message.id,
             )
         )
+    live.publish(db, gym_id=message.gym_id, kind=live.MESSAGE)
 
 
 def send_now(db: Session, message: SmsMessage) -> bool:
@@ -174,6 +177,7 @@ def handle_send(db: Session, payload: dict) -> None:
         # failed here rather than retried for half an hour first.
         message.status = SMS_FAILED
         message.error = str(exc)[:500]
+        live.publish(db, gym_id=message.gym_id, kind=live.MESSAGE)
 
 
 def give_up(db: Session, payload: dict, error: str) -> None:
@@ -181,3 +185,4 @@ def give_up(db: Session, payload: dict, error: str) -> None:
     if message is not None and message.status == SMS_QUEUED:
         message.status = SMS_FAILED
         message.error = error[-500:]
+        live.publish(db, gym_id=message.gym_id, kind=live.MESSAGE)

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import require, require_owner
+from app.api.presenters import gym_read
 from app.api.tenancy import StaffContext
 from app.core.errors import AppError, not_found
 from app.core.gym_settings import GymSettings
@@ -18,6 +19,7 @@ from app.schemas.gym import (
     SecurityUpdate,
 )
 from app.services import activity, live, reminders, storage
+from app.services.whatsapp import service as whatsapp
 
 router = APIRouter(prefix="/gym", tags=["gym"])
 
@@ -29,12 +31,6 @@ def _own_gym(db: Session, ctx: StaffContext) -> Gym:
     if gym is None:
         raise not_found("Gym not found.")
     return gym
-
-
-def gym_read(gym: Gym) -> GymRead:
-    read = GymRead.model_validate(gym)
-    read.logo_url = storage.signed_url(gym.logo_key)
-    return read
 
 
 @router.get("", response_model=GymRead)
@@ -66,6 +62,12 @@ def update_gym(
     if payload.settings is not None:
         # A null setting means "unchanged", never "unset": most are required.
         update = payload.settings.model_dump(exclude_unset=True, exclude_none=True)
+        if update.get("whatsapp") and not whatsapp.available():
+            raise AppError(
+                422,
+                "whatsapp_unavailable",
+                "GymBhai can't send WhatsApp messages yet.",
+            )
         old_language = gym.config.language
         merged = {**gym.settings, **update}
         gym.settings = GymSettings.model_validate(merged).model_dump()

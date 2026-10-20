@@ -15,7 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, GymOwned, IdMixin, TimestampMixin
@@ -28,10 +28,18 @@ SMS_REMINDER = "reminder"
 SMS_NOTICE = "notice"
 SMS_MANUAL = "manual"
 SMS_PAYMENT = "payment"
+# A receipt sent from the desk, by WhatsApp (§19.3).
+SMS_RECEIPT = "receipt"
 # From GymBhai to the owner (subscription reminders): on us, like sign-in codes.
 SMS_PLATFORM = "platform"
 SMS_SUMMARY = "summary"
-FREE_KINDS = (SMS_OTP, SMS_PLATFORM)
+# Our answer when a member writes to GymBhai's WhatsApp number (§19.3): on us.
+SMS_REPLY = "reply"
+FREE_KINDS = (SMS_OTP, SMS_PLATFORM, SMS_REPLY)
+
+# How it went (§19.3): an SMS, or a WhatsApp message from one of our templates.
+CHANNEL_SMS = "sms"
+CHANNEL_WHATSAPP = "whatsapp"
 
 # Where it is.
 SMS_QUEUED = "queued"
@@ -42,8 +50,23 @@ SMS_NO_CREDIT = "no_credit"
 
 
 class SmsMessage(IdMixin, TimestampMixin, GymOwned, Base):
+    """A message to a member or owner: an SMS, or a WhatsApp message (§19.3).
+
+    For WhatsApp, `body` is the template as the member reads it (for the log),
+    `template` and `params` what Meta is sent, `fallback` the SMS to send if
+    WhatsApp can't deliver it, and `segments` the credits it costs.
+    """
+
     __tablename__ = "sms_messages"
-    __table_args__ = (Index("ix_sms_messages_gym_created", "gym_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_sms_messages_gym_created", "gym_id", "created_at"),
+        # Meta's delivery reports name the message by its id.
+        Index(
+            "ix_sms_messages_provider_ref",
+            "provider_ref",
+            postgresql_where=text("provider_ref IS NOT NULL"),
+        ),
+    )
 
     member_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("members.id"), index=True
@@ -53,13 +76,23 @@ class SmsMessage(IdMixin, TimestampMixin, GymOwned, Base):
     kind: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default=SMS_QUEUED)
     provider: Mapped[str | None] = mapped_column(String(16))
-    provider_ref: Mapped[str | None] = mapped_column(String(64))
+    # A WhatsApp message id ("wamid.…") runs longer than an SMS gateway's.
+    provider_ref: Mapped[str | None] = mapped_column(String(128))
     segments: Mapped[int] = mapped_column(Integer)
     error: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("staff_users.id")
     )
+    channel: Mapped[str] = mapped_column(
+        String(8), default=CHANNEL_SMS, server_default=CHANNEL_SMS
+    )
+    template: Mapped[str | None] = mapped_column(String(64))
+    # {"language": "en", "values": [...], "button": "..."}: what Meta is sent.
+    params: Mapped[dict | None] = mapped_column(JSONB)
+    fallback: Mapped[str | None] = mapped_column(Text)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SmsCreditLedger(IdMixin, TimestampMixin, GymOwned, Base):

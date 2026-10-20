@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { Plan } from "./api";
-import { perMonth, savings } from "./planValue";
+import { bestValue, perMonth, savings } from "./planValue";
 
 const plan = (
   months: number | null,
   price: number | null,
   days: number | null = null,
-) => ({ duration_months: months, duration_days: days, price }) as Plan;
+) =>
+  ({
+    id: `${months}-${days}-${price}`,
+    duration_months: months,
+    duration_days: days,
+    price,
+  }) as Plan;
 
 describe("plan value", () => {
   const monthly = plan(1, 1500_00);
@@ -29,5 +35,12 @@ describe("plan value", () => {
     expect(savings(monthly, plans)).toBeNull();
     expect(savings(day, plans)).toBeNull();
     expect(savings(quarter, [quarter])).toBeNull(); // nothing to compare with
+  });
+
+  it("marks the plan that saves the most for its price", () => {
+    const half = plan(6, 7000_00); // saves 2000 of 9000: more than the quarter
+    expect(bestValue([...plans, half])).toBe(half.id);
+    expect(bestValue(plans)).toBe(quarter.id);
+    expect(bestValue([monthly, year, day])).toBeNull();
   });
 });

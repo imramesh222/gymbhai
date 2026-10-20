@@ -15,10 +15,20 @@ const EXPORTS = [
   "memberships",
   "payments",
   "expenses",
+  "sales",
   "check-ins",
+  // A VAT-registered gym's books (§20.4).
+  "sales-book",
+  "sales-returns",
 ] as const;
 // Money in and out: for staff who may see money totals.
-const MONEY: readonly string[] = ["payments", "expenses"];
+const MONEY: readonly string[] = [
+  "payments",
+  "expenses",
+  "sales",
+  "sales-book",
+  "sales-returns",
+];
 const FIELDS = [
   "name",
   "phone",

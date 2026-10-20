@@ -30,6 +30,8 @@ def receipt_pdf(
     payment = db.get(Payment, payment_id)
     if payment is None:
         raise not_found("Receipt not found.")
+    receipts.count_prints(db, payment)
+    db.commit()
     receipt = receipts.build(db, payment)
     return Response(
         content=receipts.pdf(receipt),

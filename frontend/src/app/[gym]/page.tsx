@@ -4,12 +4,15 @@ import Link from "next/link";
 
 import { LiveQr } from "@/components/memberApp/LiveQr";
 import { InstallPrompt } from "@/components/memberApp/InstallPrompt";
+import { OwnAppPrompt } from "@/components/memberApp/OwnAppPrompt";
 import { PushPrompt } from "@/components/memberApp/PushPrompt";
 import { Money } from "@/components/ui/Money";
 import { plural, t, type MessageKey } from "@/i18n";
 import { describeHours } from "@/lib/accessHours";
 import { formatDate, type DateDisplay } from "@/lib/dates";
+import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
+import { useLoad } from "@/lib/useLoad";
 import type { MemberTraining } from "@shared/types";
 
 const RING = 2 * Math.PI * 52;
@@ -17,6 +20,8 @@ const RING = 2 * Math.PI * 52;
 /** Days left, the QR for the door, visits and the latest notice (§7). */
 export default function MemberHome() {
   const { me, slug } = useMember();
+  // Whether the gym has its own app in the stores (§20.3).
+  const gym = useLoad(() => memberApi.gym(slug), [slug]);
   if (!me) return null;
   const { state } = me;
   const active = state.status === "active" || state.status === "frozen";
@@ -227,7 +232,11 @@ export default function MemberHome() {
         </div>
       </div>
 
-      <InstallPrompt slug={slug} color={brand} />
+      {gym.data?.app ? (
+        <OwnAppPrompt app={gym.data.app} color={brand} />
+      ) : (
+        <InstallPrompt slug={slug} color={brand} />
+      )}
       <PushPrompt slug={slug} color={brand} />
 
       {me.latest_notice && (

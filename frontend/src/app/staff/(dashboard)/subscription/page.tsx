@@ -14,6 +14,7 @@ import { errorMessage, subscriptionApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
+import { formatRs } from "@/lib/money";
 import { useLoad } from "@/lib/useLoad";
 import { useIdempotencyKey } from "@/lib/idempotency";
 import { PageSkeleton } from "@/components/ui/Skeleton";
@@ -23,7 +24,7 @@ export default function SubscriptionPage() {
   const { refreshMe } = useAuth();
   const { display } = useGymCalendar();
   const { data, reload } = useLoad(() => subscriptionApi.overview(), []);
-  const [kind, setKind] = useState<"subscription" | "sms">("subscription");
+  const [kind, setKind] = useState<"subscription" | "sms" | "app">("subscription");
   const [planId, setPlanId] = useState("");
   const [months, setMonths] = useState("1");
   const [credits, setCredits] = useState("500");
@@ -37,10 +38,18 @@ export default function SubscriptionPage() {
   if (!data) return <PageSkeleton label={t("common.loading")} />;
 
   const plan = data.plans.find((p) => p.id === (planId || data.plans[0]?.id));
+  // The gym's own app (§20.3) adds its monthly price to each month paid for.
   const suggested =
     kind === "subscription" && plan?.monthly_price
-      ? plan.monthly_price * Number(months)
-      : null;
+      ? (plan.monthly_price + (data.app_monthly ?? 0)) * Number(months)
+      : kind === "app"
+        ? data.app_setup_due
+        : null;
+  const kinds = [
+    "subscription",
+    "sms",
+    ...(data.app_setup_due !== null ? ["app"] : []),
+  ] as const;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -114,11 +123,14 @@ export default function SubscriptionPage() {
       <Card title={t("subscription.sendPayment")}>
         <form onSubmit={(e) => void submit(e)} className="space-y-3">
           <div className="flex gap-2">
-            {(["subscription", "sms"] as const).map((k) => (
+            {kinds.map((k) => (
               <button
                 key={k}
                 type="button"
-                onClick={() => setKind(k)}
+                onClick={() => {
+                  setKind(k as typeof kind);
+                  setAmount(null);
+                }}
                 className={`rounded-full border px-3 py-1 text-sm ${kind === k ? "border-brand-600 bg-brand-50" : "border-slate-300"}`}
               >
                 {t(`subscription.kind.${k}` as MessageKey)}
@@ -144,8 +156,13 @@ export default function SubscriptionPage() {
                 inputMode="numeric"
                 required
               />
+              {data.app_monthly !== null && (
+                <p className="text-sm text-slate-600 sm:col-span-2">
+                  {t("subscription.appMonthly", { amount: formatRs(data.app_monthly) })}
+                </p>
+              )}
             </div>
-          ) : (
+          ) : kind === "app" ? null : (
             <Field
               label={t("subscription.credits")}
               value={credits}
@@ -180,7 +197,9 @@ export default function SubscriptionPage() {
                 <span>
                   {p.kind === "sms"
                     ? t("subscription.smsCredits", { count: p.sms_credits ?? 0 })
-                    : `${p.plan_name} × ${p.months}`}
+                    : p.kind === "app"
+                      ? t("subscription.appSetup")
+                      : `${p.plan_name} × ${p.months}`}
                   <span className="block text-xs text-slate-500">
                     {p.transaction_ref} ·{" "}
                     {t(`subscription.payment.${p.status}` as MessageKey)}

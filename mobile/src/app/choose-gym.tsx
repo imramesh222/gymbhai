@@ -3,7 +3,7 @@
  * or pick one this phone has opened before.
  */
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { t } from "@shared/i18n";
@@ -13,7 +13,7 @@ import { Icon } from "@/components/Icon";
 import { Screen } from "@/components/Screen";
 import { ActionStatus, Button, Card, Field, Label, Title, Txt } from "@/components/ui";
 import { ApiError, NetworkError } from "@/lib/api";
-import { DEFAULT_BRAND } from "@/lib/config";
+import { BRAND_GYM, DEFAULT_BRAND } from "@/lib/config";
 import { parseGymLink } from "@/lib/gymLink";
 import { memberApi } from "@/lib/memberApi";
 import { useSession, type SavedGym } from "@/lib/session";
@@ -51,6 +51,27 @@ export default function ChooseGym() {
     },
     { onSuccess: (gym) => void openGym(gym), offline: "run" },
   );
+
+  // A gym's own app (§20.3) opens its gym by itself; there's nothing to choose.
+  useEffect(() => {
+    if (BRAND_GYM) find.run(BRAND_GYM);
+    // Once, on opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (BRAND_GYM)
+    return (
+      <Screen topInset>
+        <View style={{ alignItems: "center", gap: space(3), marginTop: space(16) }}>
+          <ActionStatus action={find} />
+          <Button
+            label={t("common.tryAgain")}
+            busy={find.busy}
+            onPress={() => find.run(BRAND_GYM!)}
+          />
+        </View>
+      </Screen>
+    );
 
   return (
     <Screen topInset>

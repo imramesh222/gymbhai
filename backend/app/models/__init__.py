@@ -1,5 +1,6 @@
 from app.models.activity import ActivityLog
-from app.models.billing import GymSubscription, PlatformPlan
+from app.models.billing import GymSubscription, PlatformPlan, PlatformSettings
+from app.models.branded_app import BrandedApp
 from app.models.classes import ClassBooking, ClassSlot, ClassType, GymClass
 from app.models.expense import Expense
 from app.models.gym import Branch, Gym
@@ -13,6 +14,7 @@ from app.models.member_app import (
     FreezeRequest,
     MemberSession,
     MemberSignInLink,
+    OnlinePayment,
     OtpCode,
     PaymentRequest,
     ReaderUser,
@@ -36,6 +38,7 @@ from app.models.platform import (
 )
 from app.models.progress import ProgressEntry, ProgressPhoto
 from app.models.push import PushSubscription, StaffPushSubscription
+from app.models.shop import Product, ProductSale, ProductSaleLine, StockMove
 from app.models.staff import (
     LoginAttempt,
     StaffBranchAccess,
@@ -44,11 +47,13 @@ from app.models.staff import (
     StaffSession,
     StaffUser,
 )
+from app.models.tax import GymTax, TaxInvoice
 from app.models.training import PtPackage, PtPlan, PtSession
 
 __all__ = [
     "ActivityLog",
     "Branch",
+    "BrandedApp",
     "ChangelogEntry",
     "CheckIn",
     "ClassBooking",
@@ -63,6 +68,7 @@ __all__ = [
     "GymPaymentMethod",
     "GymReferral",
     "GymSubscription",
+    "GymTax",
     "IdempotencyKey",
     "Job",
     "Lead",
@@ -77,12 +83,17 @@ __all__ = [
     "Notice",
     "OtpCode",
     "Payment",
+    "OnlinePayment",
     "PaymentRequest",
     "Plan",
     "PlanBranch",
     "ProgressEntry",
     "ProgressPhoto",
     "PlatformPlan",
+    "PlatformSettings",
+    "Product",
+    "ProductSale",
+    "ProductSaleLine",
     "PtPackage",
     "PtPlan",
     "PtSession",
@@ -93,6 +104,8 @@ __all__ = [
     "ScheduledRun",
     "SmsCreditLedger",
     "SmsMessage",
+    "StockMove",
+    "TaxInvoice",
     "StaffBranchAccess",
     "StaffPasswordReset",
     "StaffPushSubscription",

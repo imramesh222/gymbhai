@@ -58,6 +58,7 @@ import { formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
 import { shrinkImage } from "@/lib/image";
 import { useLive } from "@/lib/live";
+import { MessageItem } from "@/components/messages/MessageItem";
 import { useLoad } from "@/lib/useLoad";
 
 type DialogName = "pay" | "edit" | "sms" | "erase" | "signIn" | "whatsapp" | null;
@@ -133,22 +134,14 @@ function GroupLine({
 
 function Messages({ memberId }: { memberId: string }) {
   const { display } = useGymCalendar();
-  const { data } = useLoad(() => messagesApi.smsLog(memberId), [memberId]);
+  const { data, reload } = useLoad(() => messagesApi.smsLog(memberId), [memberId]);
+  useLive(["message"], reload);
   if (!data) return <ListSkeleton rows={3} />;
   if (data.items.length === 0) return <EmptyState title={t("member.noMessages")} />;
   return (
     <ul className="divide-y divide-hairline">
-      {data.items.map((sms) => (
-        <li key={sms.id} className="py-3">
-          <p className="flex justify-between gap-3 text-xs text-slate-500">
-            <span>
-              {t(`sms.kind.${sms.kind}` as MessageKey)} ·{" "}
-              {formatDateTime(sms.created_at, display)}
-            </span>
-            <span>{t(`sms.status.${sms.status}` as MessageKey)}</span>
-          </p>
-          <p className="mt-1 text-sm text-slate-800">{sms.body}</p>
-        </li>
+      {data.items.map((message) => (
+        <MessageItem key={message.id} message={message} display={display} />
       ))}
     </ul>
   );

@@ -1,4 +1,6 @@
 /** The member app's API (PLAN.md §8 "Member app", §17), as the phone calls it. */
+import * as Linking from "expo-linking";
+
 import type { Locale } from "@shared/i18n";
 import type {
   AppClasses,
@@ -8,10 +10,12 @@ import type {
   FreezeRequest,
   JoinOptions,
   LeadSource,
+  MemberDevice,
   MemberMe,
   MemberPayments,
   MemberSignIn,
   Notice,
+  OnlinePayment,
   PaymentRequest,
   PublicGym,
   PushStatus,
@@ -84,8 +88,19 @@ export const memberApi = {
 
   // Signed in.
   me: () => request<MemberMe>("/api/v1/m/me"),
-  updateMe: (body: { emergency_contact?: string | null; language?: Locale | null }) =>
-    request<MemberMe>("/api/v1/m/me", { method: "PATCH", body }),
+  /** Where they're signed in (§17.5). */
+  devices: () => request<MemberDevice[]>("/api/v1/m/me/sessions"),
+  signOutDevice: (id: string) =>
+    request<void>(`/api/v1/m/me/sessions/${id}/sign-out`, { method: "POST" }),
+  signOutOtherDevices: () =>
+    request<{ signed_out: number }>("/api/v1/m/me/sessions/sign-out-others", {
+      method: "POST",
+    }),
+  updateMe: (body: {
+    emergency_contact?: string | null;
+    language?: Locale | null;
+    whatsapp_agreed?: boolean;
+  }) => request<MemberMe>("/api/v1/m/me", { method: "PATCH", body }),
   uploadPhoto: (file: UploadFile) =>
     request<MemberMe>("/api/v1/m/me/photo", { form: formWith(file) }),
   changeEmail: (email: string) =>
@@ -163,6 +178,19 @@ export const memberApi = {
     request<PaymentRequest>("/api/v1/m/payment-requests", {
       body,
       idempotencyKey: key,
+    }),
+  /** Pay through the gym's merchant account (§20.2): the wallet's page opens
+   * in the phone's browser and comes back to the app. */
+  startOnlinePayment: (body: { plan_id: string; payment_method_id: string }) =>
+    request<OnlinePayment>("/api/v1/m/online-payments", {
+      // Back to this app's Renew: gymbhai://, a gym's own app's scheme, or
+      // Expo Go's exp:// while developing.
+      body: { ...body, from_app: true, return_to: Linking.createURL("renew") },
+    }),
+  /** Ask the wallet now whether it's paid (§20.2): back from its page. */
+  checkOnlinePayment: (id: string) =>
+    request<OnlinePayment>(`/api/v1/m/online-payments/${id}/check`, {
+      method: "POST",
     }),
   uploadScreenshot: (id: string, file: UploadFile) =>
     request<PaymentRequest>(`/api/v1/m/payment-requests/${id}/screenshot`, {

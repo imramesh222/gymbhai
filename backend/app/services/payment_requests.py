@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.tenancy import StaffContext
 from app.core.errors import AppError
 from app.core.time import utcnow
+from app.core.whatsapp_templates import WhatsApp
 from app.models.gym import Gym
 from app.models.member import Member
 from app.models.member_app import (
@@ -65,15 +66,11 @@ def ref_in_use(
     return bool(db.scalar(stmt))
 
 
-def create(
-    db: Session,
-    member: Member,
-    *,
-    plan_id: uuid.UUID,
-    payment_method_id: uuid.UUID | None,
-    amount: int,
-    transaction_ref: str | None,
-) -> PaymentRequest:
+def renewal_plan(
+    db: Session, member: Member, plan_id: uuid.UUID
+) -> tuple[Plan, list[str] | None]:
+    """A plan the member may renew onto from the app, and for a family or
+    couple plan the others it covers (as member ids)."""
     plan = db.get(Plan, plan_id)
     if (
         plan is None
@@ -101,6 +98,43 @@ def create(
                 seats=plan.seats,
             )
         with_ids = [str(m.id) for m in mates]
+    return plan, with_ids
+
+
+def admission_for(
+    db: Session, member: Member, plan: Plan, with_ids: list[str] | None
+) -> int:
+    """The admission fee: once for each person whose first membership it is."""
+    others = [db.get(Member, uuid.UUID(i)) for i in with_ids or []]
+    people = [member] + [m for m in others if m is not None]
+    return plan.admission_fee * sum(ms.is_first_membership(db, m) for m in people)
+
+
+def ensure_none_pending(db: Session, member: Member) -> None:
+    """One payment waiting for the gym at a time. The caller holds the
+    member's lock."""
+    pending = db.scalar(
+        select(PaymentRequest.id).where(
+            PaymentRequest.member_id == member.id,
+            PaymentRequest.status == REQUEST_PENDING,
+        )
+    )
+    if pending:
+        raise AppError(
+            409, "request_pending", "You already have a payment waiting for the gym."
+        )
+
+
+def create(
+    db: Session,
+    member: Member,
+    *,
+    plan_id: uuid.UUID,
+    payment_method_id: uuid.UUID | None,
+    amount: int,
+    transaction_ref: str | None,
+) -> PaymentRequest:
+    plan, with_ids = renewal_plan(db, member, plan_id)
     if payment_method_id is not None:
         method = db.get(GymPaymentMethod, payment_method_id)
         if method is None or method.gym_id != member.gym_id or not method.is_active:
@@ -112,16 +146,7 @@ def create(
         ms.lock_transaction_ref(db, member.gym_id, ref)
     if ref and ref_in_use(db, member.gym_id, ref):
         raise REF_USED
-    pending = db.scalar(
-        select(PaymentRequest.id).where(
-            PaymentRequest.member_id == member.id,
-            PaymentRequest.status == REQUEST_PENDING,
-        )
-    )
-    if pending:
-        raise AppError(
-            409, "request_pending", "You already have a payment waiting for the gym."
-        )
+    ensure_none_pending(db, member)
     row = PaymentRequest(
         gym_id=member.gym_id,
         member_id=member.id,
@@ -169,9 +194,11 @@ def approve(
     discount: int = 0,
     accept_part_payment: bool = False,
     request: Request | None = None,
+    note: str = "From the member app",
 ) -> PaymentRequest:
     """`row` must be loaded FOR UPDATE: two staff approving at once would
-    otherwise both see it pending and sell the membership twice."""
+    otherwise both see it pending and sell the membership twice. The wallet
+    approves with a system context (services/online_payments.py)."""
     _pending(row)
     member = db.get(Member, row.member_id)
     gym = db.get(Gym, ctx.gym_id)
@@ -190,8 +217,7 @@ def approve(
     # A family or couple plan renewed by its payer (§19.1): everyone's first
     # membership has the admission fee.
     others = [uuid.UUID(i) for i in row.with_member_ids or []]
-    people = [member] + [m for m in (db.get(Member, i) for i in others) if m]
-    admission = plan.admission_fee * sum(ms.is_first_membership(db, m) for m in people)
+    admission = admission_for(db, member, plan, row.with_member_ids)
     total = the_price - discount + admission
     if row.amount > total:
         raise AppError(
@@ -228,7 +254,7 @@ def approve(
                 amount=row.amount,
                 method=METHOD_FOR_ACCOUNT.get(method.kind if method else "", "bank"),
                 transaction_ref=row.transaction_ref,
-                note="From the member app",
+                note=note,
             ),
         ),
         gym.config,
@@ -297,5 +323,10 @@ def reject(
         sms_body=f"{text} {reminders.member_link(gym)}",
         sms_kind=SMS_PAYMENT,
         created_by=ctx.staff.id,
+        whatsapp=WhatsApp(
+            "payment_not_confirmed",
+            reminders.values_for(gym, member, None, None, reason=reason),
+            button=f"{gym.slug}/renew",
+        ),
     )
     return row

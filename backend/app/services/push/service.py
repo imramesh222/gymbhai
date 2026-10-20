@@ -1,14 +1,17 @@
-"""Messages to members: by push first, SMS only where push can't reach
-(PLAN.md §16.3, 8.3).
+"""Messages to members: by push first, then WhatsApp, then SMS (PLAN.md
+§16.3 8.3, §19.3).
 
 `notify` is how a reminder, a notice or an answer to a payment request
 reaches a member. A member with a working subscription gets a push, which
-costs nothing; the rest get an SMS, which uses credits. A gym can ask for both
+costs nothing. The rest get a WhatsApp message, when the message has one of
+our approved templates, the gym turned WhatsApp on and the member agreed;
+otherwise an SMS. Both use credits. A gym can ask for both push and a message
 ("Also send SMS"). The push itself goes from the worker: if every phone the
-member had turns out to be gone, the SMS is sent instead.
+member had turns out to be gone, the WhatsApp message or SMS is sent instead.
 
-Sign-in codes, the welcome SMS and messages typed at the desk stay SMS: they
-reach people who may not have the app yet, or were asked for as SMS.
+Sign-in codes and messages typed at the desk stay SMS: they were asked for as
+SMS. The welcome skips push (they can't have the app yet) and goes by WhatsApp
+or SMS (`paid_message`).
 """
 
 import uuid
@@ -20,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.push_keys import public_key
 from app.core.time import utcnow
+from app.core.whatsapp_templates import WhatsApp
 from app.models.gym import Gym
 from app.models.member import Member
 from app.models.messaging import SmsMessage
@@ -32,10 +36,11 @@ from app.services.push.providers import (
     get_provider,
 )
 from app.services.sms import service as sms
+from app.services.whatsapp import service as whatsapp_service
 
 JOB_PUSH = "push.send"
 
-Channel = Literal["push", "sms", "both"]
+Channel = Literal["push", "sms", "whatsapp", "both"]
 
 
 def available() -> bool:
@@ -177,13 +182,16 @@ def notify(
     pushable: set[uuid.UUID] | None = None,
     flush: bool = True,
     sms_allowed: bool = True,
+    whatsapp: WhatsApp | None = None,
 ) -> tuple[Channel | None, SmsMessage | None]:
-    """Reach a member: push if they can take it, else (or also) SMS.
+    """Reach a member: push if they can take it, else (or also) a WhatsApp
+    message or an SMS.
 
     `pushable` is `reachable(...)` worked out once for a bulk send.
+    `whatsapp` is the template to use if WhatsApp can carry it (§19.3).
     `sms_allowed=False` is push only, which is free: a member without push
-    isn't reached (None), and a push that fails sends no SMS instead.
-    Returns how, and the SMS queued now, if any.
+    isn't reached (None), and a push that fails sends nothing instead.
+    Returns how, and the message (SMS or WhatsApp) queued now, if any.
     """
     from app.worker import enqueue
 
@@ -197,13 +205,13 @@ def notify(
     also_sms = gym.config.also_sms and sms_allowed
     message = None
     if not can_push or also_sms:
-        message = sms.queue(
+        message = paid_message(
             db,
-            gym_id=gym.id,
-            to=member.phone,
-            body=sms_body,
-            kind=sms_kind,
-            member_id=member.id,
+            gym,
+            member,
+            sms_body=sms_body,
+            sms_kind=sms_kind,
+            whatsapp=whatsapp,
             created_by=created_by,
             flush=flush,
         )
@@ -224,10 +232,49 @@ def notify(
                     "body": sms_body,
                     "kind": sms_kind,
                     "created_by": str(created_by) if created_by else None,
+                    "whatsapp": whatsapp.payload() if whatsapp else None,
                 },
             },
         )
-    return ("both" if message else "push") if can_push else "sms", message
+    if can_push:
+        return "both" if message else "push", message
+    assert message is not None
+    return "whatsapp" if message.channel == "whatsapp" else "sms", message
+
+
+def paid_message(
+    db: Session,
+    gym: Gym,
+    member: Member,
+    *,
+    sms_body: str,
+    sms_kind: str,
+    whatsapp: WhatsApp | None = None,
+    created_by: uuid.UUID | None = None,
+    flush: bool = True,
+) -> SmsMessage:
+    """By WhatsApp if it can carry it (§19.3), else SMS. Both cost credits."""
+    if whatsapp is not None and whatsapp_service.reachable(gym, member):
+        return whatsapp_service.queue(
+            db,
+            gym,
+            member,
+            whatsapp,
+            kind=sms_kind,
+            fallback=sms_body,
+            created_by=created_by,
+            flush=flush,
+        )
+    return sms.queue(
+        db,
+        gym_id=gym.id,
+        to=member.phone,
+        body=sms_body,
+        kind=sms_kind,
+        member_id=member.id,
+        created_by=created_by,
+        flush=flush,
+    )
 
 
 def _fallback(db: Session, payload: dict) -> None:
@@ -235,13 +282,17 @@ def _fallback(db: Session, payload: dict) -> None:
     member = db.get(Member, uuid.UUID(payload["member_id"]))
     if not fallback or member is None:
         return
-    sms.queue(
+    gym = db.get(Gym, member.gym_id)
+    assert gym is not None
+    paid_message(
         db,
-        gym_id=member.gym_id,
-        to=member.phone,
-        body=fallback["body"],
-        kind=fallback["kind"],
-        member_id=member.id,
+        gym,
+        member,
+        sms_body=fallback["body"],
+        sms_kind=fallback["kind"],
+        whatsapp=WhatsApp.from_payload(fallback["whatsapp"])
+        if fallback.get("whatsapp")
+        else None,
         created_by=uuid.UUID(fallback["created_by"])
         if fallback.get("created_by")
         else None,

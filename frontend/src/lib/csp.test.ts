@@ -27,6 +27,13 @@ describe("the content security policy", () => {
     expect(policy["connect-src"]).toBe("'self'");
   });
 
+  it("posts forms to us, and to eSewa's checkout only", () => {
+    const policy = directives(contentSecurityPolicy("abc123", false));
+    expect(policy["form-action"]).toBe(
+      "'self' https://epay.esewa.com.np https://rc-epay.esewa.com.np",
+    );
+  });
+
   it("allows what the dev server needs, only in development", () => {
     const policy = directives(contentSecurityPolicy("abc123", true));
     expect(policy["script-src"]).toContain("'unsafe-eval'");

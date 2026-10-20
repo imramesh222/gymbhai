@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_session, current_staff
+from app.api.presenters import gym_read
 from app.core.config import settings
 from app.core.errors import AppError, not_found
 from app.core.permissions import effective_permissions
@@ -33,7 +34,6 @@ from app.models.gym import GYM_ACTIVE, Gym
 from app.models.staff import StaffBranchAccess, StaffSession, StaffUser
 from app.schemas.auth import (
     DeviceSession,
-    GymRead,
     GymSignup,
     LanguageIn,
     LoginRequest,
@@ -60,7 +60,6 @@ from app.services import (
     registration,
     sessions,
     staff_auth,
-    storage,
     subscription,
     two_step,
 )
@@ -96,12 +95,6 @@ def _clear_refresh_cookie(response: Response) -> None:
     )
 
 
-def _gym_read(gym: Gym) -> GymRead:
-    read = GymRead.model_validate(gym)
-    read.logo_url = storage.signed_url(gym.logo_key)
-    return read
-
-
 def build_me(db: Session, staff: StaffUser) -> Me:
     gym = db.get(Gym, staff.gym_id) if staff.gym_id else None
     subscription_read = None
@@ -133,7 +126,7 @@ def build_me(db: Session, staff: StaffUser) -> Me:
     )
     return Me(
         staff=StaffRead.model_validate(staff),
-        gym=_gym_read(gym) if gym else None,
+        gym=gym_read(gym) if gym else None,
         two_step_required=staff.is_platform_admin
         or (gym is not None and gym.config.require_two_step),
         permissions=permissions,

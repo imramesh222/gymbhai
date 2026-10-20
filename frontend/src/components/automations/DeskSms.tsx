@@ -11,7 +11,15 @@ import { useToast } from "@/components/ui/Toast";
 import { t } from "@/i18n";
 import { errorMessage, messagesApi } from "@/lib/api";
 
-type Templates = { welcome_sms: string; membership_sms: string };
+import { WhatsAppWording } from "./Automations";
+
+type Templates = {
+  welcome_sms: string;
+  membership_sms: string;
+  whatsapp?: boolean;
+  welcome_whatsapp?: string;
+  membership_whatsapp?: string;
+};
 
 /** Push first, SMS for the rest; or SMS to everyone as well (§16.3, 8.3). */
 export function HowMessagesGo({ initial }: { initial: boolean }) {
@@ -72,6 +80,7 @@ export function DeskSms({ initial }: { initial: Templates }) {
             rows={3}
           />
           <SmsCounter text={form.welcome_sms} />
+          {initial.whatsapp && <WhatsAppWording text={initial.welcome_whatsapp} />}
         </div>
         <div>
           <TextArea
@@ -81,6 +90,7 @@ export function DeskSms({ initial }: { initial: Templates }) {
             rows={3}
           />
           <SmsCounter text={form.membership_sms} />
+          {initial.whatsapp && <WhatsAppWording text={initial.membership_whatsapp} />}
         </div>
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" variant="secondary">

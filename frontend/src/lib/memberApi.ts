@@ -5,9 +5,12 @@ import type {
   Progress,
   ProgressInput,
   FreezeRequest,
+  MemberDevice,
   MemberMe,
   MemberSignIn,
   Notice,
+  OnlinePayment,
+  PayPage,
   Payment,
   PaymentRequest,
   PublicGym,
@@ -118,6 +121,23 @@ export const memberApi = {
     amount: number;
     transaction_ref: string | null;
   }) => request<PaymentRequest>("/api/v1/m/payment-requests", post(body)),
+  /** Pay through the gym's merchant account (§20.2); the amount is the server's. */
+  startOnlinePayment: (body: {
+    plan_id: string;
+    payment_method_id: string;
+    from_app?: boolean;
+  }) => request<OnlinePayment>("/api/v1/m/online-payments", post(body)),
+  /** The checkout page, by its link: no session needed. */
+  payPage: (token: string) =>
+    request<PayPage>(`/api/v1/pay/${encodeURIComponent(token)}`),
+  payCheck: (token: string) =>
+    request<PayPage>(`/api/v1/pay/${encodeURIComponent(token)}/check`, post()),
+  /** The pretend wallet, in development (GATEWAY_PROVIDER=console). */
+  payPretend: (token: string, paid: boolean) =>
+    request<PayPage>(
+      `/api/v1/pay/${encodeURIComponent(token)}/pretend`,
+      post({ paid }),
+    ),
   uploadScreenshot: (id: string, file: Blob) => {
     const form = new FormData();
     form.append("file", file, "screenshot.jpg");
@@ -126,8 +146,17 @@ export const memberApi = {
       body: form,
     });
   },
-  updateMe: (body: { emergency_contact?: string | null; language?: Locale | null }) =>
-    request<MemberMe>("/api/v1/m/me", { ...post(body), method: "PATCH" }),
+  updateMe: (body: {
+    emergency_contact?: string | null;
+    language?: Locale | null;
+    whatsapp_agreed?: boolean;
+  }) => request<MemberMe>("/api/v1/m/me", { ...post(body), method: "PATCH" }),
+  /** Where they're signed in (§17.5). */
+  devices: () => request<MemberDevice[]>("/api/v1/m/me/sessions"),
+  signOutDevice: (id: string) =>
+    request<void>(`/api/v1/m/me/sessions/${id}/sign-out`, post()),
+  signOutOtherDevices: () =>
+    request<{ signed_out: number }>("/api/v1/m/me/sessions/sign-out-others", post()),
   changeEmail: (email: string) => request<void>("/api/v1/m/me/email", post({ email })),
   confirmEmail: (email: string, code: string) =>
     request<MemberMe>("/api/v1/m/me/email/confirm", post({ email, code })),

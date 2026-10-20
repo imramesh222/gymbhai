@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Browser, type Page, type TestInfo } from "@playwright/test";
 
 /** Unique per run, so tests never collide on slugs or phone numbers. */
 export function randomDigits(count: number): string {
@@ -150,4 +150,39 @@ export async function signOut(page: Page) {
   if (await more.isVisible()) await more.click();
   await button.click();
   await page.waitForURL("**/staff/login");
+}
+
+/** A member signs in to their gym's app on a phone of their own. */
+export async function memberSignsIn(browser: Browser, slug: string, phone: string) {
+  const context = await browser.newContext();
+  // Headless Chromium always says notifications are "denied"; a phone that
+  // was never asked says "default".
+  await context.addInitScript(() =>
+    Object.defineProperty(Notification, "permission", { get: () => "default" }),
+  );
+  const app = await context.newPage();
+  await app.goto(`/${slug}`);
+  await app.getByLabel("Mobile number or email").fill(phone);
+  await app.getByRole("button", { name: "Send me a code" }).click();
+  await app.getByLabel("Code").fill(OTP);
+  await app.getByRole("button", { name: "Sign in" }).click();
+  await expect(app.getByText("Show this at the door")).toBeVisible();
+  return app;
+}
+
+/** Add a member at the desk, with the 1-month plan sold and paid unless not. */
+export async function addMember(
+  page: Page,
+  name: string,
+  { plan = "1 month — Rs 1,500", sell = true }: { plan?: string; sell?: boolean } = {},
+) {
+  const phone = `98${randomDigits(8)}`;
+  await page.goto("/staff/members/new");
+  await page.getByLabel("Full name").fill(name);
+  await page.getByLabel("Mobile number").fill(phone);
+  if (sell) await page.getByLabel("Plan").selectOption({ label: plan });
+  else await page.getByLabel("Sell a membership now").uncheck();
+  await page.getByRole("button", { name: "Save member" }).click();
+  await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
+  return { phone, url: page.url().split("?")[0] };
 }

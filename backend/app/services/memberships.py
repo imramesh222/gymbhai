@@ -47,7 +47,7 @@ from app.models.membership import (
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
 from app.models.plan import Plan, PlanBranch
 from app.models.training import PtPackage
-from app.services import activity, counters, live
+from app.services import activity, counters, live, tax
 
 ACTIVE = "active"
 UPCOMING = "upcoming"
@@ -194,7 +194,10 @@ def payments_on(db: Session, target: Membership | PtPackage) -> list[Payment]:
 
 
 def payments_in_branches(branches: Iterable[uuid.UUID]) -> ColumnElement[bool]:
-    """Payments for a membership, or for personal training, at these branches."""
+    """Payments for a membership, for personal training, or for a sale at the
+    desk (§20.1), at these branches."""
+    from app.models.shop import ProductSale
+
     branches = list(branches)
     return or_(
         Payment.membership_id.in_(
@@ -202,6 +205,9 @@ def payments_in_branches(branches: Iterable[uuid.UUID]) -> ColumnElement[bool]:
         ),
         Payment.pt_package_id.in_(
             select(PtPackage.id).where(PtPackage.branch_id.in_(branches))
+        ),
+        Payment.sale_id.in_(
+            select(ProductSale.id).where(ProductSale.branch_id.in_(branches))
         ),
     )
 
@@ -564,6 +570,8 @@ def record_payment(
         raise AppError(
             409, "transaction_ref_used", "That transaction ID has already been used."
         ) from exc
+    # A VAT-registered gym's invoice, or a refund's credit note (§20.4).
+    tax.on_payment(db, row, ctx.staff.id)
 
     live.member_changed(db, ctx.gym_id, target.member_id, target.branch_id)
     if training:

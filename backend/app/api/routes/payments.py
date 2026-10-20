@@ -18,11 +18,16 @@ from app.api.tenancy import StaffContext, get_in_gym
 from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.core.time import NEPAL, utcnow
+from app.core.whatsapp_templates import WhatsApp
 from app.db.session import get_db
+from app.models.gym import Gym
 from app.models.member import Member
 from app.models.membership import Membership
+from app.models.messaging import SMS_RECEIPT, SmsMessage
 from app.models.payment import KIND_PAYMENT, KIND_REFUND, Payment
+from app.models.shop import ProductSale
 from app.models.training import PtPackage
+from app.schemas.messaging import SmsRead
 from app.schemas.money import (
     PaymentCollect,
     PaymentList,
@@ -34,8 +39,9 @@ from app.schemas.money import (
     RefundCollect,
     VoidIn,
 )
-from app.services import activity, live, receipts, training
+from app.services import activity, live, receipts, shop, tax, training
 from app.services import memberships as ms
+from app.services.whatsapp import service as whatsapp
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -70,6 +76,13 @@ def _payment(
 
 def _member_changed(db: Session, payment: Payment) -> None:
     branch_id = None
+    if payment.sale_id:
+        branch_id = db.scalar(
+            select(ProductSale.branch_id).where(ProductSale.id == payment.sale_id)
+        )
+        live.publish(db, gym_id=payment.gym_id, kind=live.SHOP, branch_id=branch_id)
+        if payment.member_id is None:
+            return  # a walk-in: nobody's page to tell
     if payment.membership_id:
         branch_id = db.scalar(
             select(Membership.branch_id).where(Membership.id == payment.membership_id)
@@ -89,6 +102,8 @@ def _member_changed(db: Session, payment: Payment) -> None:
 
 
 def _purpose(payment: Payment) -> dict[str, uuid.UUID | None]:
+    if payment.sale_id:
+        return {"sale_id": payment.sale_id}
     if payment.pt_package_id:
         return {"pt_package_id": payment.pt_package_id}
     return {"membership_id": payment.membership_id}
@@ -191,7 +206,8 @@ def list_payments(
 
     rows = db.execute(
         select(Payment, Member.name, Member.member_code)
-        .join(Member, Member.id == Payment.member_id)
+        # A walk-in's purchase at the desk has no member (§20.1).
+        .outerjoin(Member, Member.id == Payment.member_id)
         .where(*listed)
         .order_by(Payment.paid_at.desc(), Payment.receipt_no.desc())
         .limit(limit)
@@ -223,6 +239,14 @@ def update_payment(
         raise AppError(409, "payment_voided", "This payment has been voided.")
     before = {name: getattr(payment, name) for name in FIELDS}
     changes = payload.model_dump(exclude_unset=True, exclude={"reason"})
+    if payment.sale_id and changes.get("amount") not in (None, payment.amount):
+        # What was sold says what it cost: void the sale and sell again.
+        raise AppError(
+            409, "sale_amount", "A sale's amount can't change: void it and sell again."
+        )
+    if changes.get("amount") not in (None, payment.amount):
+        # An issued tax invoice is never changed (§20.4).
+        tax.refuse_amount_change(db, payment)
     for name, value in changes.items():
         if value is None and name in ("amount", "method", "paid_at"):
             continue
@@ -271,9 +295,18 @@ def void_payment(
     payment = _payment(db, ctx, payment_id, for_update=True)
     if payment.voided_at is not None:
         raise AppError(409, "payment_voided", "This payment has already been voided.")
+    if payment.sale_id:
+        # A sale's payment goes with the sale: its stock comes back too.
+        sale = db.get(ProductSale, payment.sale_id)
+        assert sale is not None
+        shop.void(db, ctx, sale, payload.reason, request)
+        db.commit()
+        return payments_read(db, [payment])[0]
     payment.voided_at = utcnow()
     payment.voided_by = ctx.staff.id
     payment.void_reason = payload.reason
+    # Its tax invoice taken back by a credit note (§20.4).
+    tax.on_void(db, payment, payload.reason, ctx.staff.id)
     _member_changed(db, payment)
     activity.staff_action(
         db,
@@ -295,8 +328,23 @@ def receipt(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
 ) -> Receipt:
-    """A payment receipt, not a VAT invoice (§10)."""
+    """A payment receipt, not a VAT invoice (§10); with a VAT-registered
+    gym's tax invoice for it (§20.4)."""
     return receipts.build(db, _payment(db, ctx, payment_id))
+
+
+@router.post("/{payment_id}/receipt/printed", response_model=Receipt)
+def receipt_printed(
+    payment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MEMBERS_VIEW)),
+) -> Receipt:
+    """About to print the receipt: a tax invoice's print is counted, so the
+    second says "Copy of original" (§20.4). The answer is what to print."""
+    payment = _payment(db, ctx, payment_id)
+    receipts.count_prints(db, payment)
+    db.commit()
+    return receipts.build(db, payment)
 
 
 @router.post("/{payment_id}/receipt-link", response_model=ReceiptLink)
@@ -307,3 +355,60 @@ def receipt_link(
 ) -> ReceiptLink:
     """The receipt as a PDF to download or share on WhatsApp (§16.3, 8.4)."""
     return receipts.share(receipts.build(db, _payment(db, ctx, payment_id)))
+
+
+@router.post(
+    "/{payment_id}/receipt-whatsapp",
+    response_model=SmsRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def receipt_whatsapp(
+    payment_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: StaffContext = Depends(require(Permission.MESSAGES_SMS)),
+) -> SmsMessage:
+    """The receipt to the member on WhatsApp, the PDF behind its button
+    (§19.3). It costs credits, as an SMS does; if WhatsApp can't deliver it,
+    the link goes by SMS."""
+    payment = _payment(db, ctx, payment_id)
+    member = db.get(Member, payment.member_id) if payment.member_id else None
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    if (
+        member is None
+        or payment.voided_at is not None
+        or not whatsapp.reachable(gym, member)
+    ):
+        raise AppError(
+            422,
+            "whatsapp_unreachable",
+            "This receipt can't be sent to them on WhatsApp.",
+        )
+    link = receipts.share(receipts.build(db, payment))
+    values = {
+        "name": member.name.split()[0],
+        "gym": gym.name,
+        "receipt": payment.receipt_no,
+        "amount": f"{payment.amount / 100:,.0f}",
+    }
+    message = whatsapp.queue(
+        db,
+        gym,
+        member,
+        WhatsApp("receipt", values, button=link.url.split("/receipts/", 1)[1]),
+        kind=SMS_RECEIPT,
+        fallback=f"{link.text}: {link.url}",
+        created_by=ctx.staff.id,
+    )
+    activity.staff_action(
+        db,
+        ctx.staff,
+        "receipt.sent_on_whatsapp",
+        entity="payment",
+        entity_id=payment.id,
+        changes={"sms_id": message.id},
+        request=request,
+    )
+    db.commit()
+    return message

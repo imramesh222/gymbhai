@@ -504,3 +504,46 @@ def test_the_app_shows_a_class_they_were_booked_into_at_another_branch(
     db.commit()
     [listed] = app.get("/api/v1/m/classes").json()["classes"]
     assert listed["mine"] == "booked"
+
+
+def test_moving_a_class_tells_everyone_and_moves_the_reminder(
+    client: TestClient,
+    db: Session,
+    gym_a: GymFixture,
+    tomorrow_class: GymClass,
+    monkeypatch,
+) -> None:
+    from app.models.messaging import SmsMessage
+
+    gym = db.get(Gym, gym_a.gym.id)
+    tomorrow_class.places = 1
+    sita = member_with_plan(db, gym_a, "9812000001")
+    hari = member_with_plan(db, gym_a, "9812000002", name="Hari")
+    service.book(db, gym, sita, tomorrow_class)
+    service.book(db, gym, hari, tomorrow_class)  # waiting
+    db.commit()
+    was = tomorrow_class.starts_at
+    later = was + dt.timedelta(hours=2)
+    sign_in(db, client, gym_a.owner)
+    response = client.patch(
+        f"/api/v1/classes/{tomorrow_class.id}",
+        json={"starts_at": later.isoformat(), "sms": True},
+    )
+    assert response.status_code == 200, response.text
+
+    told = db.scalars(
+        select(SmsMessage.body).where(SmsMessage.member_id.in_([sita.id, hari.id]))
+    ).all()
+    assert len(told) == 2
+    assert all("has moved from" in body and "09:00" in body for body in told)
+    # Sita's reminder for the new time; the old one stays quiet.
+    jobs = db.scalars(select(Job).where(Job.kind == service.JOB_REMINDER)).all()
+    assert {job.run_at for job in jobs} == {
+        was - service.REMINDER_BEFORE,
+        later - service.REMINDER_BEFORE,
+    }
+    sent: list[str] = []
+    monkeypatch.setattr(service, "_tell", lambda *a, **k: sent.append(a[3]["en"]))
+    for job in sorted(jobs, key=lambda j: j.run_at):
+        service.handle_reminder(db, dict(job.payload))
+    assert sent == [service.class_text.REMINDER["en"]]

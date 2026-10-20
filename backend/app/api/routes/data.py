@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Path, Query, Request, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require
@@ -30,7 +30,9 @@ from app.models.member_app import (
 from app.models.membership import SOURCE_IMPORT, Membership, MembershipFreeze
 from app.models.payment import Payment
 from app.models.platform import MemberImport
+from app.models.shop import Product, ProductSale
 from app.models.staff import StaffUser
+from app.models.tax import CREDIT_NOTE, INVOICE, TaxInvoice
 from app.schemas.reports import (
     ClassesMonthRead,
     ClassTypeMonth,
@@ -46,6 +48,8 @@ from app.schemas.reports import (
     PtTrainerMonth,
     QuietKiosk,
     SetupChecklist,
+    ShopMonthRead,
+    ShopProductMonth,
     TodayRead,
     TrendMonth,
     TrendRead,
@@ -56,6 +60,8 @@ from app.services import expenses as expenses_service
 from app.services import leads as leads_service
 from app.services import members as members_service
 from app.services import memberships as ms
+from app.services import shop as shop_service
+from app.services import tax as tax_service
 
 router = APIRouter(tags=["reports and data"])
 
@@ -190,6 +196,22 @@ def monthly(
         if pt
         else None,
         classes=_classes_month(db, ctx, data.first_day, data.last_day),
+        shop=_shop_month(db, ctx, data.first_day, data.last_day),
+    )
+
+
+def _shop_month(
+    db: Session, ctx: StaffContext, first: dt.date, last: dt.date
+) -> ShopMonthRead | None:
+    """None for a gym that sells nothing at the desk."""
+    if not db.scalar(select(Product.id).where(Product.gym_id == ctx.gym_id).limit(1)):
+        return None
+    income, sales, by_category, top = shop_service.month_totals(db, ctx, first, last)
+    return ShopMonthRead(
+        income=income,
+        sales=sales,
+        by_category=by_category,
+        top=[ShopProductMonth(name=n, quantity=q, amount=a) for n, q, a in top],
     )
 
 
@@ -259,7 +281,7 @@ def trend(
 
 EXPORTS = ("members", "memberships", "payments", "expenses", "check-ins")
 # Money in and out: for staff who may see money (reports.money).
-MONEY_EXPORTS = ("payments", "expenses")
+MONEY_EXPORTS = ("payments", "expenses", "sales", "sales-book", "sales-returns")
 
 
 def _staff_names(db: Session, gym_id: uuid.UUID) -> dict[uuid.UUID, str]:
@@ -277,7 +299,11 @@ def _local(at: dt.datetime | None) -> str:
 @router.get("/export/{kind}.xlsx")
 def export(
     kind: Annotated[
-        str, Path(pattern="^(members|memberships|payments|expenses|check-ins)$")
+        str,
+        Path(
+            pattern="^(members|memberships|payments|expenses|sales|sales-book"
+            "|sales-returns|check-ins)$"
+        ),
     ],
     request: Request,
     db: Session = Depends(get_db),
@@ -390,9 +416,17 @@ def export(
             )
     elif kind == "payments":
         staff = _staff_names(db, gym.id)
+        # The members the caller sees, and walk-ins' purchases at the desk
+        # at their branches (§20.1).
+        walk_ins = Payment.member_id.is_(None)
+        if ctx.branch_ids is not None:
+            walk_ins = walk_ins & ms.payments_in_branches(ctx.branch_ids)
         rows_p = db.scalars(
             select(Payment)
-            .where(Payment.gym_id == gym.id, Payment.member_id.in_(by_id))
+            .where(
+                Payment.gym_id == gym.id,
+                or_(Payment.member_id.in_(by_id), walk_ins),
+            )
             .order_by(Payment.receipt_no)
         )
         headers = [
@@ -404,11 +438,15 @@ def export(
             [
                 p.receipt_no,
                 _local(p.paid_at),
-                by_id[p.member_id].member_code,
-                by_id[p.member_id].name,
+                by_id[p.member_id].member_code if p.member_id else "",
+                by_id[p.member_id].name if p.member_id else "Walk-in",
                 p.kind,
-                # Personal training is its own money (§18.3).
-                "Personal training" if p.pt_package_id else "Membership",
+                # Personal training is its own money (§18.3); so is the shop.
+                "Shop"
+                if p.sale_id
+                else "Personal training"
+                if p.pt_package_id
+                else "Membership",
                 excel.rupees(p.amount),
                 p.method,
                 p.transaction_ref,
@@ -444,6 +482,106 @@ def export(
                 e.void_reason,
             ]  # fmt: skip
             for e in rows_e
+        ]
+    elif kind == "sales":
+        staff = _staff_names(db, gym.id)
+        sales = list(
+            db.scalars(shop_service.visible(ctx).order_by(ProductSale.sold_at))
+        )
+        lines = shop_service.lines_for(db, [sale.id for sale in sales])
+        receipt_nos = dict(
+            db.execute(
+                select(Payment.sale_id, Payment.receipt_no).where(
+                    Payment.gym_id == gym.id, Payment.sale_id.is_not(None)
+                )
+            ).all()
+        )
+        names = (
+            dict(
+                db.execute(
+                    select(Member.id, Member.name).where(
+                        Member.id.in_({s.member_id for s in sales if s.member_id})
+                    )
+                ).all()
+            )
+            if sales
+            else {}
+        )
+        headers = [
+            "Receipt", "Sold at (Nepal time)", "Branch", "Member", "Product",
+            "Category", "Quantity", "Price each (Rs)", "Line (Rs)",
+            "Sale discount (Rs)", "Sale total (Rs)", "Sold by", "Voided",
+            "Void reason",
+        ]  # fmt: skip
+        rows = [
+            [
+                receipt_nos.get(sale.id),
+                _local(sale.sold_at),
+                branches.get(sale.branch_id),
+                names.get(sale.member_id, "Walk-in") if sale.member_id else "Walk-in",
+                line.name,
+                line.category,
+                line.quantity,
+                excel.rupees(line.unit_price),
+                excel.rupees(line.unit_price * line.quantity),
+                excel.rupees(sale.discount),
+                excel.rupees(sale.total),
+                staff.get(sale.created_by),
+                bool(sale.voided_at),
+                sale.void_reason,
+            ]  # fmt: skip
+            for sale in sales
+            for line in lines[sale.id]
+        ]
+    elif kind in ("sales-book", "sales-returns"):
+        # The VAT sales book and sales return book (§20.4), every fiscal year.
+        returns = kind == "sales-returns"
+        documents = list(
+            db.scalars(
+                select(TaxInvoice)
+                .where(
+                    TaxInvoice.gym_id == gym.id,
+                    TaxInvoice.kind == (CREDIT_NOTE if returns else INVOICE),
+                )
+                .order_by(TaxInvoice.fiscal_year, TaxInvoice.number)
+            )
+        )
+        reads = {d.id: d for d in tax_service.reads(db, documents)}
+        receipt_nos = (
+            dict(
+                db.execute(
+                    select(Payment.id, Payment.receipt_no).where(
+                        Payment.id.in_({d.payment_id for d in documents})
+                    )
+                ).all()
+            )
+            if documents
+            else {}
+        )
+        headers = [
+            "Fiscal year", "Date (BS)", "Date (AD)",
+            "Credit note no." if returns else "Invoice no.",
+            *(["Against invoice no.", "Reason"] if returns else []),
+            "Buyer", "Buyer's PAN", "Total (Rs)", "Non-taxable (Rs)",
+            "Taxable (Rs)", "VAT (Rs)", "Receipt", "CBMS",
+        ]  # fmt: skip
+        rows = [
+            [
+                d.fiscal_year,
+                reads[d.id].issued_on_bs,
+                _local(d.issued_at)[:10],
+                d.number,
+                *([reads[d.id].ref_number, d.reason] if returns else []),
+                d.buyer_name,
+                d.buyer_pan,
+                excel.rupees(d.total),
+                0,
+                excel.rupees(d.taxable),
+                excel.rupees(d.vat),
+                receipt_nos.get(d.payment_id),
+                d.cbms_status,
+            ]  # fmt: skip
+            for d in documents
         ]
     else:
         staff = _staff_names(db, gym.id)

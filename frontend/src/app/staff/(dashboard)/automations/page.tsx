@@ -57,6 +57,7 @@ export default function AutomationsPage() {
                     .data!.filter((r) => r.trigger === info.trigger)
                     .sort((a, b) => a.days - b.days)}
                   onChanged={rules.reload}
+                  whatsapp={templates.data?.whatsapp ?? false}
                 />
               ))}
             </div>

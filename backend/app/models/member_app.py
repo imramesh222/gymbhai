@@ -223,6 +223,67 @@ class PaymentRequest(IdMixin, TimestampMixin, GymOwned, Base):
     # A family or couple plan renewed by its payer: the others it covers,
     # as member ids, worked out by the server when the request is made (§19.1).
     with_member_ids: Mapped[list | None] = mapped_column(JSONB)
+    # The wallet itself confirmed the money: esewa, khalti or fonepay (§20.2).
+    # Null: only the member's word, for the desk to check.
+    confirmed_by: Mapped[str | None] = mapped_column(String(16))
+
+
+ONLINE_STARTED = "started"
+ONLINE_PAID = "paid"
+ONLINE_FAILED = "failed"
+ONLINE_EXPIRED = "expired"
+
+
+class OnlinePayment(IdMixin, TimestampMixin, GymOwned, Base):
+    """A payment through the gym's own eSewa, Khalti or Fonepay merchant
+    account, from starting it to the payment request it became (§20.2).
+
+    The money goes to the gym's account; this only remembers what we asked
+    the wallet and what it answered."""
+
+    __tablename__ = "online_payments"
+    __table_args__ = (Index("ix_online_payments_member_status", "member_id", "status"),)
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("members.id")
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("plans.id")
+    )
+    payment_method_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("gym_payment_methods.id")
+    )
+    # esewa, khalti, fonepay: the account's kind.
+    provider: Mapped[str] = mapped_column(String(16))
+    # The wallet's test system, not real money.
+    test: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Paisa: worked out by the server, never the member.
+    amount: Mapped[int] = mapped_column(Integer)
+    with_member_ids: Mapped[list | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(16), default=ONLINE_STARTED)
+    # Ours, sent to the wallet: letters and digits (Fonepay takes 25 at most).
+    order_id: Mapped[str] = mapped_column(String(25), unique=True)
+    # The wallet's id for it, when it gives one (Khalti's pidx).
+    provider_ref: Mapped[str | None] = mapped_column(String(64))
+    # The wallet's transaction, once paid.
+    transaction_ref: Mapped[str | None] = mapped_column(String(64))
+    # What the wallet's start answered (the checkout's address and form, or
+    # the QR), whether it began in the phone app, and the console's answer.
+    details: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    checks: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The wallet's last trouble, if any.
+    error: Mapped[str | None] = mapped_column(Text)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # The member started another before this one was paid: if this one is
+    # paid after all, the desk decides.
+    replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="SET NULL")
+    )
 
 
 class FreezeRequest(IdMixin, TimestampMixin, GymOwned, Base):

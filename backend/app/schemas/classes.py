@@ -140,6 +140,8 @@ class ClassUpdate(Strict):
     minutes: int | None = Field(default=None, ge=10, le=300)
     places: int | None = Field(default=None, ge=1, le=500)
     instructor_id: uuid.UUID | None = None
+    # Moved: also by SMS to those booked whom push can't reach (costs credits).
+    sms: bool = False
 
 
 class ClassCancelIn(Strict):

@@ -40,7 +40,7 @@ import { useIdempotencyKey } from "@/lib/idempotency";
 /** Add a member and, in the same save, sell their first membership (§5.3). */
 export default function NewMemberPage() {
   const router = useRouter();
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const { calendar, display } = useGymCalendar();
   const setup = useLoad(() => Promise.all([plansApi.list(), branchesApi.list()]), []);
   const [plans, branches] = setup.data ?? [[], []];
@@ -55,6 +55,7 @@ export default function NewMemberPage() {
   const [sale, setSale] = useState<SaleDraft>(() => emptySale(todayInNepal(), ""));
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [referrer, setReferrer] = useState<Picked | null>(null);
+  const [whatsapp, setWhatsapp] = useState(false);
   // Convert (§16.4, 9.1): Add member opened from an enquiry, filled in.
   const leadId = useSearchParams().get("lead");
   const lead = useLoad(
@@ -108,6 +109,7 @@ export default function NewMemberPage() {
         gender: (gender || null) as Member["gender"],
         home_branch_id: home || null,
         referred_by_id: referrer?.id ?? null,
+        whatsapp_agreed: whatsapp,
         lead_id: leadId,
         membership: selling
           ? toSaleInput({ ...sale, branchId: sale.branchId || home })
@@ -205,6 +207,16 @@ export default function NewMemberPage() {
             />
           )}
         </div>
+        {me?.gym?.whatsapp_available && (
+          <div className="mt-3">
+            <Checkbox
+              label={t("member.whatsappAgreed")}
+              hint={t("member.whatsappAgreedHint")}
+              checked={whatsapp}
+              onChange={setWhatsapp}
+            />
+          </div>
+        )}
       </Card>
 
       {can("memberships.sell") && (

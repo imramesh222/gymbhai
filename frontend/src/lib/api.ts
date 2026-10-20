@@ -71,6 +71,8 @@ export interface GymSettings {
   daily_summary_sms: boolean;
   show_busyness: boolean;
   join_form: boolean;
+  /** WhatsApp between push and SMS, for members who agreed (§19.3). */
+  whatsapp: boolean;
   require_two_step: boolean;
   poster_printed: boolean;
   setup_dismissed: boolean;
@@ -86,6 +88,8 @@ export interface Gym {
   brand_color: string | null;
   status: string;
   settings: GymSettings;
+  /** GymBhai can send WhatsApp messages (§19.3). */
+  whatsapp_available: boolean;
 }
 
 export interface Staff {
@@ -336,7 +340,14 @@ export function errorMessage(error: unknown): string {
     }
     if (error.code === "validation_error") return t("errors.validation_error_form");
     const key = `errors.${error.code}`;
-    if (isMessageKey(key)) return t(key);
+    // What the API sent with it ("only {left} {product}") fills the wording.
+    const values = Object.fromEntries(
+      Object.entries(error.extra).filter(
+        (entry): entry is [string, string | number] =>
+          typeof entry[1] === "string" || typeof entry[1] === "number",
+      ),
+    );
+    if (isMessageKey(key)) return t(key, values);
     return error.message || t("errors.generic");
   }
   return t("errors.generic");
@@ -423,8 +434,9 @@ export interface Branch {
 }
 
 export interface PaymentListItem extends Payment {
-  member_name: string;
-  member_code: string;
+  /** Null for a walk-in (§20.1). */
+  member_name: string | null;
+  member_code: string | null;
 }
 
 export interface Freeze {
@@ -514,6 +526,9 @@ export interface Member {
   group_dues: number;
   /** Lists only: the last time they were let in. */
   last_visit_at?: string | null;
+  /** WhatsApp messages (§19.3): agreed, and when Meta said the number isn't on it. */
+  whatsapp_agreed: boolean;
+  whatsapp_unreachable_at: string | null;
 }
 
 export interface MemberCounts {
@@ -588,6 +603,8 @@ export interface MemberInput {
   referred_by_id?: string | null;
   /** Convert: the enquiry they came from (9.1). */
   lead_id?: string | null;
+  /** They agree to messages on WhatsApp (§19.3). */
+  whatsapp_agreed?: boolean;
 }
 
 export interface HistoryEntry {
@@ -605,9 +622,10 @@ export interface Receipt {
   gym_phone: string | null;
   gym_address: string | null;
   branch_name: string | null;
-  member_name: string;
-  member_code: string;
-  member_phone: string;
+  /** Null for a walk-in's purchase at the desk (§20.1). */
+  member_name: string | null;
+  member_code: string | null;
+  member_phone: string | null;
   plan_name: string | null;
   start_date: string | null;
   end_date: string | null;
@@ -616,7 +634,80 @@ export interface Receipt {
   date_display: DateDisplay;
   /** For personal training (§18.3): the dates are its, not a membership's. */
   training: boolean;
+  /** It can go to the member on WhatsApp from the desk (§19.3). */
+  whatsapp?: boolean;
+  /** What was bought at the desk (§20.1). */
+  items?: { name: string; quantity: number; unit_price: number }[];
+  discount?: number;
+  /** A VAT-registered gym's tax invoice for it, and any credit note (§20.4). */
+  tax_documents?: TaxDocument[];
 }
+
+/** A tax invoice or a credit note (§20.4). Amounts in paisa, before VAT. */
+export interface TaxDocument {
+  id: string;
+  kind: "invoice" | "credit_note";
+  fiscal_year: string;
+  number: number;
+  payment_id: string;
+  ref_number: number | null;
+  ref_fiscal_year: string | null;
+  seller: { name: string | null; address: string | null; pan: string | null };
+  buyer_name: string;
+  buyer_address: string | null;
+  buyer_pan: string | null;
+  lines: { description: string; quantity: number; rate: number; amount: number }[];
+  taxable: number;
+  vat: number;
+  total: number;
+  total_in_words: string;
+  issued_at: string;
+  issued_on_bs: string;
+  reason: string | null;
+  prints: number;
+  cbms_status: "off" | "waiting" | "sent" | "refused";
+}
+
+export interface TaxSettings {
+  available: boolean;
+  vat_registered: boolean;
+  pan: string | null;
+  starts_on: string | null;
+  cbms_enabled: boolean;
+  cbms_username: string | null;
+  cbms_error: string | null;
+  cbms_counts: Partial<Record<"waiting" | "sent" | "refused", number>>;
+  invoices: number;
+}
+
+export interface TaxBook {
+  month: string;
+  calendar: "ad" | "bs";
+  first_day: string;
+  last_day: string;
+  invoices: TaxDocument[];
+  returns: TaxDocument[];
+  sales_total: number;
+  sales_taxable: number;
+  sales_vat: number;
+  returns_total: number;
+  returns_taxable: number;
+  returns_vat: number;
+}
+
+export const taxApi = {
+  settings: () => request<TaxSettings>("/api/v1/gym/tax"),
+  update: (body: {
+    vat_registered: boolean;
+    pan: string | null;
+    starts_on: string | null;
+  }) => request<TaxSettings>("/api/v1/gym/tax", send("PUT", body)),
+  setCbms: (body: { username: string; password: string }) =>
+    request<TaxSettings>("/api/v1/gym/tax/cbms", send("PUT", body)),
+  removeCbms: () => request<TaxSettings>("/api/v1/gym/tax/cbms", send("DELETE")),
+  book: (month?: string) =>
+    request<TaxBook>(`/api/v1/tax-invoices${month ? `?month=${month}` : ""}`),
+};
 
 export interface StaffMember {
   id: string;
@@ -722,6 +813,25 @@ export const paymentMethodsApi = {
     request<PaymentMethodAccount>(`/api/v1/payment-methods/${id}`, send("PATCH", body)),
   uploadQr: (id: string, file: Blob) =>
     upload<PaymentMethodAccount>(`/api/v1/payment-methods/${id}/qr`, file),
+  /** The merchant keys, so the wallet confirms app payments (§20.2). */
+  setGateway: (
+    id: string,
+    body: {
+      merchant?: string | null;
+      secret_key: string;
+      username?: string | null;
+      password?: string | null;
+      test: boolean;
+    },
+  ) =>
+    request<PaymentMethodAccount>(
+      `/api/v1/payment-methods/${id}/gateway`,
+      send("PUT", body),
+    ),
+  removeGateway: (id: string) =>
+    request<PaymentMethodAccount>(`/api/v1/payment-methods/${id}/gateway`, {
+      method: "DELETE",
+    }),
 };
 
 export const membersApi = {
@@ -828,8 +938,14 @@ export const paymentsApi = {
   void: (id: string, reason: string) =>
     request<Payment>(`/api/v1/payments/${id}/void`, send("POST", { reason })),
   receipt: (id: string) => request<Receipt>(`/api/v1/payments/${id}/receipt`),
+  /** About to print: a tax invoice's print is counted (§20.4). */
+  receiptPrinted: (id: string) =>
+    request<Receipt>(`/api/v1/payments/${id}/receipt/printed`, send("POST")),
   receiptLink: (id: string) =>
     request<ReceiptLink>(`/api/v1/payments/${id}/receipt-link`, send("POST")),
+  /** The receipt to the member on WhatsApp; uses message credits (§19.3). */
+  receiptWhatsApp: (id: string) =>
+    request<SmsMessage>(`/api/v1/payments/${id}/receipt-whatsapp`, send("POST")),
 };
 
 /** Money the gym spent: rent, salaries, bills (PLAN.md §18.1). */
@@ -896,6 +1012,113 @@ export const expensesApi = {
     request<Expense>(`/api/v1/expenses/${id}`, send("PATCH", body)),
   void: (id: string, reason: string) =>
     request<Expense>(`/api/v1/expenses/${id}/void`, send("POST", { reason })),
+};
+
+// --- the shop at the desk (PLAN.md §20.1) ---
+
+export type ProductCategory =
+  "supplement" | "drink" | "snack" | "merchandise" | "other";
+
+export interface Product {
+  id: string;
+  name: string;
+  category: ProductCategory;
+  price: number;
+  /** Null: not counted. */
+  stock: number | null;
+  low_stock: number | null;
+  code: string | null;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface ProductInput {
+  name: string;
+  category: ProductCategory;
+  price: number;
+  stock?: number | null;
+  low_stock?: number | null;
+  code?: string | null;
+}
+
+export interface StockMove {
+  id: string;
+  change: number;
+  reason: "sale" | "void" | "restock" | "count";
+  sale_id: string | null;
+  note: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface SaleLine {
+  product_id: string;
+  name: string;
+  category: ProductCategory;
+  unit_price: number;
+  quantity: number;
+}
+
+export interface ProductSale {
+  id: string;
+  branch_id: string;
+  member_id: string | null;
+  member_name: string | null;
+  total: number;
+  discount: number;
+  sold_at: string;
+  note: string | null;
+  created_by_name: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  lines: SaleLine[];
+  payment_id: string | null;
+  receipt_no: number | null;
+  method: Method | null;
+}
+
+export interface ShopSaleInput {
+  lines: { product_id: string; quantity: number }[];
+  member_id?: string | null;
+  branch_id?: string | null;
+  discount?: number;
+  payment: { method: Method; transaction_ref?: string | null };
+  note?: string | null;
+}
+
+export interface SalesMonth {
+  month: string;
+  calendar: "ad" | "bs";
+  first_day: string;
+  last_day: string;
+  items: ProductSale[];
+  total: number;
+  count: number;
+  by_category: Partial<Record<ProductCategory, number>>;
+  top: { name: string; quantity: number; amount: number }[];
+}
+
+export const shopApi = {
+  products: (includeHidden = false) =>
+    request<Product[]>(
+      `/api/v1/products${includeHidden ? "?include_hidden=true" : ""}`,
+    ),
+  createProduct: (body: ProductInput) =>
+    request<Product>("/api/v1/products", send("POST", body)),
+  updateProduct: (
+    id: string,
+    body: Partial<ProductInput> & { is_active?: boolean; track_stock?: boolean },
+  ) => request<Product>(`/api/v1/products/${id}`, send("PATCH", body)),
+  changeStock: (
+    id: string,
+    body: { kind: "restock" | "count"; quantity: number; note?: string | null },
+  ) => request<Product>(`/api/v1/products/${id}/stock`, send("POST", body)),
+  stockHistory: (id: string) => request<StockMove[]>(`/api/v1/products/${id}/stock`),
+  sales: (month?: string) => request<SalesMonth>(`/api/v1/sales${query({ month })}`),
+  sell: (body: ShopSaleInput, key?: string) =>
+    request<ProductSale>("/api/v1/sales", once(send("POST", body), key)),
+  voidSale: (id: string, reason: string) =>
+    request<ProductSale>(`/api/v1/sales/${id}/void`, send("POST", { reason })),
 };
 
 // --- personal training (PLAN.md §18.3) ---
@@ -1364,6 +1587,11 @@ export interface SmsMessage {
   error: string | null;
   sent_at: string | null;
   created_at: string;
+  /** SMS or WhatsApp (§19.3); a WhatsApp message's `segments` are its credits. */
+  channel: "sms" | "whatsapp";
+  template: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
 }
 
 /** What starts an automation (PLAN.md §16.3, 8.2; personal training's, §18.3). */
@@ -1382,6 +1610,10 @@ export interface MessageSettings {
   membership_sms: string;
   /** SMS as well as push, for members whose phone takes push (§16.3, 8.3). */
   also_sms: boolean;
+  /** WhatsApp on for this gym, and our wording for these two (§19.3). */
+  whatsapp?: boolean;
+  welcome_whatsapp?: string;
+  membership_whatsapp?: string;
 }
 
 export interface ReminderRule {
@@ -1391,6 +1623,8 @@ export interface ReminderRule {
   days: number;
   template: string;
   enabled: boolean;
+  /** Our WhatsApp wording for it (§19.3), when it can go by WhatsApp. */
+  whatsapp?: string | null;
 }
 
 export interface NoticeInput {
@@ -1699,6 +1933,13 @@ export interface MonthlyReport {
   personal_training: PtMonth | null;
   /** Only for a gym with classes (§19.4). */
   classes?: ClassesMonth | null;
+  /** Only for a gym that sells at the desk (§20.1); already within income. */
+  shop?: {
+    income: number;
+    sales: number;
+    by_category: Partial<Record<ProductCategory, number>>;
+    top: { name: string; quantity: number; amount: number }[];
+  } | null;
 }
 
 /** Classes held in a report month (§19.4). */
@@ -1769,7 +2010,7 @@ export interface PlatformPlan {
 export interface SubscriptionPayment {
   id: string;
   gym_id: string;
-  kind: "subscription" | "sms";
+  kind: "subscription" | "sms" | "app";
   platform_plan_id: string | null;
   months: number | null;
   sms_credits: number | null;
@@ -1791,6 +2032,9 @@ export interface SubscriptionOverview extends Omit<Subscription, "over_limit"> {
   plans: PlatformPlan[];
   payments: SubscriptionPayment[];
   pay_to: { name: string | null; esewa: string | null; bank: string | null };
+  /** The gym's own app (§20.3): monthly while built and live; setup until paid. */
+  app_monthly: number | null;
+  app_setup_due: number | null;
 }
 
 export interface AdminGym {
@@ -1863,7 +2107,14 @@ export const changelogApi = {
 };
 
 export type ExportKind =
-  "members" | "memberships" | "payments" | "expenses" | "check-ins";
+  | "members"
+  | "memberships"
+  | "payments"
+  | "expenses"
+  | "check-ins"
+  | "sales"
+  | "sales-book"
+  | "sales-returns";
 
 export const reportsApi = {
   today: () => request<TodayData>("/api/v1/dashboard/today"),
@@ -1917,7 +2168,7 @@ export const subscriptionApi = {
   referrals: () => request<MyReferrals>("/api/v1/subscription/referrals"),
   pay: (
     body: {
-      kind: "subscription" | "sms";
+      kind: "subscription" | "sms" | "app";
       platform_plan_id?: string | null;
       months?: number | null;
       sms_credits?: number | null;
@@ -1932,8 +2183,81 @@ export const subscriptionApi = {
     ),
 };
 
+export interface PlatformSettings {
+  /** Message credits one WhatsApp message costs a gym (§19.3). */
+  whatsapp_credits: number;
+  whatsapp_available: boolean;
+  /** A gym's own app (§20.3), in paisa; offered once both are set. */
+  branded_app_setup_price: number | null;
+  branded_app_monthly_price: number | null;
+}
+
+export type BrandedAppStatus = "asked" | "building" | "in_review" | "live" | "stopped";
+
+/** The gym's own app, as the gym sees it (§20.3). */
+export interface BrandedApp {
+  offered: boolean;
+  setup_price: number | null;
+  monthly_price: number | null;
+  status: BrandedAppStatus | null;
+  app_name: string | null;
+  color: string | null;
+  icon_url: string | null;
+  play_url: string | null;
+  app_store_url: string | null;
+  asked_at: string | null;
+  live_at: string | null;
+  setup_paid: boolean;
+}
+
+/** Every gym's, as we see them in /admin. */
+export interface AdminBrandedApp {
+  id: string;
+  gym_id: string;
+  gym_name: string;
+  gym_slug: string;
+  status: BrandedAppStatus;
+  app_name: string;
+  color: string;
+  icon_url: string | null;
+  android_package: string;
+  ios_bundle_id: string;
+  expo_project_id: string | null;
+  play_url: string | null;
+  app_store_url: string | null;
+  notes: string | null;
+  asked_at: string;
+  building_at: string | null;
+  live_at: string | null;
+  stopped_at: string | null;
+  setup_paid_at: string | null;
+}
+
+export const gymAppApi = {
+  get: () => request<BrandedApp>("/api/v1/gym/app"),
+  ask: (body: { app_name: string; color: string }) =>
+    request<BrandedApp>("/api/v1/gym/app", send("PUT", body)),
+  uploadIcon: (file: Blob) =>
+    upload<BrandedApp>("/api/v1/gym/app/icon", file, "icon.png"),
+  withdraw: () => request<BrandedApp>("/api/v1/gym/app/withdraw", send("POST")),
+};
+
 export const adminApi = {
   summary: () => request<AdminSummary>("/api/v1/admin/summary"),
+  settings: () => request<PlatformSettings>("/api/v1/admin/settings"),
+  updateSettings: (
+    body: Partial<
+      Pick<
+        PlatformSettings,
+        "whatsapp_credits" | "branded_app_setup_price" | "branded_app_monthly_price"
+      >
+    >,
+  ) => request<PlatformSettings>("/api/v1/admin/settings", send("PATCH", body)),
+  apps: () => request<AdminBrandedApp[]>("/api/v1/admin/apps"),
+  updateApp: (id: string, body: Partial<AdminBrandedApp>) =>
+    request<AdminBrandedApp>(`/api/v1/admin/apps/${id}`, send("PATCH", body)),
+  appBuild: (id: string) =>
+    request<Record<string, string | null>>(`/api/v1/admin/apps/${id}/build`),
   changelog: () => request<ChangelogEntry[]>("/api/v1/admin/changelog"),
   addChangelog: (body: { title: string; body: string; published_at?: string | null }) =>
     request<ChangelogEntry>("/api/v1/admin/changelog", send("POST", body)),

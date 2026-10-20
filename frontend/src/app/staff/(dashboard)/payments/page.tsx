@@ -94,15 +94,22 @@ export default function PaymentsPage() {
                   <div
                     className={`min-w-0 ${p.voided_at ? "text-slate-500 line-through" : ""}`}
                   >
-                    <Link
-                      href={`/staff/members/${p.member_id}`}
-                      className="font-medium text-slate-900 hover:underline"
-                    >
-                      {p.member_name}
-                    </Link>
+                    {p.member_id ? (
+                      <Link
+                        href={`/staff/members/${p.member_id}`}
+                        className="font-medium text-slate-900 hover:underline"
+                      >
+                        {p.member_name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-slate-900">
+                        {t("shop.walkIn")}
+                      </span>
+                    )}
                     <p className="text-xs text-slate-500">
                       #{p.receipt_no} · {methodLabel(p.method)}
                       {p.pt_package_id && ` · ${t("payment.forTraining")}`}
+                      {p.sale_id && ` · ${t("payment.forShop")}`}
                       {p.transaction_ref && ` · ${p.transaction_ref}`} ·{" "}
                       {formatDateTime(p.paid_at, display)}
                       {p.received_by_name && ` · ${p.received_by_name}`}

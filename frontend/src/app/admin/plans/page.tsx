@@ -20,6 +20,8 @@ export default function AdminPlansPage() {
       <PageHeader title={t("admin.plans")} subtitle={t("admin.plansHelp")} />
       {/* New plan first: adding one never means scrolling past every plan, and
           the form stays put while the list loads and grows below it. */}
+      <MessagePrices />
+      <AppPrices />
       <PlanEditor plan={null} onSaved={reload} />
       {!data ? (
         <PageSkeleton label={t("common.loading")} />
@@ -27,6 +29,111 @@ export default function AdminPlansPage() {
         data.map((plan) => <PlanEditor key={plan.id} plan={plan} onSaved={reload} />)
       )}
     </div>
+  );
+}
+
+/** What a WhatsApp message costs a gym, in message credits (§19.3). */
+function MessagePrices() {
+  const { data, setData } = useLoad(() => adminApi.settings(), []);
+  const [credits, setCredits] = useState<string | null>(null);
+  const [message, setMessage] = useState<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
+  if (!data) return null;
+  const value = credits ?? String(data.whatsapp_credits);
+  return (
+    <Card title={t("admin.messagePrices")}>
+      <form
+        className="space-y-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          try {
+            setData(await adminApi.updateSettings({ whatsapp_credits: Number(value) }));
+            setCredits(null);
+            setMessage({ tone: "success", text: t("common.saved") });
+          } catch (err) {
+            setMessage({ tone: "error", text: errorMessage(err) });
+          }
+        }}
+      >
+        <p className="text-sm text-slate-600">{t("admin.messagePricesHelp")}</p>
+        <div className="max-w-56">
+          <Field
+            label={t("admin.whatsappCredits")}
+            value={value}
+            onChange={setCredits}
+            type="number"
+            inputMode="numeric"
+          />
+        </div>
+        {!data.whatsapp_available && (
+          <Notice tone="warning">{t("admin.whatsappNotSetUp")}</Notice>
+        )}
+        {message && <Notice tone={message.tone}>{message.text}</Notice>}
+        <Button type="submit" variant="secondary">
+          {t("common.save")}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+/** What a gym's own app in the stores costs it (§20.3). */
+function AppPrices() {
+  const { data, setData } = useLoad(() => adminApi.settings(), []);
+  const [prices, setPrices] = useState<{
+    setup: number | null;
+    monthly: number | null;
+  } | null>(null);
+  const [message, setMessage] = useState<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
+  if (!data) return null;
+  const shown = prices ?? {
+    setup: data.branded_app_setup_price,
+    monthly: data.branded_app_monthly_price,
+  };
+  return (
+    <Card title={t("admin.appPrices")}>
+      <form
+        className="space-y-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          try {
+            setData(
+              await adminApi.updateSettings({
+                branded_app_setup_price: shown.setup,
+                branded_app_monthly_price: shown.monthly,
+              }),
+            );
+            setPrices(null);
+            setMessage({ tone: "success", text: t("common.saved") });
+          } catch (err) {
+            setMessage({ tone: "error", text: errorMessage(err) });
+          }
+        }}
+      >
+        <p className="text-sm text-slate-600">{t("admin.appPricesHelp")}</p>
+        <div className="grid max-w-md grid-cols-2 gap-3">
+          <MoneyInput
+            label={t("admin.appSetupPrice")}
+            value={shown.setup}
+            onChange={(setup) => setPrices({ ...shown, setup })}
+          />
+          <MoneyInput
+            label={t("admin.appMonthlyPrice")}
+            value={shown.monthly}
+            onChange={(monthly) => setPrices({ ...shown, monthly })}
+          />
+        </div>
+        {message && <Notice tone={message.tone}>{message.text}</Notice>}
+        <Button type="submit" variant="secondary">
+          {t("common.save")}
+        </Button>
+      </form>
+    </Card>
   );
 }
 

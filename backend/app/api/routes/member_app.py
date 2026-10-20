@@ -28,7 +28,7 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.api import idempotency
-from app.api.deps import current_member
+from app.api.deps import current_member, current_member_session
 from app.api.presenters import groups_read, payments_read, staff_names
 from app.api.routes.freeze_requests import reads as freeze_reads
 from app.api.routes.payment_methods import read as method_read
@@ -44,11 +44,18 @@ from app.models.activity import ACTOR_MEMBER
 from app.models.classes import ClassBooking, GymClass
 from app.models.gym import GYM_ACTIVE, Branch, Gym
 from app.models.member import Member
-from app.models.member_app import LET_IN, CheckIn, FreezeRequest, PaymentRequest
+from app.models.member_app import (
+    LET_IN,
+    CheckIn,
+    FreezeRequest,
+    MemberSession,
+    PaymentRequest,
+)
 from app.models.membership import Membership
 from app.models.messaging import Notice
 from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
+from app.schemas.branded_apps import PublicApp
 from app.schemas.member_app import (
     AppPushIn,
     AppSession,
@@ -64,6 +71,7 @@ from app.schemas.member_app import (
     JoinOptions,
     JoinPlan,
     MemberChoice,
+    MemberDevice,
     MemberMe,
     MemberPayments,
     MemberSignIn,
@@ -79,6 +87,7 @@ from app.schemas.member_app import (
     QrIdentity,
     RenewMate,
     RenewOptions,
+    SignedOutDevices,
     Visit,
 )
 from app.schemas.messaging import NoticeRead
@@ -86,6 +95,7 @@ from app.schemas.money import ReceiptLink
 from app.schemas.training import MemberTraining
 from app.services import (
     activity,
+    branded_apps,
     checkins,
     live,
     member_auth,
@@ -99,6 +109,7 @@ from app.services import members as members_service
 from app.services import memberships as ms
 from app.services import payment_requests as requests_service
 from app.services.push import service as push
+from app.services.whatsapp import service as whatsapp
 
 router = APIRouter(prefix="/m", tags=["member app"])
 
@@ -135,6 +146,11 @@ def public_gym(db: Session, gym: Gym) -> PublicGym:
         date_display=gym.config.date_display,
         branches=[PublicBranch(id=b.id, name=b.name) for b in branches],
         join_form=gym.config.join_form,
+        app=PublicApp(
+            name=app.app_name, play_url=app.play_url, app_store_url=app.app_store_url
+        )
+        if (app := branded_apps.live(db, gym.id))
+        else None,
     )
 
 
@@ -281,6 +297,8 @@ def build_me(db: Session, member: Member) -> MemberMe:
         else None,
         training=member_training(db, member),
         has_classes=_has_classes(db, member),
+        whatsapp=whatsapp.available() and gym.config.whatsapp,
+        whatsapp_agreed=member.whatsapp_agreed,
     )
 
 
@@ -708,6 +726,7 @@ def turn_push_on(
     payload: PushSubscriptionIn | AppPushIn,
     request: Request,
     member: Member = Depends(current_member),
+    session: MemberSession = Depends(current_member_session),
     db: Session = Depends(get_db),
 ) -> PushStatus:
     """This phone takes reminders, notices and answers now, instead of SMS.
@@ -731,11 +750,88 @@ def turn_push_on(
             auth=payload.keys.auth,
             user_agent=user_agent,
         )
+    # Signing this device out turns it off (§17.5).
+    row.session_id = session.id
     activity.member_action(
         db, member, "push.subscribed", entity="push_subscription", entity_id=row.id
     )
     db.commit()
     return PushStatus(public_key=public_key(), subscribed=True)
+
+
+# --- their signed-in devices (§17.5) -----------------------------------------------
+
+
+@router.get("/me/sessions", response_model=list[MemberDevice])
+def my_devices(
+    member: Member = Depends(current_member),
+    current: MemberSession = Depends(current_member_session),
+    db: Session = Depends(get_db),
+) -> list[MemberDevice]:
+    """Where they're signed in: this phone marked, the others to sign out."""
+    return [
+        MemberDevice(
+            id=row.id,
+            client="app" if row.client == "app" else "web",
+            device_label=row.device_label,
+            created_at=row.created_at,
+            last_used_at=row.last_used_at,
+            current=row.id == current.id,
+        )
+        for row in member_auth.live_sessions(db, member)
+    ]
+
+
+@router.post("/me/sessions/sign-out-others", response_model=SignedOutDevices)
+def sign_out_my_others(
+    request: Request,
+    member: Member = Depends(current_member),
+    current: MemberSession = Depends(current_member_session),
+    db: Session = Depends(get_db),
+) -> SignedOutDevices:
+    """Every device but this one: a lost phone, a phone sold."""
+    others = [s for s in member_auth.live_sessions(db, member) if s.id != current.id]
+    for row in others:
+        member_auth.end_session(db, row)
+    activity.member_action(
+        db,
+        member,
+        "member.signed_out_others",
+        changes={"devices": len(others)},
+        request=request,
+    )
+    # Their other screens find out at once, and sign in again.
+    live.member_changed(db, member.gym_id, member.id, member.home_branch_id)
+    db.commit()
+    return SignedOutDevices(signed_out=len(others))
+
+
+@router.post(
+    "/me/sessions/{session_id}/sign-out", status_code=status.HTTP_204_NO_CONTENT
+)
+def sign_out_my_device(
+    session_id: uuid.UUID,
+    request: Request,
+    member: Member = Depends(current_member),
+    current: MemberSession = Depends(current_member_session),
+    db: Session = Depends(get_db),
+) -> Response:
+    """One of their other devices. Anyone else's is not found."""
+    row = db.get(MemberSession, session_id)
+    if (
+        row is None
+        or row.member_id != member.id
+        or row.revoked_at is not None
+        or row.expires_at <= utcnow()
+    ):
+        raise not_found("No such device.")
+    if row.id == current.id:
+        raise AppError(409, "current_session", "Use Sign out for this device.")
+    member_auth.end_session(db, row)
+    activity.member_action(db, member, "member.device_signed_out", request=request)
+    live.member_changed(db, member.gym_id, member.id, member.home_branch_id)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/me/push/off", response_model=PushStatus)
@@ -850,7 +946,7 @@ def renew_options(
     )
     return RenewOptions(
         plans=plans_read(db, visible),
-        payment_methods=[method_read(m) for m in methods],
+        payment_methods=[method_read(m, staff=False) for m in methods],
         renewal_starts_on=ms.renewal_start(db, member),
         first_membership=ms.is_first_membership(db, member),
         renew_with=[

@@ -32,6 +32,7 @@ function savedForm(gym: Gym) {
     daily_summary_sms: gym.settings.daily_summary_sms,
     show_busyness: gym.settings.show_busyness,
     join_form: gym.settings.join_form,
+    whatsapp: gym.settings.whatsapp ?? false,
     language: gym.settings.language,
     digits: gym.settings.digits,
   };
@@ -63,6 +64,7 @@ export function GymSection({ gym }: { gym: Gym }) {
           daily_summary_sms: form.daily_summary_sms,
           show_busyness: form.show_busyness,
           join_form: form.join_form,
+          whatsapp: form.whatsapp,
           language: form.language,
           digits: form.digits,
         },
@@ -211,6 +213,17 @@ export function GymSection({ gym }: { gym: Gym }) {
           checked={form.join_form}
           onChange={(join_form) => setForm({ ...form, join_form })}
           hint={t("settings.joinFormHelp")}
+        />
+        <Checkbox
+          label={t("settings.whatsapp")}
+          checked={form.whatsapp}
+          disabled={!gym.whatsapp_available && !form.whatsapp}
+          onChange={(whatsapp) => setForm({ ...form, whatsapp })}
+          hint={
+            gym.whatsapp_available
+              ? t("settings.whatsappHelp")
+              : t("settings.whatsappUnavailable")
+          }
         />
         {dirty && <Notice tone="warning">{t("settings.unsaved")}</Notice>}
         {message && <Notice tone={message.tone}>{message.text}</Notice>}

@@ -16,6 +16,7 @@ import {
   Receipt,
   ScanLine,
   Settings,
+  ShoppingBag,
   Sparkles,
   UserCog,
   Users,
@@ -90,6 +91,13 @@ export const NAV: NavGroup[] = [
         label: "nav.classes",
         icon: CalendarDays,
         anyOf: ["classes.teach", "classes.book", "classes.manage"],
+      },
+      {
+        // Supplements and drinks at the desk (§20.1).
+        href: "/staff/shop",
+        label: "nav.shop",
+        icon: ShoppingBag,
+        anyOf: ["shop.sell", "shop.manage"],
       },
       {
         href: "/staff/payment-requests",

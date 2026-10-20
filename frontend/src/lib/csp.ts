@@ -6,7 +6,8 @@
  * Inline styles stay allowed: React renders style={...} as attributes on the
  * server, and those can't carry a nonce. Everything else comes from our own
  * origin, which includes the API, member photos (signed /api/v1/files links)
- * and the live-update stream. Nobody may put our pages in a frame.
+ * and the live-update stream. Forms post to us, or to eSewa for a member's
+ * payment. Nobody may put our pages in a frame.
  */
 export function contentSecurityPolicy(nonce: string, dev: boolean): string {
   const directives = [
@@ -23,7 +24,8 @@ export function contentSecurityPolicy(nonce: string, dev: boolean): string {
     "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
-    "form-action 'self'",
+    // eSewa's checkout is a signed form posted to eSewa (PLAN.md §20.2).
+    "form-action 'self' https://epay.esewa.com.np https://rc-epay.esewa.com.np",
     "frame-ancestors 'none'",
   ];
   return directives.join("; ");

@@ -66,6 +66,7 @@ There are no fixed roles. The owner creates each staff account — name, phone o
 | Progress | **See and record progress**: members' weight and measurements, at their branches (§19.5; in the *Trainer* starting point). Photos are never this: only the trainer a member shares one with sees it |
 | Money | Collect payments · **Approve app payments** · Edit payments · Void payments · Record refunds · See money totals and reports |
 | Expenses | Record expenses · Edit and void expenses (§18.1) |
+| Shop | **Sell products at the desk** (in *Front desk*) · **Products, prices and stock** (§20.1). Voiding a sale is *Void payments*; the month's sales, *See money totals and reports* |
 | Door | Check members in · Let someone in despite an expired membership |
 | Messages | Send notices · Send SMS to a member |
 | Gym setup | Plans and prices · Payment methods · Reminder rules · Check-in rules · Devices · Gym settings |
@@ -231,7 +232,7 @@ The owner can rename them, set prices, hide any, and add their own ("Morning onl
 | **Gym's QR at the desk** | Member scans the gym's own eSewa / Khalti / Fonepay / bank QR standee with their wallet app. Staff see the money arrive on their phone and record it with the transaction ID → membership activates |
 | **From the member app** | Member picks a plan → app shows the gym's payment QR and account details → member pays in their wallet app → enters the transaction ID and/or uploads the screenshot → "Sent — waiting for the gym to confirm" → staff approve (§5.4) → membership activates |
 
-Why not a payment gateway in v1: no merchant integration, no licence, no fees, and money never passes through us — gyms trust it because it's exactly what they do today. Automatic verification through Fonepay or eSewa merchant APIs is a later add-on (§14).
+Why not a payment gateway in v1: no merchant integration, no licence, no fees, and money never passes through us — gyms trust it because it's exactly what they do today. Automatic verification through a gym's own eSewa, Khalti or Fonepay merchant account is M22 (§20.2), switched on per account.
 
 **Settings → Payment methods:** the owner uploads each QR image (eSewa, Khalti, Fonepay, bank) with the account name and number. These show in the member app's Renew screen and can be printed as a desk standee.
 
@@ -336,7 +337,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `branches` | `gym_id`, `name`, `address`, `phone`, `is_active` |
 | `staff_users` | `gym_id` (null for platform admin), `name`, `email`, `phone`, `password_hash` — `email` and `phone` unique across all staff, so signing in never needs a gym name — `is_owner` (at most one per gym), `is_platform_admin`, `permissions` (list of permission keys, §2.1), `is_active`, `last_login_at`, `totp_nonce`, `totp_enabled_at`, `totp_last_step` (two-step sign-in, §11); `changelog_seen_at` (What's new, §16.5 10.4); `language` (null = the gym's, §16.6); `muted_notifications` (the kinds of notification turned off, §18.6) |
 | `staff_branch_access` | `staff_user_id`, `branch_id` — empty means all branches |
-| `members` | `gym_id`, `home_branch_id`, `member_code` (e.g. `FZ-0042`, unique per gym; the prefix is a gym setting, derived from the gym's initials at sign-up), `name`, `phone` (**not** unique — family members often share one number), `email`, `gender`, `date_of_birth`, `address`, `emergency_contact`, `photo_key` (a storage key, served by signed link), `joined_on`, `notes`, `app_access` (bool), `qr_secret`, `qr_version`, `card_token`, `is_archived`, `erased_at` (§11); `referred_by_id` (a member who sent them, §16.4 9.6); `language` (null = the gym's); `height_mm` (for BMI on their progress, §19.5) |
+| `members` | `gym_id`, `home_branch_id`, `member_code` (e.g. `FZ-0042`, unique per gym; the prefix is a gym setting, derived from the gym's initials at sign-up), `name`, `phone` (**not** unique — family members often share one number), `email`, `gender`, `date_of_birth`, `address`, `emergency_contact`, `photo_key` (a storage key, served by signed link), `joined_on`, `notes`, `app_access` (bool), `qr_secret`, `qr_version`, `card_token`, `is_archived`, `erased_at` (§11); `referred_by_id` (a member who sent them, §16.4 9.6); `language` (null = the gym's); `height_mm` (for BMI on their progress, §19.5); `whatsapp_agreed_at` (null: they haven't agreed) and `whatsapp_unreachable_at` (Meta said the number isn't on WhatsApp; tried again after 30 days or a new number) — §19.3 |
 | `leads` | `gym_id`, `branch_id`, `name`, `phone`, `email`, `source` (walk_in, phone, facebook, instagram, tiktok, referral, other), `plan_id`, `status` (new → contacted → trial → joined, or lost), `follow_up_on`, `lost_reason`, `assigned_to`, `trial_on`, `referred_by_id`, `member_id` (once joined), `notes`, `created_by`, `from_ip` (join form only, cleared after a day) — §16.4, 9.1 |
 
 **Money and memberships**
@@ -348,7 +349,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `memberships` | `gym_id`, `member_id`, `plan_id`, `plan_name` (copied at sale, like the price), `branch_id`, `start_date`, `end_date`, `price`, `discount`, `admission_fee`, `cancelled_at`, `cancel_reason`, `created_by`, `source` (desk, app_request, import); `visit_limit` and `access_hours` copied from the plan at sale. A visit pack with every visit used counts as ended, from the let-in check-ins on it; `group_id` (a family or couple plan, §19.1: the payer's membership carries the price and payments, the others 0); `classes` and `class_type_ids` copied from the plan (§19.4) |
 | `membership_groups` | `gym_id`, `plan_id`, `payer_member_id`, `seats` (copied from the plan), `created_by` — one sale for several people; each has their own membership (§19.1) |
 | `membership_freezes` | `gym_id`, `membership_id`, `from_date`, `to_date` (inclusive), `reason` — extends `end_date` by the frozen days; ending a freeze early gives the unused days back |
-| `payments` | `gym_id`, `member_id`, `membership_id` *or* `pt_package_id` (personal training, §18.3; never both), `kind` (payment, refund), `amount`, `method` (cash, esewa, khalti, fonepay, bank), `transaction_ref` (unique per gym when set), `paid_at`, `receipt_no` (sequential per gym), `received_by`, `note`, `voided_at`, `voided_by`, `void_reason` — a payment can't exceed what is owed on its membership or package, nor a refund what was paid |
+| `payments` | `gym_id`, `member_id` (null only for a walk-in's purchase at the desk, §20.1), `membership_id` *or* `pt_package_id` (personal training, §18.3) *or* `sale_id` (the shop, §20.1; never two), `kind` (payment, refund), `amount`, `method` (cash, esewa, khalti, fonepay, bank), `transaction_ref` (unique per gym when set), `paid_at`, `receipt_no` (sequential per gym), `received_by`, `note`, `voided_at`, `voided_by`, `void_reason` — a payment can't exceed what is owed on its membership or package, nor a refund what was paid |
 | `pt_plans` | `gym_id`, `name`, `kind` (monthly, sessions), `sessions` (a pack's size; null for monthly), `duration_months` *or* `duration_days`, `price`, `is_active`, `sort_order` — the gym's personal training plans (§18.3) |
 | `pt_packages` | `gym_id`, `member_id`, `plan_id`, `plan_name`, `kind`, `sessions` and `price` copied at sale, `discount`, `trainer_id` (a staff account), `branch_id` (the member's home branch unless chosen), `start_date`, `end_date`, `cancelled_at`, `cancel_reason`, `created_by` — personal training sold; status computed, never stored (§18.3) |
 | `class_types` | `gym_id`, `name`, `minutes`, `places`, `color`, `is_active`, `sort_order` — Zumba, yoga (§19.4) |
@@ -358,9 +359,14 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `progress_entries` | `gym_id`, `member_id`, `measured_on`, `weight_g`, `body_fat` (tenths of a percent), `chest_mm`, `waist_mm`, `hips_mm`, `arm_mm`, `thigh_mm`, `note`, `recorded_by` (staff; null when the member recorded it) — §19.5 |
 | `progress_photos` | `gym_id`, `member_id`, `taken_on`, `pose` (front, side, back), `photo_key`, `shared` (with the trainers of their personal training) — private to the member; deleted with them when erased |
 | `pt_sessions` | `gym_id`, `package_id`, `trained_on` (a Nepal day within the package's dates), `trainer_id` (the package's trainer that day), `recorded_by`, `note` (cleared when the member is erased), `voided_at`, `voided_by`, `void_reason` — never more than a pack holds; never deleted, only voided (§18.3) |
+| `products` | `gym_id`, `name`, `category` (supplement, drink, snack, merchandise, other), `price`, `stock` (null: not counted), `low_stock`, `code` (a barcode, unique per gym), `is_active`, `sort_order` — what the desk sells (§20.1) |
+| `product_sales` | `gym_id`, `branch_id`, `member_id` (null: a walk-in), `total`, `discount`, `sold_at`, `note`, `created_by`, `voided_at`, `voided_by`, `void_reason` — one sale at the till, paid in full by one ordinary payment (`payments.sale_id`); never deleted, only voided |
+| `product_sale_lines` | `gym_id`, `sale_id`, `product_id`, `name`, `category` and `unit_price` copied at the sale, `quantity` |
+| `stock_moves` | `gym_id`, `product_id`, `change`, `reason` (sale, void, restock, count), `sale_id`, `note`, `created_by` — the stock ledger; `products.stock` is kept equal to its sum under the product's row lock |
 | `expenses` | `gym_id`, `branch_id` (null = the whole gym), `category` (rent, salaries, electricity, water, internet, equipment, repairs, cleaning, marketing, fees, other), `amount`, `spent_on` (a Nepal day, not after today), `method` (as payments), `paid_to`, `note`, `created_by`, `voided_at`, `voided_by`, `void_reason` — money the gym spent; never deleted, only voided (§18.1) |
-| `gym_payment_methods` | `gym_id`, `kind` (esewa, khalti, fonepay, bank, other), `label`, `account_name`, `account_number`, `qr_image_key`, `is_active`, `sort_order` — the gym's own accounts, shown to members |
-| `payment_requests` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `membership_id`, `payment_id`, `with_member_ids` (a family plan's others, worked out by the server, §19.1) — a member's "I've paid" from the app (§5.4) |
+| `gym_payment_methods` | `gym_id`, `kind` (esewa, khalti, fonepay, bank, other), `label`, `account_name`, `account_number`, `qr_image_key`, `is_active`, `sort_order` — the gym's own accounts, shown to members. With a merchant account (§20.2): `gateway_merchant` (eSewa's or Fonepay's merchant code), `gateway_secret` (the keys, encrypted with `GATEWAY_KEY`), `gateway_test` (the wallet's test system), `gateway_ok_at`, `gateway_error` (the wallet's last answer, for the form) |
+| `payment_requests` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `membership_id`, `payment_id`, `with_member_ids` (a family plan's others, worked out by the server, §19.1), `confirmed_by` (esewa, khalti, fonepay: the wallet confirmed the money, §20.2) — a member's "I've paid" from the app (§5.4) |
+| `online_payments` | `gym_id`, `member_id`, `plan_id`, `payment_method_id`, `provider` (esewa, khalti, fonepay), `test` (the wallet's test system: nothing is sold), `amount`, `with_member_ids`, `status` (started, paid, failed, expired), `provider_ref` (Khalti's pidx), `transaction_ref` (the wallet's, once paid), `details` (what the wallet answered: the checkout's address, the QR; whether it began in the phone app), `checks`, `checked_at`, `error`, `paid_at`, `expires_at`, `replaced_at` (the member started another before this was paid), `payment_request_id` — a payment through the gym's merchant account, from start to the request it became (§20.2) |
 | `freeze_requests` | `gym_id`, `member_id`, `membership_id` (the one covering the first day), `from_date`, `to_date`, `reason`, `status` (pending, approved, rejected, withdrawn), `reviewed_by`, `reviewed_at`, `reject_reason`, `freeze_id` (the freeze approving it made) — one pending per member; the app allows up to 90 days, longer at the desk |
 | `idempotency_keys` | `gym_id`, `key` (unique per gym), `route`, `request_hash`, `status_code`, `response` — the answer to each money request, saved in the same transaction as the payment so a repeat replays it (§11); kept a day |
 | `gym_counters` | `gym_id`, `name` (`member_code`, `receipt_no`), `value` — row-locked increment so two desks never issue the same number |
@@ -382,11 +388,11 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | `devices` | `gym_id`, `branch_id`, `name`, `kind` (kiosk, zkteco, hikvision; §18.2), `serial` (a reader's, unique), `token_hash`, `last_seen_at`, `revoked_at`; for a reader `synced_at` and `command_seq` |
 | `reader_users` | `gym_id`, `device_id`, `member_id`, `pin` (their reader number: the digits of their member code), `name`, `on_reader`, `until` (the last day the reader should let them in), `command_id`, `sent_at`, `done_at`, `error` — what GymBhai last told a reader about a member (§18.2); fingerprints and faces stay on the reader |
 | `notices` | `gym_id`, `branch_id` (null = all), `title`, `body`, `published_at`, `send_sms` (also SMS the members push can't reach; push to the rest goes with every notice, free), `sms_count`, `push_count` |
-| `push_subscriptions` | `gym_id`, `member_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, `last_ok_at`, `revoked_at` — one per browser per member (a shared phone has one each); revoked on turning off, signing out, or when the push service answers 404/410; deleted when the member is erased |
+| `push_subscriptions` | `gym_id`, `member_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, `last_ok_at`, `revoked_at` — one per browser per member (a shared phone has one each); revoked on turning off, signing out, or when the push service answers 404/410; deleted when the member is erased. `session_id`: the sign-in that turned it on, so signing that device out (by the member or the desk) turns it off (§17.5) |
 | `reminder_rules` | `gym_id`, `trigger` (expiry · lapsed · dues · not_visiting · birthday; pt_ending · pt_dues, §18.3; progress, §19.5), `days` (for expiry: from the chain's end, −7, −3, 0, +3…; lapsed: days since it ended; dues: days since the sale; not visiting: days without a visit; birthday: 0), `template`, `enabled`. Unique per gym, trigger and days |
 | `reminder_log` | `gym_id`, `rule_id`, `dedupe_key`, `member_id`, `membership_id` (null for not visiting and birthday), `sms_message_id` — unique per rule and `dedupe_key` (`membership:<id>`; `visit:<member>:<last visit date>`, once per spell away; `birthday:<member>:<year>`), so nothing is sent twice |
 | `scheduled_runs` | `name`, `run_on` — unique pair; how several workers agree a daily task runs once a day |
-| `sms_messages` | `gym_id`, `member_id`, `to`, `body`, `kind` (otp, welcome, reminder, notice, receipt), `status`, `provider_ref`, `segments`, `error`, `sent_at` |
+| `sms_messages` | `gym_id`, `member_id`, `to`, `body`, `kind` (otp, welcome, reminder, notice, receipt, reply), `status`, `provider_ref`, `segments` (SMS parts; for WhatsApp, the credits it cost), `error`, `sent_at`; `channel` (sms, whatsapp), `template`, `params` (what Meta is sent), `fallback` (the SMS to send if WhatsApp can't deliver it), `delivered_at`, `read_at` — §19.3 |
 | `jobs` | `kind`, `payload`, `run_at`, `attempts`, `locked_at`, `done_at`, `error` |
 
 **Sign-in and audit**
@@ -408,6 +414,10 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 | Table | Key columns |
 |---|---|
 | `platform_plans` | `name`, `max_active_members`, `max_branches`, `monthly_price`, `included_sms`, `is_active` — **all prices live here and are edited from `/admin`; none are written into the code**, so pricing can be set and changed any time |
+| `platform_settings` | One row: `whatsapp_credits` (message credits a WhatsApp message costs a gym, §19.3); `branded_app_setup_price`, `branded_app_monthly_price` (a gym's own app, §20.3; not offered until both are set); edited from `/admin` |
+| `branded_apps` | `gym_id` (one each), `app_name`, `color`, `icon_key`, `status` (asked, building, in_review, live, stopped), `android_package`, `ios_bundle_id` (fixed once built), `expo_project_id`, `play_url`, `app_store_url`, `notes`, `asked_by`, `asked_at`, `building_at`, `live_at`, `stopped_at`, `setup_paid_at` — a gym's own app in the stores (§20.3) |
+| `gym_tax` | `gym_id` (one each), `vat_registered`, `pan`, `starts_on`, `cbms_enabled`, `cbms_username`, `cbms_secret` (encrypted), `cbms_error` — a gym's VAT registration (§20.4) |
+| `tax_invoices` | `gym_id`, `kind` (invoice, credit_note), `fiscal_year` ("2083/84"), `number` (per kind and fiscal year), `payment_id`, `ref_invoice_id` (a credit note's invoice), `seller`, `buyer_name`, `buyer_address`, `buyer_pan`, `lines` (before VAT), `taxable`, `vat`, `total`, `issued_at`, `issued_by`, `reason`, `prints`, `last_printed_at`, `cbms_status` (off, waiting, sent, refused), `cbms_sent_at`, `cbms_error` — never changed (§20.4) |
 | `gym_subscriptions` | `gym_id`, `platform_plan_id`, `starts_on`, `ends_on`, `status` |
 | `subscription_payments` | `gym_id`, `kind` (subscription, sms), `platform_plan_id`, `months`, `sms_credits`, `amount`, `transaction_ref`, `screenshot_key`, `status` (pending, approved, rejected), `submitted_by`, `reviewed_by`, `reviewed_at`, `reject_reason` — an owner's "we've paid you", for a plan or for SMS credits (§5.7) |
 | `changelog_entries` | `title`, `body`, `published_at` (null = draft), `created_by` — ours, not a gym's (§16.5, 10.4) |
@@ -439,6 +449,7 @@ Staff screens are light and dense — read all day in a bright room, with white 
 | **Payment requests** | Members' app payments waiting for approval: amount, transaction ID, screenshot. **Approve** / **Reject** (§5.4). Red count in the menu |
 | **Freeze requests** | Members asking from the app to pause their membership (dates, reason), for staff with **Freeze**, with a count in the menu. **Approve** makes an ordinary freeze (the end date moves by those days); **Reject** with a reason the member sees. Pending / approved / rejected |
 | **Payments** | All payments, filter by date, method, staff; daily cash total for closing the till; edit or void (§5.6) |
+| **Shop** | §20.1, Desk menu: **Sell** (products by category with price and stock, tap or scan a barcode into the basket, for a member or a walk-in, a discount, how it was paid → receipt), **Products** (add and change them, restock or count, the stock's history, low-stock warnings) and **Sales** (a month: sold, by category, sold most, every sale with Void) |
 | **Expenses** | A month of the gym's own calendar: spent, and spent by category; every expense (date, category, paid to, method, branch, who recorded it); **Add expense**, and on each one Edit, *Same again* (the form filled in, dated today) and Void (§18.1) |
 | **Membership edit** | Every field in §5.6, plus **Extend everyone**, and a **History** tab showing each change, who made it, before and after |
 | **Attendance** | Last 7, 30 or 90 days; check-ins by day as bars; a weekday × hour heatmap of the busiest hours; denied scans |
@@ -456,7 +467,7 @@ Staff screens are light and dense — read all day in a bright room, with white 
 |---|---|
 | **Sign in** | Phone number (or email) → 6-digit code. If several members share that phone — a parent and their children — pick who you are. Or **Scan the QR at the desk**, with no code (§18.4); opening the desk's QR link with the phone's camera does the same |
 | **Home** | Days left (large ring), expiry date in the gym's calendar setting, **their QR code**, their **personal training** (plan, trainer, sessions or days left, anything owed on it; §18.3), visit streak, latest notice. **Get reminders on this phone** (push), until turned on or put away with *Not now*; on an iPhone not opened from the Home Screen, how to add it first (iOS 16.4+). **Right now: Quiet / Normal / Busy** at their branch — the last two hours' visits against the same two hours on the same weekday over four weeks (hidden until there's enough history, or if the gym turns it off in Settings → Gym). **Add the app to your Home Screen**: Android's own install prompt, or the steps on an iPhone |
-| **Renew** | Plans with prices → the gym's payment QR and account details → enter transaction ID or upload screenshot → *waiting for confirmation* → active, or the reason it was rejected. Steps shown at the top: Plan → Pay → Send proof. Plan cards show the price a month and *Save Rs X vs monthly* against the cheapest one-month plan |
+| **Renew** | The current membership and when a new one would start, then three numbered steps, with nothing chosen for the member: **1** choose a plan (cards with the price a month in whole rupees, *Save Rs X* against the cheapest one-month plan, and *Best value* on the plan that saves the most for its price) → **2** how to pay (each of the gym's accounts with its wallet's colour; *Confirmed instantly* on one the wallet confirms, §20.2) → **3** pay: the wallet's own page, or the gym's QR and account details then the transaction ID or a screenshot. A bar above the tabs keeps the total and the one next action (*Choose a plan* → *Choose how to pay* → *Pay with eSewa* / *I've paid*). Then a full-screen *waiting for confirmation* with what was sent and a way to cancel it, *You're renewed!* when the gym approves while the screen is open, or the reason it was rejected; the choices are cleared after each payment. The same on the web app and the phone app |
 | **Payments** | Every payment and receipt (**Download receipt** as PDF), dues if any, pending requests |
 | **Visits** | Calendar of visits, count this month |
 | **Notices** | From their gym |
@@ -511,6 +522,10 @@ Setup
   CRUD       /branches  /staff  /plans  /reminder-rules  /devices
   POST       /staff/{id}/password | /staff/{id}/two-step/reset | /staff/{id}/sign-out
   POST       /gym/logo
+  GET  PUT  /gym/app   POST /gym/app/icon   POST /gym/app/withdraw   the gym's own app (§20.3)
+  GET  PUT  /gym/tax   PUT DELETE /gym/tax/cbms   VAT invoices and CBMS (§20.4)
+  GET   /tax-invoices?month=        the sales book and the returns
+  POST  /payments/{id}/receipt/printed   a tax invoice's print, counted
 
 Members
   GET|POST   /members                 search, filter, paginate
@@ -520,7 +535,7 @@ Members
   POST       /members/{id}/erase      at their request, for good (owner only)
   POST       /members/import          upload → preview
   POST       /members/import/{id}/commit
-  GET        /export/{members|memberships|payments|expenses|check-ins}.xlsx
+  GET        /export/{members|memberships|payments|expenses|sales|sales-book|sales-returns|check-ins}.xlsx
 
 Our subscription
   GET   /subscription                plan, days left, SMS balance
@@ -542,6 +557,7 @@ Memberships & money
   PATCH /payments/{id}
   POST  /payments/{id}/void           owner only by default
   CRUD  /payment-methods             the gym's own QR images and accounts
+  PUT   /payment-methods/{id}/gateway   DELETE …   the gym's merchant keys (§20.2)
   GET   /payment-requests?status=pending
   POST  /payment-requests/{id}/approve
   POST  /payment-requests/{id}/reject
@@ -555,6 +571,13 @@ Memberships & money
   POST  /expenses
   PATCH /expenses/{id}
   POST  /expenses/{id}/void
+
+The shop (§20.1)
+  GET   /products?include_hidden=     POST /products   PATCH /products/{id}
+  POST  /products/{id}/stock          restocked or counted   GET /products/{id}/stock (history)
+  GET   /sales?month=                 a month, with totals
+  POST  /sales                        a sale, paid in full (Idempotency-Key)
+  POST  /sales/{id}/void              reason; voiding its payment does the same
 
 Personal training (§18.3)
   GET   /pt/plans?include_hidden=     POST /pt/plans   PATCH /pt/plans/{id}
@@ -619,14 +642,26 @@ Messages
   POST  /members/{id}/sms             one-off reminder
   GET   /members/{id}/message?purpose=   the gym's wording filled in, for WhatsApp from
                                          the desk's own phone; sends nothing (§18.5)
-  GET   /sms                          log + credit balance
+  GET   /sms                          log (SMS and WhatsApp) + credit balance
+  POST  /payments/{id}/receipt-whatsapp   the receipt to the member on WhatsApp (§19.3)
+  GET   /whatsapp/webhook  POST /whatsapp/webhook   Meta: the address check; delivery
+                                         reports and members' replies, signed (§19.3)
 
 Member app
   GET   /m/me   /m/me/payments   /m/me/visits   /m/notices
   GET   /m/me/push?endpoint=   POST /m/me/push   POST /m/me/push/off      (§16.3, 8.3)
+  GET   /m/me/sessions   POST /m/me/sessions/{id}/sign-out   POST /m/me/sessions/sign-out-others
+                                         their own signed-in devices (§17.5)
   PATCH /m/me   POST /m/me/photo   POST /m/me/email   POST /m/me/email/confirm   (8.5)
   GET   /m/plans   /m/payment-methods
   POST  /m/payment-requests          plan, method, transaction ID, screenshot
+  POST  /m/online-payments           plan, method: pay through the gym's merchant
+                                     account (§20.2); nothing is paid yet, so
+                                     no Idempotency-Key
+  GET   /m/online-payments/{id}      POST /m/online-payments/{id}/check
+  GET   /pay/{token}   POST /pay/{token}/check   the checkout page's own, by a
+                                     signed link (the phone's browser has no session)
+  POST  /pay/{token}/pretend         the console wallet's Pay or Cancel (development)
   GET   /m/freeze-requests/latest   POST /m/freeze-requests   POST /m/freeze-requests/{id}/withdraw
 
 Member access (staff)
@@ -649,6 +684,9 @@ Platform admin
   CRUD  /admin/changelog   GET /changelog   POST /changelog/seen   (10.4)
   GET   /admin/gym-referrals   POST /admin/gym-referrals/{id}/reward | reject   (10.5)
   GET   /subscription/referrals            the owner's link and who signed up
+  GET   /admin/settings   PATCH /admin/settings   credits per WhatsApp message (§19.3);
+                                     a gym's own app's prices (§20.3)
+  GET   /admin/apps   PATCH /admin/apps/{id}   GET /admin/apps/{id}/build   gyms' own apps (§20.3)
   GET   /admin/subscription-payments?status=pending
   POST  /admin/gyms/{id}/subscription
   POST  /admin/gyms/{id}/sms-credits
@@ -663,7 +701,8 @@ Platform admin
 | Job | When | What |
 |---|---|---|
 | Automations | Daily 09:00 Nepal time | For each enabled rule: **expiry / lapsed** — members whose **chain of memberships** ends that many days away (or past), so anyone who has already renewed is never reminded; **dues** — memberships sold that many days ago still owing; **not visiting** — active members with no visit in that many days; **birthday** — current members born on the day; **pt_ending** — a member's personal training ends that many days away (or past), from their last package, a pack used up early ending on the day of its last session; **pt_dues** — personal training sold that many days ago still owing (§18.3). One SMS each, never twice for the same `dedupe_key`. A missed day is caught up for up to 2 days; a member already away longer than that when a rule is switched on isn't messaged |
-| Send push | Continuously | Messages to members (automations, notices, payment answers, renewals) go by push to members with a live subscription, SMS to the rest (or both, with *Also send SMS*). Each of the member's phones is tried; 404/410 revokes it; if none takes it the SMS is sent instead; a failing push service is retried 3 times, then SMS |
+| Send push | Continuously | Messages to members (automations, notices, payment answers, renewals) go by push to members with a live subscription, then WhatsApp where the message has a template, the gym turned it on and the member agreed (§19.3), SMS to the rest (or push and a message, with *Also send SMS*). Each of the member's phones is tried; 404/410 revokes it; if none takes it the WhatsApp message or SMS is sent instead; a failing push service is retried 3 times, then the message |
+| Send WhatsApp | Continuously | As SMS: check the gym's credit, send through Meta, charge; Meta refusing (or not on WhatsApp) sends the SMS at once, Meta down is retried 3 times and then the SMS goes (§19.3) |
 | Send SMS | Continuously | Take queued SMS, check the gym's credit, send, record result, retry failures 3 times with backoff |
 | OTP | Immediately on request | Sent directly, not queued behind reminders |
 | Daily summary *(optional)* | 20:00 | SMS to owner: "Today: 42 visits, Rs 18,500 collected, 6 expiring this week" — a feature owners notice |
@@ -740,6 +779,10 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | **M18** | WhatsApp messages | Meta's Cloud API between push and SMS for utility messages, approved templates, members agreeing, message credits (§19.3) | ~1 week + Meta's approvals | Reminders members read, often for less than a Nepali SMS |
 | **M19** | Classes | Timetable, booking with places and a waitlist, instructors' rosters, classes in plans (§19.4) | ~2.5 weeks | Classes booked from the app, places counted |
 | **M20** | Progress tracking | Weight, measurements and private photos, charts in the app and on the profile (§19.5) | ~1.5 weeks | A reason to open the app between renewals |
+| **M21** | The shop at the desk | Supplements, drinks and merchandise: products with stock, a till for members and walk-ins, sales on Payments, Today, Reports and the exports (§20.1) | ~1 week | The desk sells protein and water, and the stock adds up |
+| **M22** | App payments confirmed by the wallet | eSewa, Khalti and Fonepay merchant accounts confirm a member's app payment, so the membership starts with nobody at the desk (§20.2) | ~1.5 weeks + a merchant account to try | Members renew at midnight and walk in the next morning |
+| **M23** | A gym's own app in the stores | The GymBhai app built for one gym with its name and icon, published under the gym's own developer accounts; asked for in Settings, moved along from /admin (§20.3) | ~1 week + the first gym's store accounts | Gyms that want their own app have one |
+| **M24** | Tax invoices | A VAT-registered gym's tax invoices and credit notes, the sales book, each bill to IRD's CBMS; off until IRD certifies GymBhai (§20.4) | ~1.5 weeks + IRD's certification | VAT-registered gyms bill from GymBhai |
 
 **Progress**
 
@@ -766,7 +809,11 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 | M17 | Done 2026-10-20 (§19.2): the kiosk keeps a roster of 14 days of the door's own decisions and decides by itself for the gym's offline days, sending the scans when back; a new member QR, gb2, signed with Ed25519, which a kiosk checks with public keys alone; a shared table of door cases both sides are tested on; the kiosk's own service worker and manifest; quiet kiosks on Today; migration 0027. **Waiting on** a real tablet at the door with its Wi-Fi switched off, and the phone app's next build for gb2 (older builds keep showing gb1, which works online) |
 | M19 | Done 2026-10-20 (§19.4): class types and a weekly timetable that makes each class 4 weeks ahead; booking from the app and at the desk, places counted under a lock, a waitlist that moves up by itself with a push; plans that include all, some or no classes; booking windows, late cancels and an optional pause after no-shows; the instructor's roster with who came, from their tick or the door; a reminder an hour before; classes on the member's profile and on Reports; the member's Classes on the web and the phone app; three permissions in a *Classes* area; migration 0028 |
 | M20 | Done 2026-10-20 (§19.5): weight, body fat and five measurements over time with BMI from a height; recorded by the member or by staff with *See and record progress*, each changing only their own; the activity log never holds the figures; photos private to the member unless shared with their trainer, not even the owner seeing them otherwise, shrunk and stripped of location; a weight chart on the profile, the web app and the phone app; erasing a member takes it all; a check-up reminder by push only, off to start; migrations 0029 and 0030 |
-| M18 | Planned 2026-10-20 (§19.3): start Meta's WhatsApp verification now |
+| M21 | Built 2026-10-20 (§20.1): products and the stock ledger, the till, voids that put stock back, walk-ins (a payment with no member), the Shop card on Reports, `sales.xlsx`; migration 0033 |
+| M18 | Built 2026-10-20 (§19.3), **waiting on Meta**: business verification, the number and its display name, the templates' approval (`docs/WHATSAPP.md`). Sent through a `console` provider until then; on a server WhatsApp stays unavailable to gyms until `WHATSAPP_PROVIDER=meta`. Migration 0031 |
+| M22 | Built 2026-10-20 (§20.2), **waiting on a merchant account**: eSewa and Khalti follow their public documents, Fonepay published write-ups; none has been called yet, even on its test system (`docs/PAYMENTS.md`). On a server it stays off until `GATEWAY_PROVIDER=live` and `GATEWAY_KEY`. Migration 0034 |
+| M23 | Built 2026-10-20 (§20.3), **waiting on the first gym**: its Apple and Google developer accounts, an Expo project and a Firebase Android app for it (`docs/BRANDED_APPS.md`). Migration 0035 |
+| M24 | Built 2026-10-20 (§20.4), **off until IRD certifies GymBhai** (`TAX_INVOICES_CERTIFIED`); before that, an accountant's read and IRD's answers on hosting and the CBMS API (`docs/TAX_INVOICES.md`). Migration 0036 |
 
 **Roughly 7–8 weeks to a pilot.** Start showing M1 to owners in week 3 — don't wait for the full build to find out what they'll pay.
 
@@ -793,17 +840,17 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 The next milestones, M6–M11, are planned in §16 (self-service freeze requests and Nepali moved there); M13–M15, from what the pilot gyms asked for, in §18; M16–M20, from this list, in §19. After them, in rough order, driven by what pilot gyms ask for and will pay for:
 
 1. Fingerprint and face readers at the door, including turnstiles and door locks (§4.3) — many Nepali gyms already own a ZKTeco reader, so for some this decides whether they buy. **Now M14 (§18.2)**
-2. Automatic payment verification — Fonepay dynamic QR / eSewa merchant APIs confirm an app payment so it activates without staff approval; needs each gym's merchant account
+2. Automatic payment verification — Fonepay dynamic QR / eSewa merchant APIs confirm an app payment so it activates without staff approval; needs each gym's merchant account. **Now M22 (§20.2)**
 3. Personal training packages and sessions, with trainer permissions and screens — assigned members, workout and diet plans. **Now M15 (§18.3)**
-4. Supplement / merchandise sales at the desk — not asked for by the pilot gyms (§18)
+4. Supplement / merchandise sales at the desk — not asked for by the pilot gyms (§18). **Now M21 (§20.1)**
 5. Expenses (rent, salaries, electricity) so the owner sees profit, not only income. **Now M13 (§18.1)**
 6. Family and couple plans — one sale covering several linked members; needs its own design, because dues and status are per membership today. **Now M16 (§19.1)**
 7. Class schedule and booking. **Now M19 (§19.4)**
 8. Offline kiosk — queue scans and sync when the internet returns. **Now M17 (§19.2)**
 9. Progress tracking — weight, measurements, private photos, charts. **Now M20 (§19.5)**
 10. WhatsApp messages alongside SMS. **Now M18 (§19.3)**
-11. Branded app store app per gym — sold as an add-on; the same code as M12's GymBhai app (§17) with each gym's name and icon
-12. Tax invoices from billing software approved by the Inland Revenue Department, for VAT-registered gyms — needs approval, so only if larger gyms ask
+11. Branded app store app per gym — sold as an add-on; the same code as M12's GymBhai app (§17) with each gym's name and icon. **Now M23 (§20.3)**
+12. Tax invoices from billing software approved by the Inland Revenue Department, for VAT-registered gyms — needs approval, so only if larger gyms ask. **Built as M24 (§20.4), off until IRD certifies GymBhai**
 
 ---
 
@@ -937,7 +984,7 @@ All of these can be changed later.
 | 8.2 | Automations | Reminder rules get a `trigger`: before or after expiry (today's rules), dues unpaid for N days, no visit for N days, birthday, or lapsed for N days (win-back). Same template editor with the SMS count. `reminder_log` gets a `dedupe_key` (rule + membership; or rule + member + date, for birthdays and visits), so nothing is sent twice. Only expiry rules are on by default. Lives under **Messages → Automations** |
 | 8.3 | Push notifications | Web Push (VAPID keys, `pywebpush`) to the member app. After their first sign-in, the member is asked on Home: "Get reminders on this phone". On an iPhone the app must be installed first (iOS 16.4+), and the prompt explains that. Table `push_subscriptions` (`gym_id`, `member_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, `last_ok_at`, `revoked_at`); a subscription the push service rejects is revoked. Every message to a member (reminder, notice, approved, rejected) is tried **by push first**. SMS goes only to members without a working subscription, or to everyone if the gym turns on "Also send SMS". Push costs nothing and uses no credits. A notice's cost preview says "180 by push, 34 by SMS (34 credits)" |
 | 8.4 | Receipts to share | A PDF built on the server (fpdf2, A5, Noto Sans with Devanagari shaped by HarfBuzz, so Nepali names print right), opened from a signed link that works for 30 days without signing in: `POST /payments/{id}/receipt-link` (staff), `POST /m/me/payments/{id}/receipt-link` (the member's own), `GET /receipts/{id}.pdf?exp=&sig=`. The receipt page has **PDF** and **Share** uses the phone's share sheet (WhatsApp, Viber, Messenger); otherwise it copies a link. In the member app, Payments → **Download receipt** |
-| 8.5 | Member app | **Renew:** plan cards with the price per month and "save Rs X compared with monthly", plus steps: Plan → Pay → Send proof. **Install:** an "Add to Home Screen" prompt on Android and an instructions sheet on iPhone. **How busy now:** Quiet / Normal / Busy on Home, from check-ins in the last 2 hours; the gym can hide it. **Profile:** the member can change their email, emergency contact and photo, and each change is logged |
+| 8.5 | Member app | **Renew:** plan cards with the price per month and "save Rs X compared with monthly", in numbered steps (plan, how to pay, pay) with the total and next action in a bar (§7 Renew). **Install:** an "Add to Home Screen" prompt on Android and an instructions sheet on iPhone. **How busy now:** Quiet / Normal / Busy on Home, from check-ins in the last 2 hours; the gym can hide it. **Profile:** the member can change their email, emergency contact and photo, and each change is logged |
 | 8.6 | Freeze requests | The member asks from the app (dates and reason). Staff with **Freeze** approve or reject it, the same way as payment requests, with a count in the menu. Table `freeze_requests`. Moved here from §14 |
 
 ### 16.4 M9 — Win members
@@ -1050,12 +1097,12 @@ Everything the member web app does (§7), the same words:
 | **Choose your gym** | Scan the gym's poster QR with the camera, type its address, or open from the welcome SMS link (deep link `gymbhai://<gym>`, and `https://<domain>/<gym>` once published). Remembers the gym; a member of two gyms can switch |
 | **Sign in** | Mobile number or email, then the code; the code is read from the SMS on Android where the phone allows. *Who are you?* for a shared phone. Or *Scan the QR at the desk* (§18.4); the poster scan on *Choose your gym* signs in too when it finds a desk QR |
 | **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*, latest notice; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
-| **Renew** | Plan → Pay → Send proof; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
+| **Renew** | As on the web app (§7): numbered steps and the total in a bar; back from a wallet's page, the screen asks the wallet until it answers; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
 | **Payments** | Payments and requests; receipts open as PDF and share through the phone's share sheet |
 | **Visits** | The month's calendar, live |
 | **Freeze** | From a day and for how many days, by stepping, not the phone's date picker: that only knows AD, and many gyms show BS |
 | **Notices** | Live; a notification opens the notice |
-| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, notices, switch gym, sign out. *Signed-in devices* waits for a member API that lists and ends their own sessions |
+| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, WhatsApp (§19.3), notices, switch gym, sign out. **Signed-in devices** (added 2026-10-20, on the web Profile too): each phone or browser they're signed in on, this one marked, *Sign out* for one or *Sign out all other devices*; a device signed out stops getting their notifications too (the app names itself `GymBhai/<version> (Android 14)` so it reads as *GymBhai app on Android*) |
 | **Join** | The gym's join form (§16.4, 9.5), when it has it on |
 | Offline | A banner (no answer from the server counts, whatever the phone's Wi-Fi says); the QR keeps working, drawn at the server's time saved from the last answer; actions wait for the connection and say so, rather than failing |
 
@@ -1094,6 +1141,7 @@ Accessibility: every control labelled for screen readers, touch targets at least
 | `push_subscriptions.kind`, `push_subscriptions.expo_token` (and `endpoint`, `p256dh`, `auth` nullable) | 12.2 |
 | `idempotency_keys` keyed by member as well as staff | 12.2 |
 | `member_sessions.client` (web, app) | 12.2 |
+| `push_subscriptions.session_id` (signing a device out turns its notifications off) | 17.5, 2026-10-20, migration 0032 |
 
 ---
 
@@ -1324,6 +1372,7 @@ GymBhai sends reminders and answers by WhatsApp, between push (free) and SMS. Mo
 | Credits | Gyms keep one balance, **message credits**, which is today's SMS credits under a new name. A WhatsApp message costs the number of credits set in `/admin` (`platform_settings`; pricing lives in the database, never in code). Charged when sent, given back if Meta reports it failed |
 | The log | `sms_messages` gains `channel` (sms, whatsapp), `template`, `delivered_at` and `read_at`. The SMS log, the member's Messages tab and the credit ledger show both channels, with *Delivered* and *Read* from Meta's webhook (`GET` and `POST /whatsapp/webhook`, checked against the app secret's signature) |
 | Before it can send | Outside the code: Meta Business verification for GymBhai (company documents), a phone number not already on WhatsApp, the display name approved, each template approved (about a day each), and a payment method on Meta. **Start these with M16** |
+| Built | 2026-10-20. `app/services/whatsapp/` (the console and Meta Cloud API providers, queueing, charging, falling back to SMS, delivery reports, replies and STOP), `app/core/whatsapp_templates.py` (13 templates, English and Nepali, checked against Meta's rules by tests), `notify` going push → WhatsApp → SMS (also when a push finds no phone), the webhook (`app/api/routes/whatsapp.py`), *Send on WhatsApp* on a receipt, the gym's switch in Settings → Gym, the tick on Add member and Edit, the member's own switch (web Profile, phone app Me), each rule's WhatsApp wording on Automations, Sent messages and the member's Messages tab showing the channel with *Delivered* and *Read*, live (`message` event), credits per message in /admin → Plans (`platform_settings`), SMS credits renamed *message credits*. Meta has no Nepali template language: our Nepali goes under Hindi (`WHATSAPP_NEPALI_LANGUAGE`), or English if Meta refuses it. `python -m scripts.whatsapp_templates` prints or submits the templates. Migration 0031; `tests/integration/test_whatsapp.py`, `tests/unit/test_whatsapp_templates.py`, `tests/unit/test_whatsapp_provider.py` |
 | Not yet | Sign-in codes by WhatsApp (Meta's authentication category costs about what an SMS does); a gym's own number; an inbox for replies; notices by WhatsApp |
 
 ### 19.4 M19 — Classes
@@ -1343,7 +1392,8 @@ Group classes at fixed times (Zumba, yoga, aerobics, CrossFit), booked from the 
 | Permissions | A new *Classes* area. **Teach classes** (`classes.teach`): their own rosters and attendance; in the *Trainer* starting point. **Book classes for members** (`classes.book`): in *Front desk*. **Manage classes** (`classes.manage`): the timetable, and moving or cancelling a class; in *Manager* |
 | Live | A `class` event: places left in the app, rosters at the desk |
 | Built | 2026-10-20. `app/services/classes.py` (the timetable, booking, the waitlist, who came, the month), `app/api/routes/classes.py`; Desk → **Classes** (the week by day; a class's roster with *Book a member*, ticks for who came, *Change this class*, *Cancel class*; *My classes* for instructors); the member profile's **Classes** tab; *Classes it includes* in the plan form (a plan change brings the new plan's classes); a **Classes** card on Reports; booking rules in Settings → Classes (`PATCH /gym/class-rules`). Migration 0028; `tests/integration/test_classes.py`, with the cross-gym, permission and query-count tests |
-| Not yet | Paying per class (a day pass or visit pack already covers a drop-in); rooms and equipment; a timetable poster or TV screen; repeating bookings ("every Monday"); telling members booked when a class is moved; classes for a branch's members only |
+| Moved | Added 2026-10-20: moving one class (*Change this class*) tells everyone booked or waiting the new time, by push, and by SMS too if the desk ticks it; those booked get their reminder for the new time, and the old one stays quiet |
+| Not yet | Paying per class (a day pass or visit pack already covers a drop-in); rooms and equipment; a timetable poster or TV screen; repeating bookings ("every Monday"); classes for a branch's members only |
 
 ### 19.5 M20 — Progress tracking
 
@@ -1367,6 +1417,85 @@ Weight, measurements and photos over time: members see themselves change, and tr
 |---|---|
 | `plans.seats`; `membership_groups` (`gym_id`, `plan_id`, `payer_member_id`, `seats`, `created_by`); `memberships.group_id`; `payment_requests.with_member_ids` | M16 |
 | `check_ins.offline`, `check_ins.client_id` (unique per device, where set); the gym setting `kiosk_offline_days` | M17 |
-| `sms_messages.channel`, `template`, `delivered_at`, `read_at`; `members.whatsapp_agreed_at`, `whatsapp_unreachable_at`; the gym setting `whatsapp`; `platform_settings` (credits per WhatsApp message) | M18 |
+| `sms_messages.channel`, `template`, `params`, `fallback`, `delivered_at`, `read_at` (and `provider_ref` to 128 characters); `members.whatsapp_agreed_at`, `whatsapp_unreachable_at`; the gym setting `whatsapp`; `platform_settings` (credits per WhatsApp message) | M18 |
 | `class_types`; `class_slots` (the timetable); `classes` (`gym_id`, `branch_id`, `type_id`, `slot_id`, `starts_at`, `ends_at`, `instructor_id`, `places`, `cancelled_at`, `cancel_reason`); `class_bookings` (`gym_id`, `class_id`, `member_id`, `status`: booked, waitlist or cancelled; `late`, `attended`, `booked_at`, `cancelled_at`, `source`, `booked_by`); `plans.classes` and `class_type_ids`, copied to `memberships`; gym settings `class_booking_days`, `class_closes_minutes`, `class_cancel_hours`, `no_show_limit`, `no_show_block_days` | M19 |
 | `progress_entries`; `progress_photos` (`gym_id`, `member_id`, `taken_on`, `pose`, `photo_key`, `shared`); `members.height_mm`; `reminder_rules.trigger` gains `progress` | M20 |
+
+---
+
+## 20. Next: from the later list (M21–M24)
+
+*Started 2026-10-20*, from §14's list, while the pilot gyms are asked what they'd use. Each is built so it can wait switched off: nothing a gym does today changes until it turns one on. v1's rules apply as in §16, §18 and §19.
+
+### 20.1 M21 — The shop at the desk
+
+Supplements, drinks and gym merchandise, sold at the desk. Gyms sell protein and water already, off a notebook; the money they take for it belongs with the rest.
+
+| | |
+|---|---|
+| Products | **Desk → Shop → Products**: name, category (supplements · drinks · snacks · merchandise · other: fixed, so they translate and add up), price, an optional barcode (a USB scanner at the till types it), and *Count the stock*: how many are on the shelf, with *Warn when down to*. Hide one to stop selling it. The products and their stock are the whole gym's (*Not yet*: stock per branch) |
+| Stock | A ledger, like message credits: every sale, void, delivery (*More arrived*) and count (*I counted the shelf*: the difference) is a `stock_moves` row, and the product's stock is kept equal to their sum. The product is locked while it changes, so two tills can't both sell the last tub; the till won't sell more than there are. Its history lists every change, by whom |
+| Selling | **Shop → Sell**: tap products into the basket (or scan), for a member (found by name, phone or code) or a walk-in, a discount, how it was paid (cash, eSewa, Khalti, Fonepay, bank; a transaction ID once per gym, as always), then *Sell and take the money*. Paid in full there and then: no dues on a sale. One `Idempotency-Key`: a double tap sells once |
+| Money | One ordinary payment for the sale (`payments.sale_id`), with a receipt number, so Today, Payments (marked *Shop*, a walk-in's with no name), Reports' income and the exports count it like any other money in. A walk-in's payment has no member: `payments.member_id` may be null for a sale, and only for a sale. The receipt lists what was bought, and any discount. A sale's amount isn't edited (void and sell again); its method and transaction ID are |
+| Voiding | A sale is voided with a reason, never deleted (*Void payments*): its payment is voided and its stock comes back. Voiding the payment from Payments does the same |
+| Branches | A sale is at a branch: the member's home branch, or the seller's first. Staff limited to some branches sell there and see those sales |
+| Permissions | A *Shop* area: **Sell products at the desk** (`shop.sell`, in *Front desk*) and **Products, prices and stock** (`shop.manage`); *Manager* has both. The month's sales and totals need *See money totals and reports*, as Payments do |
+| Reports | A *Shop* card for a gym with products: money from the shop (already within income), sales, the products sold most |
+| Export | `sales.xlsx`: every line of every sale, with its receipt, branch, member or walk-in, and whether voided. `payments.xlsx` gains walk-ins' payments, *For* = *Shop* |
+| Live | A `shop` event: the Shop screen at that branch (products, which are the whole gym's, have no branch); a member's page hears a `member` event |
+| Built | 2026-10-20. `app/models/shop.py`, `app/services/shop.py`, `app/api/routes/shop.py`; Desk → **Shop** (Sell, Products, Sales), *Sell a product* in search, the Shop card on Reports, items on the receipt and its PDF, the demo gym's shelf. Migration 0033; `tests/integration/test_shop.py`, with the cross-gym, permission and query-count tests |
+| Not yet | Stock per branch; selling on credit (dues on a sale); refunds of part of a sale; suppliers and purchase costs (profit per product); selling from the member app |
+
+
+### 20.2 M22 — App payments confirmed by eSewa, Khalti or Fonepay
+
+Today a member who renews from the app pays the gym's QR, types the transaction ID, and waits for someone at the desk to check the gym's wallet and approve (§5.4). With the gym's own **merchant account** at eSewa, Khalti or Fonepay, the wallet confirms the payment to us and the membership starts at once, with nobody at the desk. The money still goes straight to the gym's merchant account: we never hold it, only ask the wallet whether it arrived.
+
+| | |
+|---|---|
+| Turning it on | **Settings → Payment methods**: on an eSewa, Khalti or Fonepay account, *Confirm payments automatically*, with the keys the wallet gave the gym: eSewa's merchant code and secret key; Khalti's live secret key; Fonepay's merchant code, secret key, username and password. *Use the wallet's test system* tries it with the wallet's test keys: no real money, so **nothing is sold** (no request, payment or membership), only the keys and the way back proved. Off by default; the manual way stays as it is beside it |
+| The keys | Encrypted in the database with `GATEWAY_KEY` (AES-GCM; a key per server, set in `.env.prod`), never sent back to the browser: the form shows only that they are set and their last four characters. Changing them is *Set up payment methods*, as the account itself; the change is in the activity log without the keys |
+| Paying | The member app's **Renew**: a plan, then *Pay with eSewa* (or Khalti, or Fonepay) beside the gym's QR. The server works out the amount (the plan's price, and the admission fee for whoever's first membership it is, as the desk would); the member can't change it, and there's no part payment. **eSewa** (ePay v2) and **Khalti** (Web Checkout, KPG-2): the wallet's own payment page, then back to the app. **Fonepay** (dynamic QR): a QR for exactly that amount, to scan with any bank app, or to save and open from the gallery on the same phone |
+| Confirming | Never from what the browser brings back: the server asks the wallet itself, with the gym's keys (eSewa's status check, Khalti's lookup, Fonepay's QR status), and the amount and the gym's merchant must match. When the member lands back in the app; every few seconds while the Fonepay QR is open; and by the worker each minute for two hours, for the member who closed the page. One check at a time per payment (the row is locked); a wallet transaction is used once per gym, like any transaction ID |
+| What it makes | A payment request, approved by itself: the membership sold exactly as an approval at the desk would (§5.4), the payment with the wallet's transaction ID, *Received by: eSewa*, the receipt, the member told. If it can't be approved by itself (the plan's price changed, the plan was hidden, someone on a family plan left, the member had started another payment, the wallet's amount differs) the request waits on Payment requests marked **Paid: confirmed by eSewa**, for the desk to approve with the money already known to be there |
+| Not paid | Cancelled or expired on the wallet's side: nothing happens, and the member can try again or use the gym's QR. A manual "I've paid" waiting blocks starting one, as two requests would. Starting a second leaves the first open (marked replaced): if both get paid, the second waits for the desk. A payment expires only on the wallet's own word that it isn't paid: while the wallet can't be reached it's asked for another day |
+| Who | No staff permission: the wallet's confirmation is the approval. The activity log records it as GymBhai (`actor_type` system), with the wallet and its transaction ID |
+| Phone app | The same Renew; the wallet's page opens in the phone's browser and comes back to the app (`gymbhai://`), which hears the approval live |
+| Without keys, in development | `GATEWAY_PROVIDER=console`: a pretend checkout on our own page (*Pay* or *Cancel*) stands in for all three wallets, so the flow can be shown and tested without an account. Production refuses `console` |
+| Fees | The wallet's merchant fee is between the gym and the wallet; we add nothing |
+| Not yet | Confirming the gym's QR at the desk (a Fonepay dynamic QR on the desk's screen); refunds through the wallet; ConnectIPS; staff paying us (§5.7) through a wallet |
+| To confirm | eSewa's and Khalti's APIs are public: the adapters follow their developer documents, and the tests check what they send and how they read the answers against those documents (none publishes a worked signature to compare with). Neither has been called yet, not even their test systems; try each with *Test account* before a gym's real keys. Fonepay gives its documents to merchants only: the dynamic QR API here is from published write-ups, so check it against Fonepay's own documents with the first gym's merchant account before turning it on there |
+| Built | 2026-10-20. `app/services/gateways/providers.py` (eSewa ePay v2, Khalti KPG-2, Fonepay dynamic QR, the console wallet), `app/services/online_payments.py` (start, check, approve by itself with a system context, the worker's checks), `app/core/sealed.py` (the keys, AES-GCM), `app/api/routes/online_payments.py`; Settings → Payment accounts → *Confirm automatically*, *Pay Rs … with eSewa* on Renew (web and phone app), the checkout page `/pay/<link>` (and `/back`, `/cancelled`), *Paid: confirmed by eSewa* on Payment requests, `form-action` allowing eSewa's checkout. Migration 0034; `tests/integration/test_online_payments.py`, `tests/unit/test_gateways.py`, `e2e/m22-online-payments.spec.ts`. `docs/PAYMENTS.md` |
+
+### 20.3 M23 — A gym's own app in the stores
+
+Some gyms want their own app in the Play Store and App Store, with their name and icon, rather than GymBhai with their gym inside it. It is the same code as the GymBhai app (§17), built once per gym with that gym fixed: no "choose your gym", no "switch gym". Sold as an add-on, priced from `/admin`.
+
+| | |
+|---|---|
+| Who publishes it | **The gym, under its own developer accounts.** Apple's App Review Guideline 4.2.6 rejects apps made from a template or app service "unless they are submitted directly by the provider of the app's content", and says such services shouldn't submit apps for their clients. So each gym has its own Apple Developer account (US$99 a year) and Google Play developer account (US$25 once), and adds GymBhai to them as a team member who builds and uploads. Everything else stays in the one GymBhai app, which is the "picker" model Apple allows |
+| Asking for it | **Settings → Your own app** (*Set up the gym*, as Subscription): the app's name (30 characters at most, as the stores show it), its colour (the gym's, to start), a square icon of at least 1024 × 1024 pixels, and the prices: a one-time setup and a monthly add-on, both from `/admin` (`platform_settings`). *Ask for my app* puts it on our list; until we start building, the gym can change it or withdraw |
+| Our side | **/admin → Gym apps**: each request with its state (*asked*, *building*, *in review*, *live*, *stopped*), the store identifiers (Android package, iOS bundle id: `np.gymbhai.<address>` to start, editable before the first build), the Expo project, the store links, and notes. *Build file* downloads what the build needs (`brand.json`) |
+| Building | `mobile/brands/<address>/brand.json` and its icon, written by `node scripts/brand.mjs <file>`; `BRAND=<address> npx eas-cli build --profile branded`. `app.config.ts` reads the brand: name, package, bundle id, scheme (`gb-<address>`), icon, colours, the Expo project, and the gym (`extra.gym`). The app then opens on that gym's sign-in, and signing out comes back to it. `docs/BRANDED_APPS.md` |
+| Notifications | The Expo project and Firebase app are the brand's own; the server needs nothing new: Expo's push service takes tokens from every project of GymBhai's Expo account |
+| Members | Once *live*, the gym's web app offers its own app (the store links) instead of GymBhai's, and the gym's QR poster names it. Members already in the GymBhai app keep working there |
+| Paying for it | The setup fee: Settings → Subscription → *Pay for your app*, a subscription payment of kind `app`, checked from `/admin` as any other. The monthly add-on is added to what Subscription asks for each month once the app is *building*, and stops when it's *stopped* |
+| Built | 2026-10-20, **none built yet**: `app/models/branded_app.py`, `app/services/branded_apps.py`, `app/api/routes/branded_apps.py`; Settings → Your own app, `/admin/apps` with *Build file*, the add-on's prices in /admin, *Your own app* on Subscription, *Get the … app* on the member's Home. `mobile/app.config.ts` with `BRAND`, `BRAND_GYM` (opens its gym, hides *switch gym*), `mobile/scripts/brand.mjs`, the `branded` EAS profile. Migration 0035; `tests/integration/test_branded_apps.py`. `docs/BRANDED_APPS.md` |
+| Not yet | Building from `/admin` with one button (EAS's API); the gym's own sign-in domain; a branded staff app |
+
+### 20.4 M24 — Tax invoices for VAT-registered gyms
+
+A VAT-registered gym must give a tax invoice for each sale, and keep a sales book. Larger gyms must also use billing software the Inland Revenue Department (IRD) has certified, which reports each bill to IRD's Central Billing Monitoring System (CBMS) as it's issued. **GymBhai is not certified.** The procedure for computerised invoicing (2072) needs the software certified by IRD *and* its use approved by the gym's tax office, so M24 is built to wait switched off: on a server nobody sees it until `TAX_INVOICES_CERTIFIED=true`, which we set once IRD has certified GymBhai. The rules it follows are the published ones; an accountant and IRD's own review must confirm them.
+
+| | |
+|---|---|
+| Turning it on | **Settings → Tax** (*Set up the gym*): *We're registered for VAT*, the gym's PAN (9 digits), and the date it starts. Prices include VAT: a payment of Rs 1,130 is Rs 1,000 and Rs 130 VAT, as money received always includes it. From then on every payment gets an invoice; nothing before it does |
+| Invoices | One for each payment, made with it: *Tax Invoice*, the gym's name, address and PAN; its number, sequential in the gym's fiscal year (from 1 Shrawan, numbers start again at 1, never skipped); the date in BS and AD; the buyer's name, address and PAN (the member's, or *Walk-in*; a PAN for a member who gives one); what was sold, its quantity and rate; the taxable amount, VAT at 13 %, the total, the total in words, how it was paid. Kept as issued: changing the gym's name or a plan later changes no invoice |
+| Never changed | An invoice isn't edited or deleted. A payment's amount can't change once invoiced (void and record again, as for a sale). Voiding a payment issues a **credit note** (sales return) against its invoice, with the reason; a refund issues one against the invoice it refunds. Credit notes are numbered on their own, by fiscal year |
+| Copies | The first print or PDF is the original; every later one says *Copy of original (2)* and so on: each print and download is counted |
+| The sales book | **Reports → Tax**: a month, or the fiscal year, of invoices and of credit notes (the sales book and the sales return book), with their totals, and `sales-book.xlsx`, `sales-returns.xlsx` with IRD's columns (date, invoice, buyer, buyer's PAN, total, taxable, VAT) |
+| CBMS | For a gym that must report: *Report to IRD's CBMS* with its CBMS username and password (encrypted, as merchant keys are, §20.2). Each invoice and credit note is sent by the worker as it's issued (`/api/bill`, `/api/billreturn`), retried while CBMS is down; Settings → Tax shows how many are sent, waiting and refused, and why. `CBMS_PROVIDER=console` logs instead (development); IRD gives test credentials |
+| Permissions | Settings → Tax: *Set up the gym*. The sales book: *See money totals and reports*. Invoices print with the receipt, for whoever can see the receipt |
+| Not yet | Certification by IRD (the reason it's off); prices before VAT, with VAT added at the desk; non-taxable items mixed with taxable ones; an abbreviated tax invoice for small sales; exports and other taxes (excise, health service tax); invoices in Nepali (the receipt PDF is English until reviewed, §16.6) |
+| To confirm | With an accountant and IRD: the turnover above which certified, real-time billing is required (sources say Rs 10, 20 or 25 crore, and lower for some sectors); whether a certified cloud system must be hosted in Nepal; the CBMS API, which IRD doesn't publish (this follows community clients of it); and the invoice layout of the VAT Rules 2053, Schedule 5 |
+| Built | 2026-10-20, **off until IRD certifies GymBhai**: `app/models/tax.py`, `app/services/tax.py` (numbering, VAT split, credit notes, copies, amounts in words, CBMS), `app/api/routes/tax.py`; invoices from `record_payment` and the shop's `sell`, credit notes from both voids, an invoiced amount refused; the receipt page and PDF as the tax invoice (`TaxDocumentView.tsx`, `_tax_page`), prints counted (`POST /payments/{id}/receipt/printed`, the PDF link); Settings → Tax; *VAT sales book* on Reports; `sales-book.xlsx`, `sales-returns.xlsx`. Migration 0036; `tests/integration/test_tax_invoices.py`. `docs/TAX_INVOICES.md`. No help guide or What's new until it can be turned on |

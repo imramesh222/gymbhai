@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.schemas.auth import OptionalEmail, Strict
+from app.schemas.branded_apps import PublicApp
 from app.schemas.messaging import NoticeRead
 from app.schemas.money import PaymentMethodRead, PaymentRead
 from app.schemas.plans import PlanRead
@@ -27,6 +28,8 @@ class PublicGym(BaseModel):
     branches: list[PublicBranch]
     # "Not a member yet? Ask to join" (§16.4, 9.5).
     join_form: bool = False
+    # The gym's own app in the stores, once live (§20.3).
+    app: PublicApp | None = None
 
 
 class CodeRequest(Strict):
@@ -115,6 +118,10 @@ class MemberMe(BaseModel):
     training: list[MemberTraining] = []
     # Classes at their branch in the next week: Home offers to book (§19.4).
     has_classes: bool = False
+    # WhatsApp messages (§19.3): whether the gym sends them, and whether
+    # they agreed. Profile shows the switch only when the gym does.
+    whatsapp: bool = False
+    whatsapp_agreed: bool = False
 
 
 class MemberSignIn(BaseModel):
@@ -177,6 +184,68 @@ class PaymentRequestRead(BaseModel):
     reviewed_by_name: str | None = None
     # A family or couple plan's others (§19.1).
     with_names: list[str] = []
+    # The wallet confirmed the money: esewa, khalti, fonepay (§20.2).
+    confirmed_by: str | None = None
+
+
+class OnlinePaymentIn(Strict):
+    """Pay for a plan through one of the gym's merchant accounts (§20.2)."""
+
+    plan_id: uuid.UUID
+    payment_method_id: uuid.UUID
+    # Started in the phone app: its browser comes back to the app.
+    from_app: bool = False
+    # Where "Back to the app" goes: the app's own link to Renew, which is
+    # gymbhai://, a gym's own app's gb-<address>:// (§20.3), or Expo Go's
+    # exp:// in development. Anything else is refused.
+    return_to: str | None = Field(
+        default=None,
+        max_length=200,
+        pattern=r"^(gymbhai|gb-[a-z0-9-]+|exps?)://[^\s<>\"']*$",
+    )
+
+
+class Checkout(BaseModel):
+    """What the checkout page does: POST `fields` to `url`, go to `url`, show
+    `qr`, or (in development) show the pretend wallet."""
+
+    kind: Literal["form", "redirect", "qr", "console"]
+    url: str | None = None
+    fields: dict[str, str] = {}
+    qr: str | None = None
+
+
+class OnlinePaymentRead(BaseModel):
+    id: uuid.UUID
+    status: Literal["started", "paid", "failed", "expired"]
+    provider: str
+    amount: int
+    plan_name: str
+    # The wallet's test system: nothing is sold.
+    test: bool
+    # The checkout page, by a signed link (the phone's browser has no session).
+    pay_url: str
+    paid_at: dt.datetime | None
+    expires_at: dt.datetime
+    # Paid, and the membership sold by itself; or waiting for the desk.
+    approved: bool = False
+    waiting_for_desk: bool = False
+
+
+class PayPage(OnlinePaymentRead):
+    """The checkout page's own view, by its link: no member session."""
+
+    gym_name: str
+    gym_slug: str
+    from_app: bool
+    # The app's own link back to Renew, when it gave one.
+    return_to: str | None = None
+    # While it's started: what to do next.
+    checkout: Checkout | None = None
+
+
+class PretendIn(Strict):
+    paid: bool
 
 
 class RenewMate(BaseModel):
@@ -428,6 +497,22 @@ class MyDetailsIn(Strict):
     emergency_contact: str | None = Field(default=None, max_length=120)
     # Null follows the gym's language (§16.6).
     language: Literal["en", "ne"] | None = None
+    whatsapp_agreed: bool | None = None
+
+
+class MemberDevice(BaseModel):
+    """A device the member is signed in on (§17.5): their own, nobody else's."""
+
+    id: uuid.UUID
+    client: Literal["web", "app"]
+    device_label: str | None
+    created_at: dt.datetime
+    last_used_at: dt.datetime | None
+    current: bool
+
+
+class SignedOutDevices(BaseModel):
+    signed_out: int
 
 
 class EmailChangeIn(Strict):

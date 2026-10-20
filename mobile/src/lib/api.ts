@@ -14,7 +14,7 @@ import * as SecureStore from "expo-secure-store";
 import type { MemberSignIn } from "@shared/types";
 
 import { observe } from "./clock";
-import { API_URL } from "./config";
+import { API_URL, USER_AGENT } from "./config";
 
 export class ApiError extends Error {
   constructor(
@@ -148,7 +148,10 @@ export async function freshAccessToken(
 // --- requests --------------------------------------------------------------------
 
 async function send(path: string, options: RequestOptions, token?: string | null) {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "User-Agent": USER_AGENT,
+  };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;

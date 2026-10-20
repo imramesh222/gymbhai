@@ -179,6 +179,18 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
         recorded_by=gym_b.owner.id,
     )
     db.add(b_entry)
+    # The shop (§20.1): a product, and a sale of it.
+    from app.services import shop as shop_service
+
+    b_ctx = context_for(db, gym_b.owner)
+    b_product = shop_service.create_product(
+        db, b_ctx, {"name": "B whey", "category": "supplement", "price": 100_00,
+                    "stock": 5}, None,
+    )  # fmt: skip
+    b_sale, _ = shop_service.sell(
+        db, b_ctx, lines=[(b_product.id, 1)], member_id=None, branch_id=None,
+        discount=0, method="cash", transaction_ref=None, note=None,
+    )  # fmt: skip
     db.commit()
     return World(
         ids={
@@ -208,6 +220,8 @@ def world_b(db: Session, gym_b: GymFixture, make_staff) -> World:
             "class_id": b_class.id,
             "booking_id": b_booking.id,
             "entry_id": b_entry.id,
+            "product_id": b_product.id,
+            "sale_id": b_sale.id,
         }
     )
 
@@ -228,6 +242,12 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PATCH", "/api/v1/plans/{plan_id}", {"price": 1}),
     ("PATCH", "/api/v1/payment-methods/{method_id}", {"label": "Taken"}),
     ("POST", "/api/v1/payment-methods/{method_id}/qr", "upload"),
+    (
+        "PUT",
+        "/api/v1/payment-methods/{method_id}/gateway",
+        {"merchant": "X", "secret_key": "abcd1234"},
+    ),
+    ("DELETE", "/api/v1/payment-methods/{method_id}/gateway", None),
     ("GET", "/api/v1/members/{member_id}", None),
     ("PATCH", "/api/v1/members/{member_id}", {"name": "Taken"}),
     ("POST", "/api/v1/members/{member_id}/archive", {}),
@@ -254,6 +274,7 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PATCH", "/api/v1/payments/{payment_id}", {"note": "taken"}),
     ("POST", "/api/v1/payments/{payment_id}/void", {"reason": "taken over"}),
     ("GET", "/api/v1/payments/{payment_id}/receipt", None),
+    ("POST", "/api/v1/payments/{payment_id}/receipt/printed", None),
     ("PATCH", "/api/v1/expenses/{expense_id}", {"amount": 1}),
     ("POST", "/api/v1/expenses/{expense_id}/void", {"reason": "taken over"}),
     ("POST", "/api/v1/members/{member_id}/sms", {"body": "Hello"}),
@@ -271,6 +292,7 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
         {"reason": "taken over"},
     ),
     ("POST", "/api/v1/payments/{payment_id}/receipt-link", None),
+    ("POST", "/api/v1/payments/{payment_id}/receipt-whatsapp", None),
     ("GET", "/api/v1/leads/{lead_id}", None),
     ("PATCH", "/api/v1/leads/{lead_id}", {"name": "Taken"}),
     ("POST", "/api/v1/leads/{lead_id}/trial", None),
@@ -306,6 +328,10 @@ CROSS_GYM_ROUTES: list[tuple[str, str, Any]] = [
     ("PUT", "/api/v1/members/{member_id}/progress/height", {"height_mm": 1700}),
     ("PATCH", "/api/v1/progress/{entry_id}", {"weight_g": 60_000}),
     ("DELETE", "/api/v1/progress/{entry_id}", None),
+    ("PATCH", "/api/v1/products/{product_id}", {"name": "Taken"}),
+    ("POST", "/api/v1/products/{product_id}/stock", {"kind": "restock", "quantity": 1}),
+    ("GET", "/api/v1/products/{product_id}/stock", None),
+    ("POST", "/api/v1/sales/{sale_id}/void", {"reason": "taken over"}),
 ]
 
 # Id routes whose permission is not the gym at all.
@@ -333,6 +359,8 @@ NOT_GYM_SCOPED = {
     ("POST", "/api/v1/admin/gyms/{gym_id}/owner-two-step"),
     ("POST", "/api/v1/admin/subscription-payments/{payment_id}/approve"),
     ("POST", "/api/v1/admin/subscription-payments/{payment_id}/reject"),
+    ("PATCH", "/api/v1/admin/apps/{app_id}"),
+    ("GET", "/api/v1/admin/apps/{app_id}/build"),
     ("PATCH", "/api/v1/admin/plans/{plan_id}"),
     ("PATCH", "/api/v1/admin/changelog/{entry_id}"),
     ("DELETE", "/api/v1/admin/changelog/{entry_id}"),
@@ -341,8 +369,17 @@ NOT_GYM_SCOPED = {
     # The member's own records: tests/regression/test_member_isolation.py.
     ("POST", "/api/v1/m/payment-requests/{request_id}/screenshot"),
     ("POST", "/api/v1/m/payment-requests/{request_id}/withdraw"),
+    # tests/integration/test_online_payments.py: another member's is not found.
+    ("GET", "/api/v1/m/online-payments/{payment_id}"),
+    ("POST", "/api/v1/m/online-payments/{payment_id}/check"),
+    # The checkout page's signed link is the permission (§20.2).
+    ("GET", "/api/v1/pay/{token}"),
+    ("POST", "/api/v1/pay/{token}/check"),
+    ("POST", "/api/v1/pay/{token}/pretend"),
     ("POST", "/api/v1/m/me/payments/{payment_id}/receipt-link"),
     ("POST", "/api/v1/m/freeze-requests/{freeze_request_id}/withdraw"),
+    # tests/integration/test_member_devices.py: another member's is not found.
+    ("POST", "/api/v1/m/me/sessions/{session_id}/sign-out"),
     ("POST", "/api/v1/m/classes/{class_id}/book"),
     ("POST", "/api/v1/m/class-bookings/{booking_id}/cancel"),
     ("PATCH", "/api/v1/m/progress/{entry_id}"),
@@ -444,6 +481,14 @@ def test_nothing_of_gym_b_changed(
     ).all()
     assert [s.voided_at for s in sessions] == [None]
     assert db.get(PtPlan, world_b.ids["pt_plan_id"]).price == 8_000_00
+    from app.models.shop import Product, ProductSale
+
+    product = db.get(Product, world_b.ids["product_id"])
+    db.refresh(product)
+    assert (product.name, product.stock) == ("B whey", 4)
+    sale = db.get(ProductSale, world_b.ids["sale_id"])
+    db.refresh(sale)
+    assert sale.voided_at is None
 
 
 def test_lists_only_show_your_own_gym(
@@ -456,6 +501,10 @@ def test_lists_only_show_your_own_gym(
     assert client.get("/api/v1/gym").json()["id"] == str(gym_a.gym.id)
     assert client.get("/api/v1/members").json()["total"] == 0
     assert client.get("/api/v1/payments").json()["total"] == 0
+    # The shop (§20.1): gym B's product and its walk-in sale stay gym B's.
+    assert client.get("/api/v1/products?include_hidden=true").json() == []
+    sales = client.get("/api/v1/sales").json()
+    assert (sales["items"], sales["total"]) == ([], 0)
     expenses = client.get("/api/v1/expenses").json()
     assert (expenses["items"], expenses["sum_amount"]) == ([], 0)
     assert client.get("/api/v1/reports/monthly").json()["expenses"] == 0
