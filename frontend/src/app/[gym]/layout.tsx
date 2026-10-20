@@ -12,7 +12,6 @@ export async function generateMetadata({
   return {
     manifest: `/${gym}/manifest.webmanifest`,
     appleWebApp: { capable: true, statusBarStyle: "default" },
-    icons: { apple: "/apple-touch-icon.png" },
   };
 }
 
