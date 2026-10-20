@@ -205,7 +205,8 @@ def extend(
     from app.models.gym import Gym
 
     # Two periods granted at once must queue one after the other, not overlap.
-    db.execute(select(Gym.id).where(Gym.id == gym_id).with_for_update())
+    # FOR NO KEY UPDATE, as for SMS credit: the gym's other writes go on.
+    db.execute(select(Gym.id).where(Gym.id == gym_id).with_for_update(key_share=True))
     today = today_in_nepal()
     current = latest(db, gym_id)
     start = today

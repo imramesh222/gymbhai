@@ -141,7 +141,7 @@ export default function EnquiriesPage() {
       )}
       {open && (
         <LeadDialog
-          key={open.id + open.updated_at}
+          key={open.id}
           lead={open}
           onClose={() => setOpenId(null)}
           onChanged={() => reload()}

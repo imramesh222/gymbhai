@@ -23,6 +23,8 @@ test("an enquiry: trial, then convert to a member", async ({ page }) => {
     .click();
   await expect(page.getByText("Trial visit noted.")).toBeVisible();
   await page.keyboard.press("Escape");
+  // Closed, though the board was reloading with the changed enquiry.
+  await expect(page.getByRole("dialog")).toBeHidden();
   const trialColumn = page.getByRole("region", { name: "Trial" });
   await expect(
     trialColumn.getByRole("button", { name: /Bikash Gurung/ }),
