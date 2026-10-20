@@ -58,8 +58,14 @@ def balances(db: Session, gym_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
 
 
 def _lock_gym(db: Session, gym_id: uuid.UUID) -> None:
-    """Serialise credit changes for one gym: two sends can't spend one credit."""
-    db.execute(select(Gym.id).where(Gym.id == gym_id).with_for_update())
+    """Serialise credit changes for one gym: two sends can't spend one credit.
+
+    FOR NO KEY UPDATE: a send holds it through the gateway's answer, and the
+    gym's other writes must not wait for that. Each new row's foreign key
+    takes FOR KEY SHARE on the gym's row, which a full FOR UPDATE would block:
+    the desk stalled for every SMS, and erasing a member deadlocked with a send.
+    """
+    db.execute(select(Gym.id).where(Gym.id == gym_id).with_for_update(key_share=True))
 
 
 def add_credits(

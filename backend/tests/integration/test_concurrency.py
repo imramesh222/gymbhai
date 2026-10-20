@@ -240,3 +240,25 @@ def test_the_same_payment_sent_twice_at_once_is_saved_once(
     assert isinstance(second, idempotency.Replay)
     with sessions() as db:
         assert db.scalar(select(func.count()).select_from(Payment)) == 1
+
+
+def test_sending_an_sms_holds_up_none_of_the_gyms_other_writes(
+    sessions, gym: GymFixture
+) -> None:
+    """The worker spends SMS credit holding a lock on the gym's row, through
+    the gateway's answer. Another send must wait for it (two sends can't spend
+    one credit), but nothing else may: every new row checks its foreign key
+    against the gym's row. A full lock there stalled the desk for every SMS,
+    and deadlocked erasing a member (its SMS rows changed first) with a send."""
+    from app.services.sms import service as sms_service
+
+    with sessions() as sending, sessions() as desk, sessions() as other_send:
+        sms_service._lock_gym(sending, gym.gym.id)
+
+        desk.execute(sa.text("SET LOCAL lock_timeout = '2s'"))
+        make_member(desk, gym)  # inserts and commits, without waiting
+
+        other_send.execute(sa.text("SET LOCAL lock_timeout = '300ms'"))
+        with pytest.raises(sa.exc.OperationalError, match="lock timeout"):
+            sms_service._lock_gym(other_send, gym.gym.id)
+        sending.rollback()
