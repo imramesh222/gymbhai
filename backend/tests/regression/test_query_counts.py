@@ -397,3 +397,35 @@ def test_personal_training(engine, client: TestClient, db: Session, gym_a) -> No
     add(90)
     same_cost(engine, client, "/api/v1/pt/packages", add)
     same_cost(engine, client, f"/api/v1/members/{member.id}/pt", add)
+
+
+def test_who_gets_a_staff_notification(engine, db: Session, gym_a, make_staff) -> None:
+    """Worked out in the same few queries however many staff take them (§18.6)."""
+    from app.services import sessions
+    from app.services.push import staff as staff_push
+
+    def add(n: int) -> None:
+        person = make_staff(gym_a.gym, permissions=["memberships.freeze"])
+        staff_push.subscribe(
+            db,
+            person,
+            sessions.start(db, person, None).session,
+            endpoint=f"https://push.example.com/staff/{n}",
+            p256dh="B" * 87,
+            auth="a" * 22,
+            user_agent=None,
+        )
+        db.commit()
+
+    def who() -> list:
+        # By branch, as a freeze request goes: the costlier way.
+        return staff_push.recipients(
+            db, gym_a.gym.id, staff_push.FREEZE_REQUEST, gym_a.branch.id
+        )
+
+    add(90)
+    one = queries(engine, who)
+    for n in range(MORE):
+        add(n)
+    assert len(who()) == MORE + 1
+    assert queries(engine, who) == one

@@ -68,6 +68,13 @@ ANY_STAFF = {
     ("GET", "/api/v1/auth/sessions"),
     ("POST", "/api/v1/auth/sessions/sign-out-others"),
     ("POST", "/api/v1/auth/sessions/{session_id}/sign-out"),
+    # Notifications on your own devices, and which kinds; each kind is still
+    # sent only to those whose permissions show it (§18.6).
+    ("GET", "/api/v1/auth/push"),
+    ("POST", "/api/v1/auth/push"),
+    ("POST", "/api/v1/auth/push/resume"),
+    ("POST", "/api/v1/auth/push/off"),
+    ("PUT", "/api/v1/auth/me/notifications"),
     # Selling needs the plans and their prices.
     ("GET", "/api/v1/plans"),
     # The desk shows members the gym's own payment QR.

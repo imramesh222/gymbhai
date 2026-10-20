@@ -22,6 +22,8 @@ NOT_GYM_OWNED = {
     "staff_password_resets",
     # Belongs to a member, who carries the gym.
     "member_sessions",
+    # Belongs to a staff user, who carries the gym (§18.6).
+    "staff_push_subscriptions",
     # Belongs to a plan, which carries the gym.
     "plan_branches",
     # gym_id is null for platform-level actions.

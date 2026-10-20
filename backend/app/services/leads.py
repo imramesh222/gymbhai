@@ -32,6 +32,7 @@ from app.models.plan import Plan
 from app.models.staff import StaffUser
 from app.services import activity, live
 from app.services import members as members_service
+from app.services.push import staff as staff_push
 
 TRACKED = (
     "branch_id",
@@ -422,6 +423,8 @@ def from_join_form(
         entity_id=lead.id,
     )
     _changed(db, lead)
+    # A new one only: asking again just moves it up today's calls (§18.6).
+    staff_push.lead(db, gym, lead)
 
 
 def _first_branch(db: Session, gym: Gym) -> uuid.UUID:

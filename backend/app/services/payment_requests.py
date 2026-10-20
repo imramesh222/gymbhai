@@ -36,6 +36,7 @@ from app.models.plan import Plan
 from app.services import activity, live, reminders
 from app.services import memberships as ms
 from app.services.push import service as push
+from app.services.push import staff as staff_push
 
 REF_USED = AppError(
     409, "transaction_ref_used", "That transaction ID has already been used."
@@ -114,6 +115,8 @@ def create(
     db.add(row)
     db.flush()
     _changed(db, row)
+    # On the approvers' phones too, not only their open screens (§18.6).
+    staff_push.payment_request(db, row)
     return row
 
 

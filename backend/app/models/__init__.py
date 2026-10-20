@@ -32,7 +32,7 @@ from app.models.platform import (
     MemberImport,
     SubscriptionPayment,
 )
-from app.models.push import PushSubscription
+from app.models.push import PushSubscription, StaffPushSubscription
 from app.models.staff import (
     LoginAttempt,
     StaffBranchAccess,
@@ -84,6 +84,7 @@ __all__ = [
     "SmsMessage",
     "StaffBranchAccess",
     "StaffPasswordReset",
+    "StaffPushSubscription",
     "StaffRecoveryCode",
     "StaffSession",
     "StaffUser",

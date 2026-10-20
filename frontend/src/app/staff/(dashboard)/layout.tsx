@@ -11,6 +11,7 @@ import { freezeRequestsApi, openStaffLive, paymentRequestsApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth";
 import { LiveProvider, useLive, type LiveType } from "@/lib/live";
 import { useFollowLanguage } from "@/lib/locale";
+import { resumeStaffPush } from "@/lib/staffPush";
 
 /**
  * A count of what's waiting, for a menu badge (§5.4, §16.3 8.6): updated live
@@ -73,6 +74,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   };
   const [searching, setSearching] = useState(false);
   const openSearch = useCallback(() => setSearching(true), []);
+  // Signed in again in a browser that had notifications on: picked up
+  // without asking, for the same person only (§18.6).
+  const staffId = me?.staff.id;
+  const inGym = Boolean(me?.gym);
+  useEffect(() => {
+    if (staffId && inGym) void resumeStaffPush();
+  }, [staffId, inGym]);
   usePaletteShortcut(openSearch);
 
   return (

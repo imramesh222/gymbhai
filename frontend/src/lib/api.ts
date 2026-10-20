@@ -946,9 +946,7 @@ export interface PtSaleInput {
 
 export const ptApi = {
   plans: (includeHidden = false) =>
-    request<PtPlan[]>(
-      `/api/v1/pt/plans${includeHidden ? "?include_hidden=true" : ""}`,
-    ),
+    request<PtPlan[]>(`/api/v1/pt/plans${includeHidden ? "?include_hidden=true" : ""}`),
   createPlan: (body: PtPlanInput) =>
     request<PtPlan>("/api/v1/pt/plans", send("POST", body)),
   updatePlan: (id: string, body: Partial<PtPlanInput>) =>
@@ -980,7 +978,11 @@ export const ptApi = {
       `/api/v1/pt/packages/${id}/cancel`,
       send("POST", { reason, refund }),
     ),
-  record: (id: string, body: { trained_on: string; note: string | null }, key?: string) =>
+  record: (
+    id: string,
+    body: { trained_on: string; note: string | null },
+    key?: string,
+  ) =>
     request<PtPackageDetail>(
       `/api/v1/pt/packages/${id}/sessions`,
       once(send("POST", body), key),
@@ -995,6 +997,39 @@ export const ptApi = {
     request<Payment>(
       "/api/v1/payments",
       once(send("POST", { pt_package_id: packageId, ...payment }), key),
+    ),
+};
+
+// --- notifications for staff (PLAN.md §18.6) ---
+
+export type NotificationKind = "payment_request" | "freeze_request" | "lead";
+
+export interface StaffPushStatus {
+  /** Null: push isn't set up on this server. */
+  public_key: string | null;
+  /** This browser, for this sign-in. */
+  on_here: boolean;
+  /** What this person may get, in order, and which of those they turned off. */
+  kinds: NotificationKind[];
+  muted: NotificationKind[];
+}
+
+export const staffPushApi = {
+  status: (endpoint?: string) =>
+    request<StaffPushStatus>(`/api/v1/auth/push${query({ endpoint })}`),
+  on: (subscription: PushSubscriptionJSON) =>
+    request<StaffPushStatus>(
+      "/api/v1/auth/push",
+      send("POST", { endpoint: subscription.endpoint, keys: subscription.keys }),
+    ),
+  resume: (endpoint: string) =>
+    request<StaffPushStatus>("/api/v1/auth/push/resume", send("POST", { endpoint })),
+  off: (endpoint: string) =>
+    request<StaffPushStatus>("/api/v1/auth/push/off", send("POST", { endpoint })),
+  choose: (muted: NotificationKind[], endpoint?: string) =>
+    request<StaffPushStatus>(
+      "/api/v1/auth/me/notifications",
+      send("PUT", { muted, endpoint: endpoint ?? null }),
     ),
 };
 
