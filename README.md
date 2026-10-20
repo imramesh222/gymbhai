@@ -19,7 +19,9 @@ make setup   # .env, dependencies, database, migrations
 make up      # db, api, worker, web in Docker
 ```
 
-- Web: http://localhost:3000 — sign up a gym at `/signup`
+- Web: http://localhost:3000 — sign up a gym at `/signup`, or `make seed-demo` for
+  a demo gym with a year of members, money and visits: `/demo`, owner `9800000200`,
+  password `demo-password-123` (PLAN.md §18.7)
 - API docs: http://localhost:8000/docs (`API_PORT` in `.env`)
 
 `make help` lists everything else.
