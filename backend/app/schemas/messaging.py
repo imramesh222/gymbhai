@@ -10,6 +10,7 @@ from app.models.messaging import (
     TRIGGER_EXPIRY,
     TRIGGER_LAPSED,
     TRIGGER_NOT_VISITING,
+    TRIGGER_PROGRESS,
     TRIGGER_PT_DUES,
     TRIGGER_PT_ENDING,
 )
@@ -17,7 +18,14 @@ from app.schemas.auth import Strict
 from app.schemas.members import MemberRead
 
 Trigger = Literal[
-    "expiry", "lapsed", "dues", "not_visiting", "birthday", "pt_ending", "pt_dues"
+    "expiry",
+    "lapsed",
+    "dues",
+    "not_visiting",
+    "birthday",
+    "pt_ending",
+    "pt_dues",
+    "progress",
 ]
 
 # The days each trigger accepts (PLAN.md §16.3, 8.2).
@@ -29,6 +37,7 @@ DAYS_ALLOWED: dict[str, tuple[int, int]] = {
     TRIGGER_BIRTHDAY: (0, 0),
     TRIGGER_PT_ENDING: (-60, 60),
     TRIGGER_PT_DUES: (1, 90),
+    TRIGGER_PROGRESS: (7, 180),
 }
 
 

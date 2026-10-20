@@ -7,12 +7,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Image, View } from "react-native";
 
-import { formatDate, formatShort } from "@shared/dates";
+import { addDays, formatDate, formatShort, todayInNepal } from "@shared/dates";
 import { t } from "@shared/i18n";
 import { bmi, changes, MEASURES, shown, stored, type Measure } from "@shared/progress";
 import type { Progress, ProgressEntry, ProgressPhoto } from "@shared/types";
 
 import { Screen } from "@/components/Screen";
+import { Stepper } from "@/components/Stepper";
 import {
   ActionButton,
   Button,
@@ -116,7 +117,7 @@ export default function ProgressScreen() {
         </Card>
       ) : null}
 
-      <NewCheck onSaved={set} />
+      <NewCheck display={display} onSaved={set} />
       <Height value={data.height_mm} onSaved={set} />
 
       {data.entries.length > 0 ? (
@@ -146,12 +147,20 @@ export default function ProgressScreen() {
   );
 }
 
-function NewCheck({ onSaved }: { onSaved: (fresh: Progress) => void }) {
+function NewCheck({
+  display,
+  onSaved,
+}: {
+  display: "ad" | "bs" | "both";
+  onSaved: (fresh: Progress) => void;
+}) {
+  const today = todayInNepal();
   const [open, setOpen] = useState(false);
+  const [day, setDay] = useState(today);
   const [values, setValues] = useState<Partial<Record<Measure, string>>>({});
   const save = useAction(
-    (key: string) => {
-      const body: Record<string, number | null> = {};
+    (key: string, measuredOn: string) => {
+      const body: Record<string, number | string | null> = { measured_on: measuredOn };
       for (const m of MEASURES) body[m.key] = stored(values[m.key] ?? "", m.unit);
       return memberApi.recordProgress(body, key);
     },
@@ -167,6 +176,14 @@ function NewCheck({ onSaved }: { onSaved: (fresh: Progress) => void }) {
   if (!open) return <Button label={t("progress.add")} onPress={() => setOpen(true)} />;
   return (
     <Card style={{ gap: space(3) }}>
+      <Stepper
+        label={t("progress.date")}
+        value={formatDate(day, display)}
+        canLess
+        canMore={day < today}
+        onLess={() => setDay(addDays(day, -1))}
+        onMore={() => setDay(addDays(day, 1))}
+      />
       {MEASURES.map((m) => (
         <Field
           key={m.key}
@@ -178,7 +195,7 @@ function NewCheck({ onSaved }: { onSaved: (fresh: Progress) => void }) {
       ))}
       <ActionButton
         action={save}
-        args={[]}
+        args={[day]}
         label={t("common.save")}
         disabled={nothing}
       />

@@ -41,11 +41,11 @@ export default function AutomationsPage() {
       {templates.data && <HowMessagesGo initial={templates.data.also_sms} />}
       {!rules.data && !error && <PageSkeleton label={t("common.loading")} />}
       {rules.data &&
-        (["membership", "pt"] as const).map((group) => (
+        (["membership", "pt", "progress"] as const).map((group) => (
           <div key={group} className="space-y-3">
-            {group === "pt" && (
+            {group !== "membership" && (
               <h2 className="pt-2 text-[0.9375rem] font-semibold text-slate-900">
-                {t("pt.title")}
+                {t(group === "pt" ? "pt.title" : "progress.title")}
               </h2>
             )}
             <div className="grid gap-4 lg:grid-cols-2">

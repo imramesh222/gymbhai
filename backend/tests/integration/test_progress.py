@@ -207,3 +207,55 @@ def test_erasing_the_member_takes_it_all(
     assert not db.scalars(select(ProgressEntry)).first()
     assert not db.scalars(select(ProgressPhoto)).first()
     assert storage.read(key) is None
+
+
+def test_the_check_up_reminder_goes_by_push_only(
+    db: Session, gym_a: GymFixture
+) -> None:
+    """Off to start; on, it reaches members whose phone takes push, N days
+    after their last check, once per check, and never as an SMS (§19.5)."""
+    from app.models.job import Job
+    from app.models.messaging import ReminderRule, SmsMessage
+    from app.services import reminders
+    from app.services.push import service as push
+
+    rule = db.scalars(
+        select(ReminderRule).where(
+            ReminderRule.gym_id == gym_a.gym.id, ReminderRule.trigger == "progress"
+        )
+    ).one()
+    assert (rule.enabled, rule.days) == (False, 30)
+    rule.enabled = True
+
+    def member(phone: str, *, last_check_days_ago: int, phone_takes_push: bool):
+        m = make_member(db, gym_a, name=f"Member {phone[-2:]}", phone=phone)
+        db.add(
+            ProgressEntry(
+                gym_id=gym_a.gym.id,
+                member_id=m.id,
+                measured_on=TODAY - dt.timedelta(days=last_check_days_ago),
+                weight_g=70_000,
+            )
+        )
+        if phone_takes_push:
+            push.subscribe_app(
+                db, m, expo_token=f"ExponentPushToken[{phone}]", user_agent="app"
+            )
+        db.commit()
+        return m
+
+    due = member("9812000031", last_check_days_ago=30, phone_takes_push=True)
+    member("9812000032", last_check_days_ago=30, phone_takes_push=False)
+    member("9812000033", last_check_days_ago=10, phone_takes_push=True)
+
+    assert reminders.run_daily(db) == 1
+    db.commit()
+    [job] = db.scalars(select(Job).where(Job.kind == push.JOB_PUSH))
+    assert job.payload["member_id"] == str(due.id)
+    assert job.payload["url"].endswith("/progress")
+    assert "30 days" in job.payload["body"]
+    assert job.payload["fallback"] is None  # never an SMS instead
+    assert not db.scalars(
+        select(SmsMessage).where(SmsMessage.kind == "reminder")
+    ).first()
+    assert reminders.run_daily(db) == 0  # once per check

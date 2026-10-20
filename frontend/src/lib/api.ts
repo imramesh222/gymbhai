@@ -1368,7 +1368,14 @@ export interface SmsMessage {
 
 /** What starts an automation (PLAN.md §16.3, 8.2; personal training's, §18.3). */
 export type Trigger =
-  "expiry" | "lapsed" | "dues" | "not_visiting" | "birthday" | "pt_ending" | "pt_dues";
+  | "expiry"
+  | "lapsed"
+  | "dues"
+  | "not_visiting"
+  | "birthday"
+  | "pt_ending"
+  | "pt_dues"
+  | "progress";
 
 export interface MessageSettings {
   welcome_sms: string;
