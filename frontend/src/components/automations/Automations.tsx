@@ -30,14 +30,31 @@ function Placeholders({ names }: { names: string[] }) {
   );
 }
 
+/**
+ * What a member who agreed gets on WhatsApp instead of the SMS (PLAN.md
+ * §19.3): our wording, approved by Meta, so the gym can't edit it.
+ */
+export function WhatsAppWording({ text }: { text: string | null | undefined }) {
+  if (!text)
+    return <p className="text-xs text-slate-500">{t("automations.whatsappNone")}</p>;
+  return (
+    <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+      <p className="font-semibold">{t("automations.whatsappWording")}</p>
+      <p className="mt-0.5">{text}</p>
+    </div>
+  );
+}
+
 function RuleEditor({
   info,
   rule,
   onChanged,
+  whatsapp,
 }: {
   info: TriggerInfo;
   rule: ReminderRule;
   onChanged: () => void;
+  whatsapp: boolean;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -120,6 +137,7 @@ function RuleEditor({
       ) : (
         <SmsCounter text={template} />
       )}
+      {whatsapp && !info.pushOnly && <WhatsAppWording text={rule.whatsapp} />}
       {error && <Notice tone="error">{error}</Notice>}
       {dirty && (
         <Button
@@ -219,10 +237,13 @@ export function TriggerCard({
   info,
   rules,
   onChanged,
+  whatsapp = false,
 }: {
   info: TriggerInfo;
   rules: ReminderRule[];
   onChanged: () => void;
+  /** The gym sends WhatsApp messages (§19.3): show each rule's wording. */
+  whatsapp?: boolean;
 }) {
   const hasDays = info.min !== info.max;
   return (
@@ -230,7 +251,13 @@ export function TriggerCard({
       <div className="space-y-3">
         <p className="text-sm text-slate-600">{t(info.help)}</p>
         {rules.map((rule) => (
-          <RuleEditor key={rule.id} info={info} rule={rule} onChanged={onChanged} />
+          <RuleEditor
+            key={rule.id}
+            info={info}
+            rule={rule}
+            onChanged={onChanged}
+            whatsapp={whatsapp}
+          />
         ))}
         <Placeholders names={info.placeholders} />
         {(hasDays || rules.length === 0) && <AddRule info={info} onAdded={onChanged} />}

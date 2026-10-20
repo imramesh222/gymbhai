@@ -34,6 +34,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const links = [
     { href: "/admin", label: t("admin.gyms") },
     { href: "/admin/plans", label: t("admin.plans") },
+    { href: "/admin/apps", label: t("admin.apps") },
     { href: "/admin/referrals", label: t("referrals.title") },
     { href: "/admin/changelog", label: t("changelog.title") },
     { href: "/admin/account", label: t("nav.profile") },

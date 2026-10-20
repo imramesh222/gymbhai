@@ -18,6 +18,7 @@ from app.core.gym_settings import GymSettings
 from app.core.permissions import Permission
 from app.core.sms_text import segments
 from app.core.time import today_in_nepal, utcnow
+from app.core.whatsapp_templates import TEMPLATES, for_rule, meta_language
 from app.db.session import get_db
 from app.models.gym import Gym
 from app.models.member import Member
@@ -55,6 +56,7 @@ from app.services import activity, live, reminders, training
 from app.services import members as members_service
 from app.services.push import service as push
 from app.services.sms import service as sms
+from app.services.whatsapp import service as whatsapp
 
 router = APIRouter(tags=["messages"])
 
@@ -316,12 +318,29 @@ RULE_TAKEN = AppError(
 )
 
 
+def _whatsapp_text(gym: Gym, key: str) -> str:
+    """Our template as the gym's members would read it, {placeholders} kept."""
+    language, _ = meta_language(gym.config.language)
+    return TEMPLATES[key].text[language]
+
+
+def rule_read(gym: Gym, rule: ReminderRule) -> ReminderRuleRead:
+    read = ReminderRuleRead.model_validate(rule)
+    template = for_rule(rule.trigger, rule.days)
+    read.whatsapp = _whatsapp_text(gym, template.key) if template else None
+    return read
+
+
 @router.get("/reminder-rules", response_model=list[ReminderRuleRead])
 def list_rules(
     db: Session = Depends(get_db), ctx: StaffContext = Depends(SETUP_REMINDERS)
-) -> list[ReminderRule]:
+) -> list[ReminderRuleRead]:
+    gym = _gym(db, ctx)
     stmt = for_gym(select(ReminderRule), ReminderRule, ctx)
-    return list(db.scalars(stmt.order_by(ReminderRule.trigger, ReminderRule.days)))
+    return [
+        rule_read(gym, rule)
+        for rule in db.scalars(stmt.order_by(ReminderRule.trigger, ReminderRule.days))
+    ]
 
 
 @router.post(
@@ -334,7 +353,7 @@ def create_rule(
     request: Request,
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(SETUP_REMINDERS),
-) -> ReminderRule:
+) -> ReminderRuleRead:
     rule = ReminderRule(gym_id=ctx.gym_id, **payload.model_dump())
     db.add(rule)
     try:
@@ -352,7 +371,7 @@ def create_rule(
         request=request,
     )
     db.commit()
-    return rule
+    return rule_read(_gym(db, ctx), rule)
 
 
 @router.patch("/reminder-rules/{rule_id}", response_model=ReminderRuleRead)
@@ -362,7 +381,7 @@ def update_rule(
     request: Request,
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(SETUP_REMINDERS),
-) -> ReminderRule:
+) -> ReminderRuleRead:
     rule = get_in_gym(db, ReminderRule, rule_id, ctx, message="No such reminder.")
     fields = ("days", "template", "enabled")
     before = {f: getattr(rule, f) for f in fields}
@@ -391,7 +410,7 @@ def update_rule(
             request=request,
         )
     db.commit()
-    return rule
+    return rule_read(_gym(db, ctx), rule)
 
 
 @router.delete("/reminder-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -422,6 +441,9 @@ def _templates(gym: Gym) -> SmsTemplates:
         welcome_sms=config.welcome_sms,
         membership_sms=config.membership_sms,
         also_sms=config.also_sms,
+        whatsapp=whatsapp.available() and config.whatsapp,
+        welcome_whatsapp=_whatsapp_text(gym, "welcome"),
+        membership_whatsapp=_whatsapp_text(gym, "membership_active"),
     )
 
 

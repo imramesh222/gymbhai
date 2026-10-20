@@ -588,3 +588,149 @@ def test_classes(engine, client: TestClient, db: Session, gym_a) -> None:
 
     add(99)
     same_cost(engine, client, "/api/v1/classes", add)
+
+
+def test_messages_and_automations(engine, client: TestClient, db: Session, gym_a):
+    """Sent messages with WhatsApp rows among the SMS, and the automations
+    with their WhatsApp wording (§19.3)."""
+    from app.core.whatsapp_templates import WhatsApp
+    from app.models.messaging import ReminderRule
+    from app.services.sms import service as sms
+    from app.services.whatsapp import service as whatsapp
+
+    sign_in(db, client, gym_a.owner)
+    gym_a.gym.settings = {**gym_a.gym.settings, "whatsapp": True}
+    db.commit()
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98123500{n:02d}")
+        if n % 2:
+            whatsapp.queue(
+                db,
+                gym_a.gym,
+                member,
+                WhatsApp("welcome_no_plan", {"name": "M", "gym": "G"}),
+                kind="welcome",
+                fallback="Welcome",
+            )
+        else:
+            sms.queue(
+                db, gym_id=gym_a.gym.id, to=member.phone, body="Hi", kind="manual"
+            )
+        db.add(
+            ReminderRule(
+                gym_id=gym_a.gym.id, trigger="dues", days=20 + n, template="Owed"
+            )
+        )
+        db.commit()
+
+    def log() -> list:
+        return client.get("/api/v1/sms").json()["items"]
+
+    add(99)
+    one = queries(engine, log)
+    rules_one = queries(engine, lambda: client.get("/api/v1/reminder-rules"))
+    before = len(log())
+    for n in range(MORE):
+        add(n)
+    assert len(log()) == before + MORE
+    assert queries(engine, log) == one
+    assert queries(engine, lambda: client.get("/api/v1/reminder-rules")) == rules_one
+
+
+def test_the_shop(engine, client: TestClient, db: Session, gym_a) -> None:
+    """Products, and a month of sales with their lines, members and payments
+    (§20.1)."""
+    from app.services import shop
+    from tests.conftest import context_for
+
+    sign_in(db, client, gym_a.owner)
+    ctx = context_for(db, gym_a.owner)
+
+    def add(n: int) -> None:
+        product = shop.create_product(
+            db, ctx, {"name": f"Bar {n}", "category": "snack", "price": 150_00,
+                      "stock": 10}, None,
+        )  # fmt: skip
+        member = (
+            make_member(db, gym_a, name=f"Buyer {n}", phone=f"98123600{n:02d}")
+            if n % 2
+            else None
+        )
+        shop.sell(
+            db, ctx, lines=[(product.id, 1)], member_id=member.id if member else None,
+            branch_id=None, discount=0, method="cash", transaction_ref=None, note=None,
+        )  # fmt: skip
+        db.commit()
+
+    add(99)
+    same_cost(engine, client, "/api/v1/products", add)
+
+    def sales() -> list:
+        return client.get("/api/v1/sales").json()["items"]
+
+    one = queries(engine, sales)
+    before = len(sales())
+    for n in range(MORE):
+        add(50 + n)
+    assert len(sales()) == before + MORE
+    assert queries(engine, sales) == one
+
+
+def test_the_sales_book(engine, client: TestClient, db: Session, gym_a) -> None:
+    """A month of tax invoices and credit notes (§20.4)."""
+    from app.core.time import today_in_nepal
+
+    sign_in(db, client, gym_a.owner)
+    client.put(
+        "/api/v1/gym/tax",
+        json={
+            "vat_registered": True,
+            "pan": "301234567",
+            "starts_on": today_in_nepal().isoformat(),
+        },
+    )
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Payer {n}", phone=f"98123700{n:02d}")
+        _, payment = sell(db, gym_a, member, paid=1500_00)
+        if n % 2:
+            client.post(f"/api/v1/payments/{payment.id}/void", json={"reason": "Wrong"})
+
+    def documents() -> list:
+        book = client.get("/api/v1/tax-invoices").json()
+        return book["invoices"] + book["returns"]
+
+    add(99)
+    one = queries(engine, documents)
+    before = len(documents())
+    for n in range(MORE):
+        add(n)
+    assert len(documents()) > before
+    assert queries(engine, documents) == one
+
+
+def test_gym_apps(engine, client: TestClient, db: Session, platform_admin) -> None:
+    """Every gym's own app, in /admin (§20.3)."""
+    from app.core.time import utcnow
+    from app.models.branded_app import BrandedApp
+
+    admin = TestClient(client.app)
+    sign_in(db, admin, platform_admin)
+
+    def add(n: int) -> None:
+        gym = make_gym(db, slug=f"apps-{n}", phone=f"98123800{n:02d}")
+        db.add(
+            BrandedApp(
+                gym_id=gym.gym.id,
+                app_name=f"Gym {n}",
+                color="#000000",
+                android_package=f"np.gymbhai.g{n}",
+                ios_bundle_id=f"np.gymbhai.g{n}",
+                asked_at=utcnow(),
+            )
+        )
+        db.commit()
+
+    add(99)
+    same_cost(engine, admin, "/api/v1/admin/apps", add)

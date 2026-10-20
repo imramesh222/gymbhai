@@ -50,6 +50,11 @@ class Permission(StrEnum):
     # Expenses: money the gym spent (§18.1). Seeing them is REPORTS_MONEY.
     EXPENSES_RECORD = "expenses.record"
     EXPENSES_EDIT = "expenses.edit"
+    # The shop at the desk (§20.1): selling, and the products with their
+    # prices and stock. Voiding a sale is PAYMENTS_VOID, as for any payment;
+    # the month's sales and totals are REPORTS_MONEY.
+    SHOP_SELL = "shop.sell"
+    SHOP_MANAGE = "shop.manage"
     # Door
     DOOR_CHECK_IN = "door.check_in"
     DOOR_OVERRIDE = "door.override"
@@ -102,6 +107,7 @@ PRESETS: dict[str, frozenset[Permission]] = {
             Permission.DOOR_CHECK_IN,
             Permission.LEADS_MANAGE,
             Permission.CLASSES_BOOK,
+            Permission.SHOP_SELL,
         }
     ),
     # Their own clients and sessions, and the door (§18.3).

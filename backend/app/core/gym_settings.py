@@ -54,6 +54,9 @@ class GymSettings(BaseModel):
     # Members whose phone takes push get push alone, free (§16.3, 8.3). On:
     # an SMS as well, for gyms whose members don't look at notifications.
     also_sms: bool = False
+    # WhatsApp between push and SMS, for members who agreed (§19.3): utility
+    # messages only, and each costs the credits set in /admin. Off to start.
+    whatsapp: bool = False
     # "Ask to join" behind the gym QR: makes an enquiry (§16.4, 9.5).
     join_form: bool = False
     # "Quiet / Normal / Busy" on the member app's Home (§16.3, 8.5).

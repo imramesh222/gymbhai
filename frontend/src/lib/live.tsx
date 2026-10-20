@@ -22,6 +22,8 @@ export type LiveType =
   | "pt"
   | "class"
   | "member"
+  | "message"
+  | "shop"
   | "notice"
   | "staff";
 

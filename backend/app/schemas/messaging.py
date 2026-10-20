@@ -90,6 +90,11 @@ class SmsRead(BaseModel):
     error: str | None
     sent_at: dt.datetime | None
     created_at: dt.datetime
+    # SMS or WhatsApp (§19.3); for WhatsApp, Meta's delivery reports.
+    channel: str = "sms"
+    template: str | None = None
+    delivered_at: dt.datetime | None = None
+    read_at: dt.datetime | None = None
 
 
 class SmsLog(BaseModel):
@@ -141,6 +146,9 @@ class ReminderRuleRead(BaseModel):
     days: int
     template: str
     enabled: bool
+    # Our WhatsApp wording for it (§19.3), in the gym's language, when it can
+    # go by WhatsApp: utility messages only.
+    whatsapp: str | None = None
 
 
 class ReminderRuleIn(Strict):
@@ -168,6 +176,10 @@ class SmsTemplates(BaseModel):
     membership_sms: str
     # SMS as well as push, for members whose phone takes push (§16.3, 8.3).
     also_sms: bool
+    # WhatsApp (§19.3): on for this gym, and our wording for these two.
+    whatsapp: bool = False
+    welcome_whatsapp: str = ""
+    membership_whatsapp: str = ""
 
 
 class SmsTemplatesUpdate(Strict):

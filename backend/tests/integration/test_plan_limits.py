@@ -95,7 +95,8 @@ def window(start: dt.datetime, minutes: int) -> dict:
 def test_off_peak_hours(client: TestClient, db: Session, gym_a: GymFixture) -> None:
     sign_in(db, client, gym_a.owner)
     later = utcnow() + dt.timedelta(hours=3)
-    if later.astimezone(NEPAL).date() != TODAY:  # late at night: earlier instead
+    # The hour must end the same day: from 20:00 on, earlier instead.
+    if (later + dt.timedelta(minutes=60)).astimezone(NEPAL).date() != TODAY:
         later = utcnow() - dt.timedelta(hours=4)
     closed = plan(client, name="Off-peak", access_hours=[window(later, 60)])
     assert closed["access_hours"][0]["from"] == later.astimezone(NEPAL).strftime(

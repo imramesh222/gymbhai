@@ -156,6 +156,13 @@ ACTIONS: dict[Permission, tuple] = {
     Permission.CLASSES_MANAGE: ("POST", "/api/v1/class-types", {"name": "Yoga"}),
     # Progress (§19.5).
     Permission.PROGRESS_RECORD: ("GET", "/api/v1/members/{member}/progress", None),
+    # The shop (§20.1): a sale, and the products.
+    Permission.SHOP_SELL: (
+        "POST",
+        "/api/v1/sales",
+        {"lines": [{"product_id": "{product}", "quantity": 1}]},
+    ),
+    Permission.SHOP_MANAGE: ("POST", "/api/v1/products", {"name": "Whey", "price": 1}),
 }
 
 # Their screens arrive later (PLAN.md §12). Remove each when it gets a route.
@@ -194,7 +201,10 @@ def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
     from app.models.classes import ClassType, GymClass
 
     zumba = ClassType(gym_id=gym_a.gym.id, name="Zumba")
-    db.add_all([expense, pt_plan, zumba])
+    from app.models.shop import Product
+
+    water = Product(gym_id=gym_a.gym.id, name="Water", category="drink", price=50_00)
+    db.add_all([expense, pt_plan, zumba, water])
     db.flush()
     tomorrow = utcnow() + dt.timedelta(days=1)
     gym_class = GymClass(
@@ -209,6 +219,7 @@ def ids(db: Session, gym_a: GymFixture) -> dict[str, str]:
     db.commit()
     return {
         "class": str(gym_class.id),
+        "product": str(water.id),
         "member": str(member.id),
         "plan": str(plan.id),
         "membership": str(membership.id),

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.time import utcnow
-from app.models.activity import ACTOR_MEMBER, ACTOR_STAFF, ActivityLog
+from app.models.activity import ACTOR_MEMBER, ACTOR_STAFF, ACTOR_SYSTEM, ActivityLog
 from app.models.member import Member
 from app.models.staff import StaffUser
 
@@ -99,10 +99,13 @@ def member_action(
 def staff_action(
     db: Session, staff: StaffUser, action: str, **kwargs: Any
 ) -> ActivityLog:
+    """Something staff did; or, with the stand-in of a system context
+    (no id), something GymBhai did for the gym, such as a payment the wallet
+    confirmed (§20.2)."""
     return record(
         db,
         gym_id=kwargs.pop("gym_id", staff.gym_id),
-        actor_type=ACTOR_STAFF,
+        actor_type=ACTOR_STAFF if staff.id is not None else ACTOR_SYSTEM,
         actor_id=staff.id,
         action=action,
         **kwargs,

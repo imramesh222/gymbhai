@@ -30,6 +30,23 @@ class PlatformPlanIn(Strict):
     is_active: bool = True
 
 
+class PlatformSettingsRead(BaseModel):
+    """Our own settings (§19.3): what a WhatsApp message costs a gym, in
+    message credits (an SMS part is one), and whether WhatsApp can send."""
+
+    whatsapp_credits: int
+    whatsapp_available: bool
+    # A gym's own app (§20.3), in paisa: offered once both are set.
+    branded_app_setup_price: int | None = None
+    branded_app_monthly_price: int | None = None
+
+
+class PlatformSettingsUpdate(Strict):
+    whatsapp_credits: int | None = Field(default=None, ge=1, le=20)
+    branded_app_setup_price: int | None = Field(default=None, ge=0, le=MAX_PAISA)
+    branded_app_monthly_price: int | None = Field(default=None, ge=0, le=MAX_PAISA)
+
+
 class PlatformPlanUpdate(Strict):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     max_active_members: int | None = Field(default=None, ge=1)
@@ -59,7 +76,8 @@ class SubscriptionPaymentRead(BaseModel):
 
 
 class SubscriptionPaymentIn(Strict):
-    kind: Literal["subscription", "sms"] = "subscription"
+    # app: the one-time fee for the gym's own app (§20.3).
+    kind: Literal["subscription", "sms", "app"] = "subscription"
     platform_plan_id: uuid.UUID | None = None
     months: int | None = Field(default=None, ge=1, le=24)
     sms_credits: int | None = Field(default=None, ge=1, le=1_000_000)
@@ -91,6 +109,10 @@ class SubscriptionOverview(BaseModel):
     payments: list[SubscriptionPaymentRead]
     # Where to pay us: shown on the subscription screen.
     pay_to: dict[str, str | None]
+    # The gym's own app (§20.3): its monthly add-on, while built and live, and
+    # its one-time fee until paid.
+    app_monthly: int | None = None
+    app_setup_due: int | None = None
 
 
 # --- /admin ---------------------------------------------------------------------

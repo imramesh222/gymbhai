@@ -19,6 +19,7 @@ os.environ["TRUSTED_PROXY_COUNT"] = "0"
 os.environ["EMAIL_PROVIDER"] = "console"
 os.environ["SMS_PROVIDER"] = "console"
 os.environ["PUSH_PROVIDER"] = "console"
+os.environ["WHATSAPP_PROVIDER"] = "console"
 # A key made for the tests alone, so push is switched on (PLAN.md §16.3, 8.3).
 os.environ["VAPID_PRIVATE_KEY"] = "r6AP-6DFOTeSWbF00ghu1XlddwGWOeRJmODHuo02Siw"
 

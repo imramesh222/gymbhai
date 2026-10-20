@@ -69,3 +69,24 @@ class Member(IdMixin, TimestampMixin, GymOwned, Base):
     referred_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("members.id", ondelete="SET NULL")
     )
+    # WhatsApp messages (§19.3): when they agreed (null: they haven't), and
+    # when Meta last said their number isn't on WhatsApp (tried again after
+    # 30 days, or once the number changes).
+    whatsapp_agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    whatsapp_unreachable_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    @property
+    def whatsapp_agreed(self) -> bool:
+        return self.whatsapp_agreed_at is not None
+
+    @whatsapp_agreed.setter
+    def whatsapp_agreed(self, agreed: bool) -> None:
+        """Agreeing again keeps the day they first agreed."""
+        from app.core.time import utcnow
+
+        if not agreed:
+            self.whatsapp_agreed_at = None
+        elif self.whatsapp_agreed_at is None:
+            self.whatsapp_agreed_at = utcnow()

@@ -63,6 +63,7 @@ export const keys = {
   classes: (slug: string, from: string) => [slug, "classes", from] as const,
   progress: (slug: string) => [slug, "progress"] as const,
   push: (slug: string) => [slug, "push"] as const,
+  devices: (slug: string) => [slug, "devices"] as const,
 };
 
 /** What each live event means for the screens (§17.3). */

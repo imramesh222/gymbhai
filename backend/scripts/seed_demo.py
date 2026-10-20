@@ -1,6 +1,8 @@
 """A demo gym that looks lived-in (PLAN.md §18.7): a year of members, money,
-visits, expenses, enquiries and personal training, for showing GymBhai to a
-gym or trying a screen with real-looking numbers.
+visits, expenses, enquiries and personal training; couples and a family on
+one plan, classes with their bookings and who came, progress checks, and the
+messages sent (SMS and WhatsApp), for showing GymBhai to a gym or trying a
+screen with real-looking numbers.
 
     make seed-demo        (docker compose exec api python -m scripts.seed_demo)
 
@@ -27,12 +29,20 @@ from sqlalchemy import func, insert, select
 import app.models  # noqa: F401  (registers every table)
 from app.api.deps import staff_context
 from app.api.tenancy import StaffContext
-from app.core.calendar import days_in_bs_month, from_bs, plan_end_date, to_bs
+from app.core.calendar import (
+    days_in_bs_month,
+    format_date,
+    from_bs,
+    plan_end_date,
+    to_bs,
+)
 from app.core.config import settings
+from app.core.errors import AppError
 from app.core.permissions import PRESETS
 from app.core.security import hash_password
 from app.core.time import NEPAL, today_in_nepal, utcnow
 from app.db.session import SessionLocal
+from app.models.classes import CLASSES_CHOSEN, CLASSES_NONE, ClassSlot, ClassType
 from app.models.gym import Branch, Gym
 from app.models.lead import (
     LEAD_CONTACTED,
@@ -52,7 +62,15 @@ from app.models.member_app import (
     CheckIn,
 )
 from app.models.membership import Membership
-from app.models.messaging import Notice
+from app.models.messaging import (
+    CHANNEL_SMS,
+    CHANNEL_WHATSAPP,
+    SMS_REMINDER,
+    SMS_SENT,
+    Notice,
+    SmsCreditLedger,
+    SmsMessage,
+)
 from app.models.payment import GymPaymentMethod, Payment
 from app.models.plan import Plan
 from app.models.staff import StaffBranchAccess, StaffUser
@@ -66,9 +84,12 @@ from app.services import (
     registration,
     training,
 )
+from app.services import classes as classes_service
 from app.services import expenses as expenses_service
 from app.services import members as members_service
 from app.services import memberships as ms
+from app.services import progress as progress_service
+from app.services import shop as shop_service
 from scripts.seed_app_test import remove
 
 SLUG = "demo"
@@ -128,7 +149,16 @@ def desk_time(day: dt.date, now: dt.datetime) -> dt.datetime:
 
 
 # Every module that dates what it records with utcnow().
-TIMED = (activity, ms, training, expenses_service, members_service)
+TIMED = (
+    activity,
+    ms,
+    training,
+    expenses_service,
+    members_service,
+    classes_service,
+    progress_service,
+    shop_service,
+)
 
 
 @contextmanager
@@ -221,7 +251,8 @@ def make_gym(db):
     gym, owner = made.gym, made.owner
     gym.phone = "01-4782150"
     gym.address = "New Baneshwor, Kathmandu"
-    gym.settings = {**gym.settings, "join_form": True}
+    # WhatsApp on (§19.3): it works with the console provider on a laptop.
+    gym.settings = {**gym.settings, "join_form": True, "whatsapp": True}
     koteshwor = Branch(gym_id=gym.id, name="Koteshwor")
     db.add(koteshwor)
     db.flush()
@@ -249,8 +280,43 @@ def make_gym(db):
     return gym, owner, branches, staff
 
 
-def price_plans(db, gym: Gym) -> dict[str, Plan]:
-    """The four seeded plans priced, an off-peak plan and a visit pack."""
+# Class types (§19.4): (name, minutes, places, colour).
+CLASS_TYPES = [
+    ("Zumba", 60, 20, "pink"),
+    ("Yoga", 60, 15, "green"),
+    ("Spin", 45, 10, "orange"),
+    ("HIIT", 45, 16, "blue"),
+]
+# The weekly timetable: (type, branch, weekdays (0 is Monday), start, instructor).
+TIMETABLE = [
+    ("Zumba", "Baneshwor", (0, 2, 4), "07:00", "Bikash Tamang"),
+    ("Zumba", "Baneshwor", (1, 3), "18:00", "Bikash Tamang"),
+    ("Yoga", "Baneshwor", (6, 1, 3), "06:00", "Bikash Tamang"),
+    ("Spin", "Koteshwor", (0, 2, 4), "18:30", "Sunita Rai"),
+    ("HIIT", "Koteshwor", (6, 1, 3), "07:00", "Sunita Rai"),
+    ("Zumba", "Koteshwor", (5,), "08:00", "Sunita Rai"),
+]
+
+
+def class_types(db, gym: Gym) -> dict[str, ClassType]:
+    kinds = {}
+    for n, (name, minutes, places, color) in enumerate(CLASS_TYPES):
+        kinds[name] = ClassType(
+            gym_id=gym.id,
+            name=name,
+            minutes=minutes,
+            places=places,
+            color=color,
+            sort_order=n,
+        )
+    db.add_all(kinds.values())
+    db.flush()
+    return kinds
+
+
+def price_plans(db, gym: Gym, kinds: dict[str, ClassType]) -> dict[str, Plan]:
+    """The four seeded plans priced, an off-peak plan and a visit pack; a
+    couple's and a family's plan (§19.1), and a Zumba-only plan (§19.4)."""
     prices = {1: 2500_00, 3: 6500_00, 6: 12_000_00, 12: 21_000_00}
     plans = {}
     for plan in db.scalars(select(Plan).where(Plan.gym_id == gym.id)):
@@ -275,7 +341,37 @@ def price_plans(db, gym: Gym) -> dict[str, Plan]:
         sort_order=6,
         visit_limit=10,
     )
-    db.add_all([morning, pack])
+    # The visit pack is for the gym floor: no classes.
+    pack.classes = CLASSES_NONE
+    couple = Plan(
+        gym_id=gym.id,
+        name="Couple 1 year",
+        duration_months=12,
+        price=38_000_00,
+        admission_fee=1000_00,
+        sort_order=7,
+        seats=2,
+    )
+    family = Plan(
+        gym_id=gym.id,
+        name="Family 3 months",
+        duration_months=3,
+        price=16_000_00,
+        admission_fee=500_00,
+        sort_order=8,
+        seats=4,
+    )
+    zumba = Plan(
+        gym_id=gym.id,
+        name="Zumba 1 month",
+        duration_months=1,
+        price=2000_00,
+        admission_fee=0,
+        sort_order=9,
+        classes=CLASSES_CHOSEN,
+        class_type_ids=[str(kinds["Zumba"].id)],
+    )
+    db.add_all([morning, pack, couple, family, zumba])
     db.add_all(
         GymPaymentMethod(
             gym_id=gym.id,
@@ -296,6 +392,9 @@ def price_plans(db, gym: Gym) -> dict[str, Plan]:
     db.flush()
     plans["Morning 1 month"] = morning
     plans["10 visits"] = pack
+    plans["Couple 1 year"] = couple
+    plans["Family 3 months"] = family
+    plans["Zumba 1 month"] = zumba
     return plans
 
 
@@ -309,6 +408,7 @@ PLAN_CHOICE = [
     ("1 year", 7),
     ("Morning 1 month", 7),
     ("10 visits", 3),
+    ("Zumba 1 month", 3),
 ]
 
 
@@ -759,6 +859,455 @@ def personal_training(db, gym, desk, trainers, people, refs, today, now) -> int:
     return made
 
 
+# --- couples and a family (§19.1) ---------------------------------------------------
+
+# (plan, the payer's first name, the others' first names, a last name,
+# joined this many days ago, renewed once since)
+GROUPS = [
+    ("Couple 1 year", "Sagar", ["Pooja"], "Adhikari", 300, False),
+    ("Couple 1 year", "Nabin", ["Rekha"], "Gurung", 120, False),
+    ("Family 3 months", "Prakash", ["Laxmi", "Aayush"], "Thapa", 150, True),
+    ("Family 3 months", "Suman", ["Sushma"], "Basnet", 40, False),
+]
+FAMILY_PEOPLE = sum(1 + len(others) for _, _, others, _, _, _ in GROUPS)
+
+
+def families(
+    db,
+    gym: Gym,
+    desk: StaffContext,
+    plans: dict[str, Plan],
+    branches: dict[str, Branch],
+    numbers: Iterator[str],
+    refs: Refs,
+    today: dt.date,
+    now: dt.datetime,
+) -> list[Person]:
+    """One sale for several people, the money on the payer's membership; a
+    child on a parent's phone; a family that renewed together."""
+    people = []
+    branch = branches["Baneshwor"]
+    for plan_name, payer_first, others, last, ago, renewed in GROUPS:
+        plan = plans[plan_name]
+        joined = today - dt.timedelta(days=ago)
+        moment = desk_time(joined, now)
+        phone = next(numbers)
+        made = []
+        for n, first in enumerate([payer_first, *others]):
+            child = first == "Aayush"
+            with happened(moment):
+                member = members_service.create(
+                    db,
+                    desk,
+                    {
+                        "name": f"{first} {last}",
+                        # A child on a parent's number (§5.5).
+                        "phone": phone
+                        if child
+                        else (phone if n == 0 else next(numbers)),
+                        "gender": "female" if first in FIRST_WOMEN else "male",
+                        "home_branch_id": branch.id,
+                        "joined_on": joined,
+                        "whatsapp_agreed": n == 0,
+                    },
+                    gym.config,
+                )
+            dated(db, moment, member)
+            made.append(member)
+        payer, rest = made[0], made[1:]
+        start, sale_day = joined, joined
+        periods: dict[object, list[Period]] = {m.id: [] for m in made}
+        for _ in range(2 if renewed else 1):
+            end = plan_end_date(
+                start,
+                months=plan.duration_months,
+                days=plan.duration_days,
+                calendar=gym.config.plan_months,
+            )
+            moment = desk_time(sale_day, now)
+            with happened(moment):
+                membership, _ = ms.sell(
+                    db,
+                    desk,
+                    payer,
+                    ms.SaleIn(
+                        plan_id=plan.id,
+                        branch_id=branch.id,
+                        start_date=start,
+                        end_date=end,
+                        with_member_ids=[m.id for m in rest],
+                    ),
+                    gym.config,
+                )
+                method = pick(METHODS)
+                payment = ms.record_payment(
+                    db,
+                    desk,
+                    membership,
+                    ms.PaymentIn(
+                        amount=ms.amount_due(membership),
+                        method=method,
+                        transaction_ref=refs.new(method),
+                        paid_at=moment,
+                    ),
+                )
+            group = ms.group_memberships(db, membership.group_id)
+            dated(db, moment, payment, *group)
+            for row in group:
+                periods[row.member_id].append(
+                    Period(membership_id=row.id, start=row.start_date, end=row.end_date)
+                )
+            start = membership.end_date + dt.timedelta(days=1)
+            sale_day = start - dt.timedelta(days=2)
+            if sale_day > today:
+                break
+        for member in made:
+            people.append(
+                Person(
+                    member=member,
+                    visits_per_week=rng.uniform(2.0, 4.5),
+                    morning=member is payer or rng.random() < 0.5,
+                    periods=periods[member.id],
+                )
+            )
+    return people
+
+
+# --- classes (§19.4) ----------------------------------------------------------------
+
+
+def _covered(person: Person, day: dt.date) -> bool:
+    return any(
+        p.start <= day <= p.end and not (p.frozen and p.frozen[0] <= day <= p.frozen[1])
+        for p in person.periods
+    )
+
+
+def classes(
+    db,
+    gym: Gym,
+    branches: dict[str, Branch],
+    kinds: dict[str, ClassType],
+    staff: dict[str, StaffUser],
+    people: list[Person],
+    today: dt.date,
+    now: dt.datetime,
+) -> int:
+    """The timetable, four weeks of classes behind and four ahead: booked from
+    the app, a few cancelled late, who came ticked by the instructor; the week
+    ahead booked, Saturday's Zumba full with a waitlist."""
+    for name, branch, days, starts, teacher in TIMETABLE:
+        kind = kinds[name]
+        for weekday in days:
+            db.add(
+                ClassSlot(
+                    gym_id=gym.id,
+                    branch_id=branches[branch].id,
+                    type_id=kind.id,
+                    weekday=weekday,
+                    starts=starts,
+                    minutes=kind.minutes,
+                    places=kind.places,
+                    instructor_id=staff[teacher].id,
+                )
+            )
+    db.flush()
+    # The worker makes each class 4 weeks ahead: as it would have, from 4
+    # weeks ago.
+    first = today - dt.timedelta(days=28)
+    for day in (first, today):
+        with happened(at(day, 0, 5)):
+            classes_service.generate(db, gym_id=gym.id, today=day)
+    teachers = {s.id: staff_context(s, db) for s in staff.values()}
+    by_branch: dict[object, list[Person]] = {}
+    for person in people:
+        if not person.member.is_archived:
+            by_branch.setdefault(person.member.home_branch_id, []).append(person)
+
+    from app.models.classes import GymClass
+
+    booked = 0
+    week_ahead = now + dt.timedelta(days=7)
+    rows = db.scalars(
+        select(GymClass)
+        .where(GymClass.gym_id == gym.id, GymClass.starts_at <= week_ahead)
+        .order_by(GymClass.starts_at)
+    ).all()
+    for gym_class in rows:
+        day = gym_class.starts_at.astimezone(NEPAL).date()
+        kind = db.get(ClassType, gym_class.type_id)
+        assert kind is not None
+        regulars = [
+            p for p in by_branch.get(gym_class.branch_id, []) if _covered(p, day)
+        ]
+        busy = kind.name == "Zumba" and day.weekday() == 5
+        wanted = (
+            gym_class.places + 3
+            if busy
+            else int(gym_class.places * rng.uniform(0.35, 0.9))
+        )
+        past = gym_class.starts_at < now
+        made = []
+        for person in rng.sample(regulars, min(wanted, len(regulars))):
+            # Within the week before, once booking opened, and not after now.
+            when = gym_class.starts_at - dt.timedelta(hours=rng.randint(3, 60))
+            when = max(when, gym_class.starts_at - dt.timedelta(days=6, hours=23))
+            when = min(when, now - dt.timedelta(minutes=rng.randint(1, 50)))
+            if when >= gym_class.starts_at - dt.timedelta(minutes=30):
+                continue
+            try:
+                with ExitStack() as stack:
+                    stack.enter_context(happened(when))
+                    # No reminders for classes long gone.
+                    stack.enter_context(
+                        patch.object(classes_service, "_remind", lambda *a: None)
+                    )
+                    booking = classes_service.book(db, gym, person.member, gym_class)
+            except AppError:
+                continue  # their plan doesn't include it: as the app would say
+            dated(db, when, booking)
+            made.append(booking)
+            booked += 1
+        if not past:
+            continue
+        teacher = teachers[gym_class.instructor_id]
+        for booking in made:
+            if booking.status != "booked":
+                continue
+            if rng.random() < 0.06:
+                late = rng.random() < 0.5
+                when = gym_class.starts_at - dt.timedelta(hours=1 if late else 20)
+                if when > booking.booked_at:
+                    with happened(when):
+                        classes_service.cancel_booking(db, gym, booking, gym_class)
+                    continue
+            with happened(gym_class.starts_at + dt.timedelta(minutes=50)):
+                classes_service.set_attended(
+                    db, teacher, booking, gym_class, rng.random() < 0.88
+                )
+    return booked
+
+
+# --- progress (§19.5) ----------------------------------------------------------------
+
+
+def progress(
+    db,
+    gym: Gym,
+    people: list[Person],
+    trainers: list[tuple[StaffContext, StaffUser]],
+    today: dt.date,
+) -> int:
+    """Weight and measurements every few weeks for some members: recorded in
+    their app, or by a trainer; most losing a little, some building up."""
+    candidates = [
+        p
+        for p in people
+        if p.periods and p.periods[-1].end >= today - dt.timedelta(days=20)
+    ]
+    made = 0
+    for person in rng.sample(candidates, min(30, len(candidates))):
+        member = person.member
+        woman = member.gender == "female"
+        member.height_mm = rng.randint(1500, 1700) if woman else rng.randint(1620, 1850)
+        weight = rng.uniform(52, 75) if woman else rng.uniform(62, 95)
+        trend = rng.choice([-0.9, -0.6, -0.4, -0.2, 0.3])  # kg a month
+        fat = rng.uniform(24, 34) if woman else rng.uniform(16, 28)
+        waist = rng.uniform(70, 90) if woman else rng.uniform(80, 102)
+        measures = rng.random() < 0.6
+        trainer = rng.choice(trainers)[1] if rng.random() < 0.4 else None
+        day = max(person.periods[0].start, today - dt.timedelta(days=150))
+        while day <= today:
+            months = (day - person.periods[0].start).days / 30
+            kilos = weight + trend * months + rng.uniform(-0.6, 0.6)
+            fields: dict = {"measured_on": day, "weight_g": round(kilos * 10) * 100}
+            if measures:
+                fields["body_fat"] = round((fat + trend * 0.6 * months) * 10)
+                fields["waist_mm"] = round((waist + trend * 1.1 * months) * 10)
+            with happened(at(day, rng.randint(6, 19), rng.randint(0, 59))):
+                progress_service.record(db, member, fields, staff=trainer)
+            made += 1
+            day += dt.timedelta(days=rng.randint(14, 30))
+    db.flush()
+    return made
+
+
+# --- messages sent (§19.3) ----------------------------------------------------------
+
+
+# What the desk sells (§20.1): name, category, rupees, opening stock, warn at,
+# and how many a day go, roughly.
+SHELF = [
+    ("Whey protein 2 lb", "supplement", 6_500, 8, 3, 0.12),
+    ("Whey protein 5 lb", "supplement", 13_500, 4, 2, 0.05),
+    ("Mass gainer 3 kg", "supplement", 7_800, 4, 2, 0.04),
+    ("Creatine 300 g", "supplement", 4_200, 6, 2, 0.06),
+    ("BCAA 30 servings", "supplement", 3_900, 5, 2, 0.04),
+    ("Water 1 litre", "drink", 30, 60, 12, 3.2),
+    ("Energy drink", "drink", 150, 24, 6, 0.8),
+    ("Protein bar", "snack", 250, 30, 8, 0.9),
+    ("Shaker bottle", "merchandise", 600, 12, 3, 0.08),
+    ("Gym T-shirt", "merchandise", 1_200, 15, 4, 0.06),
+    ("Lifting gloves", "merchandise", 1_500, 6, 2, 0.04),
+]
+SHOP_DAYS = 90
+
+
+def shop(db, desk: StaffContext, people: list[Person], refs: Refs, today, now) -> int:
+    """Three months of the till: protein and water mostly, to members and
+    walk-ins, deliveries when stock runs low, and one sale voided."""
+    opened = today - dt.timedelta(days=SHOP_DAYS)
+    products = []
+    with happened(at(opened, 9, 30)):
+        for n, (name, category, rupees, stock, low, _) in enumerate(SHELF):
+            product = shop_service.create_product(
+                db,
+                desk,
+                {
+                    "name": name,
+                    "category": category,
+                    "price": rupees * 100,
+                    "stock": stock,
+                    "low_stock": low,
+                    "code": f"89{n:04d}{rng.randint(100_000, 999_999)}",
+                    "sort_order": n,
+                },
+                None,
+            )
+            products.append(product)
+    sales = []
+    members = [p.member for p in people if not p.member.is_archived]
+    for offset in range(SHOP_DAYS):
+        day = opened + dt.timedelta(days=offset + 1)
+        for product, (_, _, _, stock, low, _) in zip(products, SHELF, strict=True):
+            # A delivery the morning after the shelf ran low.
+            if product.stock is not None and product.stock <= low:
+                with happened(at(day, 8, rng.randint(0, 50))):
+                    shop_service.change_stock(
+                        db, desk, product, "restock", stock, None, None
+                    )
+        basket_count = rng.randint(2, 6)
+        for _ in range(basket_count):
+            moment = desk_time(day, now)
+            if moment.date() != day:
+                continue
+            basket = {}
+            for product, (*_, per_day) in zip(products, SHELF, strict=True):
+                if rng.random() < per_day / basket_count:
+                    left = product.stock if product.stock is not None else 99
+                    count = min(left, 1 if per_day < 1 else rng.randint(1, 3))
+                    if count > 0:
+                        basket[product.id] = count
+            if not basket:
+                continue
+            method = pick(METHODS)
+            buyer = rng.choice(members) if rng.random() < 0.7 else None
+            with happened(moment):
+                sale, payment = shop_service.sell(
+                    db,
+                    desk,
+                    lines=list(basket.items()),
+                    member_id=buyer.id if buyer else None,
+                    branch_id=None,
+                    discount=0,
+                    method=method,
+                    transaction_ref=refs.new(method),
+                    note=None,
+                )
+            dated(db, moment, sale, payment)
+            sales.append(sale)
+    # Rung up twice by mistake.
+    if sales:
+        wrong = sales[-3]
+        with happened(wrong.sold_at + dt.timedelta(minutes=4)):
+            shop_service.void(db, desk, wrong, "Rung up twice")
+    return len(sales)
+
+
+def messages(db, gym: Gym, people: list[Person], today: dt.date, now) -> int:
+    """The last fortnight's reminders: by WhatsApp to members who agreed,
+    delivered and mostly read, by SMS to the rest; message credits bought
+    and spent."""
+    agreed = [p for p in people if rng.random() < 0.45 and not p.member.is_archived]
+    for person in agreed:
+        person.member.whatsapp_agreed_at = at(person.member.joined_on, 12, 0)
+    bought = at(today - dt.timedelta(days=20), 11, 0)
+    balance = 1000 + (
+        db.scalar(
+            select(func.coalesce(func.sum(SmsCreditLedger.change), 0)).where(
+                SmsCreditLedger.gym_id == gym.id
+            )
+        )
+        or 0
+    )
+    db.add(
+        SmsCreditLedger(
+            gym_id=gym.id,
+            change=1000,
+            reason="topup:1000",
+            balance_after=balance,
+            created_at=bought,
+        )
+    )
+    recent = today - dt.timedelta(days=14)
+    soon = today + dt.timedelta(days=7)
+    ending = [p for p in people if p.periods and recent <= p.periods[-1].end <= soon]
+    # A small demo (the tests'): someone, at least.
+    ending = ending or [p for p in people if p.periods][:3]
+    sent = 0
+    for person in ending:
+        member = person.member
+        end = person.periods[-1].end
+        day = min(end - dt.timedelta(days=3), today)
+        when = min(at(day, 9, rng.randint(0, 20)), now - dt.timedelta(minutes=5))
+        first = member.name.split()[0]
+        on_whatsapp = member.whatsapp_agreed_at is not None
+        if on_whatsapp:
+            body = (
+                f"Hi {first}, this is {gym.name}. Your membership ends on "
+                f"{format_date(end, gym.config.date_display)}. You can renew at "
+                "the desk or in the app."
+            )
+        else:
+            body = f"Hi {first}, 3 days left on your {gym.name} membership. Renew: …"
+        message = SmsMessage(
+            gym_id=gym.id,
+            member_id=member.id,
+            to=member.phone,
+            body=body,
+            kind=SMS_REMINDER,
+            status=SMS_SENT,
+            provider="console",
+            segments=1,
+            sent_at=when,
+            channel=CHANNEL_WHATSAPP if on_whatsapp else CHANNEL_SMS,
+            template="gymbhai_membership_ends" if on_whatsapp else None,
+            delivered_at=when + dt.timedelta(seconds=rng.randint(2, 40))
+            if on_whatsapp
+            else None,
+            read_at=when + dt.timedelta(minutes=rng.randint(1, 300))
+            if on_whatsapp and rng.random() < 0.8
+            else None,
+            created_at=when,
+        )
+        db.add(message)
+        db.flush()
+        balance -= 1
+        db.add(
+            SmsCreditLedger(
+                gym_id=gym.id,
+                change=-1,
+                reason=f"{message.channel}:reminder",
+                balance_after=balance,
+                sms_message_id=message.id,
+                created_at=when,
+            )
+        )
+        sent += 1
+    db.flush()
+    return sent
+
+
 # --- the rest of a day at the desk -------------------------------------------------
 
 
@@ -844,7 +1393,8 @@ def build(db, *, members: int = MEMBERS, say=print) -> tuple[dict[str, int], str
     with patch.object(live, "publish", lambda *a, **k: None):
         remove(db, SLUG)
         gym, owner_row, branches, staff = make_gym(db)
-        plans = price_plans(db, gym)
+        kinds = class_types(db, gym)
+        plans = price_plans(db, gym, kinds)
         # On GymBhai since before its first member: Reports' trends start
         # from the month a gym joined.
         dated(
@@ -854,6 +1404,7 @@ def build(db, *, members: int = MEMBERS, say=print) -> tuple[dict[str, int], str
             owner_row,
             *branches.values(),
             *staff.values(),
+            *kinds.values(),
             *plans.values(),
         )
         owner = staff_context(owner_row, db)
@@ -866,7 +1417,7 @@ def build(db, *, members: int = MEMBERS, say=print) -> tuple[dict[str, int], str
         refs = Refs()
 
         # Members joined over the year, more of them lately.
-        numbers = phones(members)
+        numbers = phones(members + FAMILY_PEOPLE)
         people: list[Person] = []
         joined_days = sorted(
             year_ago + dt.timedelta(days=int(365 * rng.random() ** 0.8))
@@ -929,6 +1480,8 @@ def build(db, *, members: int = MEMBERS, say=print) -> tuple[dict[str, int], str
                     reason="Moved away",
                 )
 
+        people += families(db, gym, desk, plans, branches, numbers, refs, today, now)
+
         say("  visits…")
         rows = [
             row
@@ -941,6 +1494,11 @@ def build(db, *, members: int = MEMBERS, say=print) -> tuple[dict[str, int], str
         spent = spend(db, owner, branches, today, now)
         asked = enquiries(db, gym, branches, plans, people, staff, today)
         personal_training(db, gym, desk, trainers, people, refs, today, now)
+        say("  classes…")
+        booked = classes(db, gym, branches, kinds, staff, people, today, now)
+        checks = progress(db, gym, people, trainers, today)
+        sold = shop(db, desk, people, refs, today, now)
+        sent = messages(db, gym, people, today, now)
         notices(db, gym, owner_row, now)
         waiting(db, gym, people, plans, refs, today)
         db.flush()
@@ -956,6 +1514,10 @@ def build(db, *, members: int = MEMBERS, say=print) -> tuple[dict[str, int], str
         "expenses": spent,
         "enquiries": asked,
         "personal training": count(PtPackage),
+        "class bookings": booked,
+        "progress checks": checks,
+        "messages": sent,
+        "shop sales": sold,
     }
     return counts, people[-1].member.phone
 

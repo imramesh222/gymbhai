@@ -286,14 +286,19 @@ function EditClass({
     places: String(gymClass.places),
     instructor_id: gymClass.instructor_id ?? "",
   });
+  const [sms, setSms] = useState(false);
+  const starts = `${form.day}T${form.time}:00+05:45`;
+  const moving = Date.parse(starts) !== Date.parse(gymClass.starts_at);
+  const told = gymClass.booked + gymClass.waiting;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         const body: Record<string, unknown> = {};
-        const starts = `${form.day}T${form.time}:00+05:45`;
-        if (Date.parse(starts) !== Date.parse(gymClass.starts_at))
+        if (moving) {
           body.starts_at = starts;
+          body.sms = sms;
+        }
         if (Number(form.places) !== gymClass.places) body.places = Number(form.places);
         if ((form.instructor_id || null) !== gymClass.instructor_id)
           body.instructor_id = form.instructor_id || null;
@@ -316,6 +321,12 @@ function EditClass({
           type="time"
         />
       </div>
+      {moving && told > 0 && (
+        <div className="space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{t("classes.moveTells", { count: told })}</p>
+          <Checkbox label={t("classes.cancelSms")} checked={sms} onChange={setSms} />
+        </div>
+      )}
       <Field
         label={t("classes.places")}
         value={form.places}

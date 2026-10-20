@@ -16,6 +16,7 @@ from app.api.tenancy import StaffContext
 from app.core.calendar import format_date
 from app.core.errors import AppError
 from app.core.time import today_in_nepal, utcnow
+from app.core.whatsapp_templates import WhatsApp
 from app.models.gym import Gym
 from app.models.member import Member
 from app.models.member_app import (
@@ -130,7 +131,9 @@ def withdraw(db: Session, member: Member, row: FreezeRequest) -> None:
     _changed(db, row)
 
 
-def _tell(db: Session, gym: Gym, member: Member, text: str) -> None:
+def _tell(
+    db: Session, gym: Gym, member: Member, text: str, template: str, **values: str
+) -> None:
     push.notify(
         db,
         gym,
@@ -141,6 +144,11 @@ def _tell(db: Session, gym: Gym, member: Member, text: str) -> None:
         tag="freeze_request",
         sms_body=f"{gym.name}: {text}",
         sms_kind=SMS_MEMBERSHIP,
+        whatsapp=WhatsApp(
+            template,
+            {"name": member.name.split()[0], "gym": gym.name, **values},
+            button=f"{gym.slug}/freeze",
+        ),
     )
 
 
@@ -176,13 +184,19 @@ def approve(
     member = db.get(Member, row.member_id)
     assert gym is not None and member is not None
     show = gym.config.date_display
+    dates = {
+        "from_date": format_date(row.from_date, show),
+        "to_date": format_date(row.to_date, show),
+        "end_date": format_date(membership.end_date, show),
+    }
     _tell(
         db,
         gym,
         member,
-        f"your membership is frozen from {format_date(row.from_date, show)} to "
-        f"{format_date(row.to_date, show)}. It now ends on "
-        f"{format_date(membership.end_date, show)}.",
+        f"your membership is frozen from {dates['from_date']} to "
+        f"{dates['to_date']}. It now ends on {dates['end_date']}.",
+        "freeze_approved",
+        **dates,
     )
     live.member_changed(db, ctx.gym_id, member.id, member.home_branch_id)
     _changed(db, row)
@@ -214,7 +228,14 @@ def reject(
     gym = db.get(Gym, ctx.gym_id)
     member = db.get(Member, row.member_id)
     assert gym is not None and member is not None
-    _tell(db, gym, member, f"we couldn't freeze your membership: {reason}")
+    _tell(
+        db,
+        gym,
+        member,
+        f"we couldn't freeze your membership: {reason}",
+        "freeze_not_approved",
+        reason=reason,
+    )
     _changed(db, row)
     return row
 

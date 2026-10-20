@@ -13,6 +13,11 @@ export function formatRs(paisa: number | null | undefined): string {
   return `${sign}${symbol} ${localDigits(rupees.format(Math.abs(paisa) / 100))}`;
 }
 
+/** To the nearest rupee: "Rs 1,833" a month, not "Rs 1,833.33". */
+export function formatWholeRs(paisa: number): string {
+  return formatRs(Math.round(paisa / 100) * 100);
+}
+
 /** "1,500" or "1500.50" typed by a person -> paisa. Null if not a number. */
 export function parseRs(input: string): number | null {
   const cleaned = input.replace(/[,\s]/g, "").replace(/^rs\.?/i, "");

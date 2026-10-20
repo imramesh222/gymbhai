@@ -47,4 +47,8 @@ export const SETTINGS_PAGES: SettingsPage[] = [
     anyOf: ["setup.devices"],
   },
   { href: "/staff/settings/security", label: "settings.nav.security", ownerOnly: true },
+  // A gym's own app in the stores (§20.3); paid for like the subscription.
+  { href: "/staff/settings/app", label: "settings.nav.app", anyOf: ["setup.gym"] },
+  // VAT invoices (§20.4): off on a server until GymBhai is IRD-certified.
+  { href: "/staff/settings/tax", label: "settings.nav.tax", anyOf: ["setup.gym"] },
 ];

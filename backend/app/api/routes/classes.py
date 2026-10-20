@@ -477,6 +477,7 @@ def update_class(
     length = gym_class.ends_at - gym_class.starts_at
     if changes.get("minutes"):
         length = dt.timedelta(minutes=changes["minutes"])
+    was = gym_class.starts_at
     if changes.get("starts_at"):
         if changes["starts_at"] <= utcnow():
             raise AppError(422, "in_the_past", "That time has passed.")
@@ -503,6 +504,11 @@ def update_class(
         changes=activity.diff(before, after),
         request=request,
     )
+    if gym_class.starts_at != was:
+        # Everyone booked or waiting hears the new time (§19.4).
+        service.moved(
+            db, _gym(db, ctx.gym_id), gym_class, was, sms=changes.get("sms", False)
+        )
     service._changed(db, gym_class, None)
     db.commit()
     return detail(db, gym_class)

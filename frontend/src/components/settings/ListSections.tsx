@@ -6,6 +6,7 @@ import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Checkbox, MoneyInput, Select } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
@@ -390,10 +391,15 @@ function PlanDialog({
 
 const ACCOUNT_KINDS: AccountKind[] = ["esewa", "khalti", "fonepay", "bank", "other"];
 
+/** The wallets that can confirm members' app payments themselves (§20.2). */
+const WALLETS: AccountKind[] = ["esewa", "khalti", "fonepay"];
+
 export function PaymentMethodsSection() {
   const { data: methods, reload } = useLoad(() => paymentMethodsApi.list(true), []);
   const [adding, setAdding] = useState(false);
+  const [keysFor, setKeysFor] = useState<PaymentMethodAccount | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const qrFor = useRef<string | null>(null);
   const qrInput = useRef<HTMLInputElement>(null);
 
@@ -455,7 +461,35 @@ export function PaymentMethodsSection() {
                 >
                   {m.is_active ? t("paymentMethods.hide") : t("paymentMethods.show")}
                 </Button>
+                {WALLETS.includes(m.kind) && (
+                  <Button variant="ghost" onClick={() => setKeysFor(m)}>
+                    {m.gateway
+                      ? t("paymentMethods.gatewayChange")
+                      : t("paymentMethods.gatewaySetUp")}
+                  </Button>
+                )}
+                {m.gateway && (
+                  <Button
+                    variant="ghost"
+                    onClick={async () => {
+                      const wallet = t(`account.${m.kind}` as MessageKey);
+                      const yes = await confirm({
+                        title: t("paymentMethods.gatewayRemove"),
+                        message: t("paymentMethods.gatewayRemoveConfirm", {
+                          wallet,
+                          label: m.label,
+                        }),
+                        confirmLabel: t("paymentMethods.gatewayRemove"),
+                        danger: true,
+                      });
+                      if (yes) void run(() => paymentMethodsApi.removeGateway(m.id));
+                    }}
+                  >
+                    {t("paymentMethods.gatewayRemove")}
+                  </Button>
+                )}
               </div>
+              {m.gateway && <GatewayState method={m} />}
             </div>
           </li>
         ))}
@@ -490,7 +524,158 @@ export function PaymentMethodsSection() {
           }}
         />
       )}
+      {keysFor && (
+        <GatewayDialog
+          method={keysFor}
+          onClose={() => setKeysFor(null)}
+          onSaved={() => {
+            setKeysFor(null);
+            reload();
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+/** Whether the wallet confirms payments to this account, and its last word. */
+function GatewayState({ method }: { method: PaymentMethodAccount }) {
+  const gateway = method.gateway!;
+  const wallet = t(`account.${method.kind}` as MessageKey);
+  return (
+    <div className="mt-2 space-y-1 rounded-lg bg-slate-50 p-2 text-xs">
+      <p className="font-semibold text-emerald-800">
+        {t("paymentMethods.gatewayOn", { wallet })}
+      </p>
+      {gateway.hint && (
+        <p className="text-slate-600">
+          {t("paymentMethods.gatewayHint", { hint: gateway.hint })}
+        </p>
+      )}
+      {gateway.test && (
+        <p className="text-amber-800">
+          {t("paymentMethods.gatewayTestOn", { wallet })}
+        </p>
+      )}
+      {gateway.error && (
+        <p className="text-red-700">
+          {t("paymentMethods.gatewayError", { wallet, error: gateway.error })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The keys from the gym's merchant account (§20.2). Never shown again. */
+function GatewayDialog({
+  method,
+  onClose,
+  onSaved,
+}: {
+  method: PaymentMethodAccount;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const wallet = t(`account.${method.kind}` as MessageKey);
+  const [form, setForm] = useState({
+    merchant: method.gateway?.merchant ?? "",
+    secret_key: "",
+    username: "",
+    password: "",
+    test: method.gateway?.test ?? false,
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const needsMerchant = method.kind !== "khalti";
+  const needsLogin = method.kind === "fonepay";
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await paymentMethodsApi.setGateway(method.id, {
+        merchant: needsMerchant ? form.merchant.trim() : null,
+        secret_key: form.secret_key.trim(),
+        username: needsLogin ? form.username.trim() : null,
+        password: needsLogin ? form.password : null,
+        test: form.test,
+      });
+      onSaved();
+    } catch (err) {
+      setError(errorMessage(err));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} title={t("paymentMethods.gatewayTitle", { wallet })}>
+      <form onSubmit={(e) => void save(e)} className="space-y-3">
+        <p className="text-sm text-slate-600">
+          {t("paymentMethods.gatewayHelp", { wallet })}
+        </p>
+        {needsMerchant && (
+          <Field
+            label={
+              method.kind === "esewa"
+                ? t("paymentMethods.gatewayMerchantEsewa")
+                : t("paymentMethods.gatewayMerchant")
+            }
+            value={form.merchant}
+            onChange={(merchant) => setForm({ ...form, merchant })}
+            autoComplete="off"
+            required
+          />
+        )}
+        <Field
+          label={
+            method.kind === "khalti"
+              ? t("paymentMethods.gatewaySecretKhalti")
+              : t("paymentMethods.gatewaySecret")
+          }
+          type="password"
+          value={form.secret_key}
+          onChange={(secret_key) => setForm({ ...form, secret_key })}
+          autoComplete="off"
+          required
+        />
+        {needsLogin && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label={t("paymentMethods.gatewayUsername")}
+              value={form.username}
+              onChange={(username) => setForm({ ...form, username })}
+              autoComplete="off"
+              required
+            />
+            <Field
+              label={t("paymentMethods.gatewayPassword")}
+              type="password"
+              value={form.password}
+              onChange={(password) => setForm({ ...form, password })}
+              autoComplete="off"
+              required
+            />
+          </div>
+        )}
+        <Checkbox
+          label={t("paymentMethods.gatewayTest", { wallet })}
+          hint={t("paymentMethods.gatewayTestHelp", { wallet })}
+          checked={form.test}
+          onChange={(test) => setForm({ ...form, test })}
+        />
+        <p className="text-xs text-slate-500">
+          {t("paymentMethods.gatewayWhere", { wallet })}
+        </p>
+        <p className="text-xs text-slate-500">
+          {t("paymentMethods.gatewayFees", { wallet })}
+        </p>
+        {error && <Notice tone="error">{error}</Notice>}
+        <Button type="submit" block disabled={saving}>
+          {saving ? t("common.saving") : t("common.save")}
+        </Button>
+      </form>
+    </Dialog>
   );
 }
 

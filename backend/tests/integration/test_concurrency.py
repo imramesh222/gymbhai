@@ -253,12 +253,12 @@ def test_sending_an_sms_holds_up_none_of_the_gyms_other_writes(
     from app.services.sms import service as sms_service
 
     with sessions() as sending, sessions() as desk, sessions() as other_send:
-        sms_service._lock_gym(sending, gym.gym.id)
+        sms_service.lock_gym(sending, gym.gym.id)
 
         desk.execute(sa.text("SET LOCAL lock_timeout = '2s'"))
         make_member(desk, gym)  # inserts and commits, without waiting
 
         other_send.execute(sa.text("SET LOCAL lock_timeout = '300ms'"))
         with pytest.raises(sa.exc.OperationalError, match="lock timeout"):
-            sms_service._lock_gym(other_send, gym.gym.id)
+            sms_service.lock_gym(other_send, gym.gym.id)
         sending.rollback()

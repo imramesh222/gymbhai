@@ -32,6 +32,8 @@ NOT_GYM_OWNED = {
     "changelog_entries",
     # Our own price list, shared by every gym.
     "platform_plans",
+    # Our own settings, such as what a WhatsApp message costs (§19.3).
+    "platform_settings",
     # The worker queue; a job's payload names the gym it is for.
     "jobs",
     # "This daily task has been queued for this date": the worker's, not a gym's.

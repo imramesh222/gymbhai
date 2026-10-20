@@ -36,6 +36,7 @@ from app.models.gym import Gym
 from app.models.member import Member
 from app.models.member_app import MemberSession, MemberSignInLink, OtpCode
 from app.models.messaging import SMS_OTP, SmsMessage
+from app.models.push import PushSubscription
 from app.models.staff import StaffUser
 from app.services import email
 from app.services.activity import client_ip
@@ -453,6 +454,7 @@ def revoke(db: Session, raw: str | None) -> None:
         )
     ):
         session.revoked_at = utcnow()
+        _push_off(db, [session.id])
 
 
 def sign_out_everywhere(db: Session, member_id: uuid.UUID) -> int:
@@ -469,5 +471,41 @@ def sign_out_everywhere(db: Session, member_id: uuid.UUID) -> int:
     now = utcnow()
     for session in sessions:
         session.revoked_at = now
+    _push_off(db, [s.id for s in sessions])
     db.flush()
     return len(sessions)
+
+
+def _push_off(db: Session, session_ids: list[uuid.UUID]) -> None:
+    """The notifications those sign-ins turned on stop with them (§17.5)."""
+    if not session_ids:
+        return
+    for row in db.scalars(
+        select(PushSubscription).where(
+            PushSubscription.session_id.in_(session_ids),
+            PushSubscription.revoked_at.is_(None),
+        )
+    ):
+        row.revoked_at = utcnow()
+
+
+def live_sessions(db: Session, member: Member) -> list[MemberSession]:
+    """Where they're signed in now, the most recently used first."""
+    return list(
+        db.scalars(
+            select(MemberSession)
+            .where(
+                MemberSession.member_id == member.id,
+                MemberSession.revoked_at.is_(None),
+                MemberSession.expires_at > utcnow(),
+            )
+            .order_by(MemberSession.last_used_at.desc().nulls_last())
+        )
+    )
+
+
+def end_session(db: Session, session: MemberSession) -> None:
+    """One device signed out, and its notifications off."""
+    session.revoked_at = utcnow()
+    _push_off(db, [session.id])
+    db.flush()

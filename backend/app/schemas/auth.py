@@ -183,6 +183,9 @@ class GymRead(BaseModel):
     brand_color: str | None
     status: str
     settings: GymSettings
+    # GymBhai can send WhatsApp messages (§19.3): until it can, the gym's
+    # "Send messages by WhatsApp" stays off.
+    whatsapp_available: bool = False
 
 
 class SubscriptionRead(BaseModel):

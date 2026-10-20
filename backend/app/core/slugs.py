@@ -29,8 +29,11 @@ RESERVED_SLUGS = frozenset(
         # Paths inside the member app's API (/api/v1/m/...)
         "auth",
         "notices",
+        "online-payments",
         "payment-requests",
         "renew",
+        # The checkout page for payments the wallet confirms (§20.2)
+        "pay",
         # Names people would reasonably expect to be ours
         "about",
         "account",

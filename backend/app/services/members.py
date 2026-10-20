@@ -75,6 +75,7 @@ TRACKED = (
     "qr_version",
     "card_token",
     "language",
+    "whatsapp_agreed",
 )
 
 
@@ -205,6 +206,9 @@ def update(
     before = snapshot(member)
     for name, value in changes.items():
         setattr(member, name, value)
+    if member.phone != before["phone"]:
+        # A new number may well be on WhatsApp: try it again (§19.3).
+        member.whatsapp_unreachable_at = None
     if member.phone != before["phone"] or member.email != before["email"]:
         # The old phone or email stops working at once, and devices sign out.
         from app.services.member_auth import sign_out_everywhere
@@ -229,7 +233,14 @@ def update(
 # What a member may change in their own app (PLAN.md §16.3, 8.5). The email
 # comes through member_auth.confirm_email_change; never the phone, which is
 # how the gym knows them and signs them in.
-SELF_EDITABLE = ("email", "emergency_contact", "photo_key", "language")
+SELF_EDITABLE = (
+    "email",
+    "emergency_contact",
+    "photo_key",
+    "language",
+    # Their own say on WhatsApp messages (§19.3).
+    "whatsapp_agreed",
+)
 
 
 def update_by_member(
@@ -683,6 +694,8 @@ def erase(
     member.phone = ERASED_PHONE
     member.app_access = False
     member.is_archived = True
+    member.whatsapp_agreed_at = None
+    member.whatsapp_unreachable_at = None
     # The app QR and the printed card stop working.
     member.qr_version += 1
     member.qr_secret = new_qr_secret()
@@ -697,7 +710,7 @@ def erase(
     db.execute(
         sql_update(SmsMessage)
         .where(SmsMessage.gym_id == member.gym_id, SmsMessage.member_id == member.id)
-        .values(to=ERASED_PHONE, body=ERASED_SMS)
+        .values(to=ERASED_PHONE, body=ERASED_SMS, params=None, fallback=None)
     )
     if not phone_shared:
         db.execute(

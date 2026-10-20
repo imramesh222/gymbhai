@@ -11,20 +11,24 @@ from app.models.job import Job
 from app.models.lead import Lead
 from app.models.member_app import MemberSession, MemberSignInLink, OtpCode
 from app.models.staff import LoginAttempt, StaffPasswordReset, StaffSession
-from app.services import classes, owner_messages, reminders
+from app.services import classes, online_payments, owner_messages, reminders, tax
 from app.services.push import service as push
 from app.services.push import staff as staff_push
 from app.services.sms import service as sms
+from app.services.whatsapp import service as whatsapp
 from app.worker import DAILY, handler
 
 JOB_CLEANUP = "maintenance.cleanup"
 
 handler(sms.JOB_SEND, on_give_up=sms.give_up)(sms.handle_send)
+handler(whatsapp.JOB_SEND, on_give_up=whatsapp.give_up)(whatsapp.handle_send)
 handler(push.JOB_PUSH, on_give_up=push.give_up)(push.handle_send)
 handler(staff_push.JOB_STAFF_PUSH)(staff_push.handle_send)
 handler(reminders.JOB_DAILY)(reminders.handle_daily)
 handler(classes.JOB_GENERATE)(classes.handle_generate)
 handler(classes.JOB_REMINDER)(classes.handle_reminder)
+handler(online_payments.JOB_CHECK)(online_payments.handle_check)
+handler(tax.JOB_CBMS, on_give_up=tax.give_up_cbms)(tax.handle_cbms)
 handler(owner_messages.JOB_SUBSCRIPTION)(
     lambda db, payload: owner_messages.subscription_reminders(db)
 )

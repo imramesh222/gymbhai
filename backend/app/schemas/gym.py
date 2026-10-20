@@ -18,6 +18,8 @@ class GymSettingsUpdate(Strict):
     setup_dismissed: bool | None = None
     show_busyness: bool | None = None
     join_form: bool | None = None
+    # WhatsApp messages to members who agree (§19.3).
+    whatsapp: bool | None = None
     language: Literal["en", "ne"] | None = None
     digits: Literal["nepali", "western"] | None = None
 

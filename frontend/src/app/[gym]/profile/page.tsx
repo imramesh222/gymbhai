@@ -9,12 +9,15 @@ import { Field } from "@/components/Field";
 import { PushSetting } from "@/components/memberApp/PushPrompt";
 import { Notice } from "@/components/Notice";
 import { Row } from "@/components/ui/Card";
-import { Select } from "@/components/ui/inputs";
+import { Checkbox, Select } from "@/components/ui/inputs";
 import { t } from "@/i18n";
 import { errorMessage } from "@/lib/api";
+import { formatDateTime } from "@/lib/dates";
 import { shrinkImage } from "@/lib/image";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
+import { useLoad } from "@/lib/useLoad";
+import { describeDevice } from "@/lib/userAgent";
 
 /** A new email: a code to it first, then it's theirs (PLAN.md §16.3, 8.5). */
 function EmailChange({ onDone }: { onDone: () => void }) {
@@ -152,6 +155,115 @@ function MemberLanguage() {
   );
 }
 
+/** Messages from the gym on WhatsApp, their own say (PLAN.md §19.3). */
+function WhatsAppSetting() {
+  const { me, refresh } = useMember();
+  const [error, setError] = useState<string | null>(null);
+  if (!me?.whatsapp) return null;
+  return (
+    <div className="rounded-2xl bg-white p-4">
+      <Checkbox
+        label={t("app.profile.whatsapp")}
+        hint={t("app.profile.whatsappHelp")}
+        checked={me.whatsapp_agreed ?? false}
+        onChange={async (on) => {
+          setError(null);
+          try {
+            await memberApi.updateMe({ whatsapp_agreed: on });
+            await refresh();
+          } catch (err) {
+            setError(errorMessage(err));
+          }
+        }}
+      />
+      {error && <Notice tone="error">{error}</Notice>}
+    </div>
+  );
+}
+
+/** Where they're signed in, and signing a lost phone out (PLAN.md §17.5). */
+function MyDevices() {
+  const { me } = useMember();
+  const { data, reload } = useLoad(() => memberApi.devices(), []);
+  const [message, setMessage] = useState<string | null>(null);
+  if (!me || !data) return null;
+  const others = data.some((device) => !device.current);
+  const display = me.gym.date_display;
+  async function run(action: () => Promise<string>) {
+    try {
+      setMessage(await action());
+      reload();
+    } catch (err) {
+      setMessage(errorMessage(err));
+    }
+  }
+  return (
+    <div className="space-y-2 rounded-2xl bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-semibold">{t("sessions.title")}</h2>
+        {others && (
+          <button
+            type="button"
+            className="text-sm font-semibold text-brand-700"
+            onClick={() =>
+              void run(async () => {
+                const { signed_out } = await memberApi.signOutOtherDevices();
+                return t("sessions.signedOutOthers", { count: signed_out });
+              })
+            }
+          >
+            {t("sessions.signOutOthers")}
+          </button>
+        )}
+      </div>
+      <ul className="divide-y divide-hairline">
+        {data.map((device) => (
+          <li key={device.id} className="flex items-center justify-between gap-3 py-2">
+            <div className="min-w-0 text-sm">
+              <p className="font-medium">
+                {deviceName(device.device_label)}
+                {device.current && (
+                  <span className="ml-2 text-xs font-semibold text-emerald-700">
+                    {t("sessions.thisDevice")}
+                  </span>
+                )}
+              </p>
+              {device.last_used_at && (
+                <p className="text-xs text-slate-500">
+                  {t("sessions.lastUsed", {
+                    when: formatDateTime(device.last_used_at, display),
+                  })}
+                </p>
+              )}
+            </div>
+            {!device.current && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  void run(async () => {
+                    await memberApi.signOutDevice(device.id);
+                    return t("sessions.signedOut");
+                  })
+                }
+              >
+                {t("sessions.signOut")}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {message && <p className="text-sm text-slate-600">{message}</p>}
+    </div>
+  );
+}
+
+function deviceName(userAgent: string | null): string {
+  const { browser, system } = describeDevice(userAgent);
+  if (browser && system) return t("sessions.browserOn", { browser, system });
+  return browser ?? system ?? t("sessions.unknown");
+}
+
 export default function MemberProfile() {
   const { me, slug, signOut, refresh } = useMember();
   const photo = useRef<HTMLInputElement>(null);
@@ -233,6 +345,8 @@ export default function MemberProfile() {
       <p className="text-xs text-slate-500">{t("app.profile.readOnly")}</p>
       <MemberLanguage />
       <PushSetting slug={slug} />
+      <WhatsAppSetting />
+      <MyDevices />
       <Link
         href={`/${slug}/notices`}
         className="block text-sm text-brand-700 underline"

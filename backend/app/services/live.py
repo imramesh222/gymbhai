@@ -5,6 +5,8 @@
 * Staff approve or reject it         -> the member's app, other approvers
 * A sale, payment, freeze, edit, ... -> the member's page and their app
 * An expense recorded or voided      -> the Expenses screen
+* A message sent, delivered or read  -> the message log and the member's
+                                        Messages tab
 * Personal training sold, a session  -> the Personal training screen (and,
   recorded, a payment                   as a member change, their page and app)
 * A staff account or the gym's sign-in -> every staff screen re-reads who is
@@ -63,6 +65,13 @@ PT = "pt"
 # branch, and that branch's members, whose app shows places left.
 CLASS = "class"
 MEMBER = "member"
+# A sale at the desk, voided, or a product or its stock changed (§20.1): the
+# Shop screen, for staff who sell or see money at that branch (no branch: the
+# products, the whole gym's).
+SHOP = "shop"
+# A message sent, failed, delivered or read (§19.3): the message log, for
+# staff who may send SMS. The whole gym's, like the log.
+MESSAGE = "message"
 # A staff account (permissions, disabled, two-step sign-in, devices) or the
 # gym's rules for signing in changed. Carries nothing but the gym: each screen
 # re-reads /auth/me, which anyone signed in may do.
@@ -126,6 +135,15 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
     freezes = ctx.can(Permission.MEMBERSHIPS_FREEZE)
     leads = ctx.can(Permission.LEADS_MANAGE)
     money = ctx.can(Permission.REPORTS_MONEY)
+    messages = ctx.can(Permission.MESSAGES_SMS)
+    shop = any(
+        ctx.can(p)
+        for p in (
+            Permission.SHOP_SELL,
+            Permission.SHOP_MANAGE,
+            Permission.REPORTS_MONEY,
+        )
+    )
     training = ctx.can(Permission.PT_TRAIN) or ctx.can(Permission.PT_SELL)
     classes = any(
         ctx.can(p)
@@ -147,6 +165,14 @@ def staff_filter(ctx: "StaffContext") -> Callable[[Event], bool]:
             return freezes
         if event["type"] == LEAD:
             return leads and (branches is None or event.get("branch") in branches)
+        if event["type"] == MESSAGE:
+            return messages
+        if event["type"] == SHOP:
+            return shop and (
+                branches is None
+                or event.get("branch") is None
+                or event.get("branch") in branches
+            )
         if event["type"] == EXPENSE:
             return money and (branches is None or event.get("branch") in branches)
         if event["type"] == PT:

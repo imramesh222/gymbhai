@@ -46,3 +46,22 @@ class GymSubscription(IdMixin, TimestampMixin, GymOwned, Base):
     # Inclusive: the last day it covers, like a membership's end date.
     ends_on: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(16))
+
+
+class PlatformSettings(IdMixin, TimestampMixin, Base):
+    """Our own numbers that aren't a plan's: one row, edited in /admin.
+
+    Pricing lives in the database, never in the code (CLAUDE.md).
+    """
+
+    __tablename__ = "platform_settings"
+
+    # Message credits one WhatsApp message costs a gym (§19.3); an SMS part
+    # costs one.
+    whatsapp_credits: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1")
+    )
+    # A gym's own app in the stores (§20.3), in paisa: once to set it up, and
+    # each month while it's built and live. Not offered until both are set.
+    branded_app_setup_price: Mapped[int | None] = mapped_column(Integer)
+    branded_app_monthly_price: Mapped[int | None] = mapped_column(Integer)

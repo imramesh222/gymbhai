@@ -151,6 +151,21 @@ class ClassesMonthRead(BaseModel):
     by_instructor: list[InstructorMonth]
 
 
+class ShopProductMonth(BaseModel):
+    name: str
+    quantity: int
+    amount: int
+
+
+class ShopMonthRead(BaseModel):
+    """What was sold at the desk in the month (§20.1): already within income."""
+
+    income: int
+    sales: int
+    by_category: dict[str, int]
+    top: list[ShopProductMonth]
+
+
 class MonthlyRead(BaseModel):
     month: str
     calendar: str
@@ -175,6 +190,8 @@ class MonthlyRead(BaseModel):
     # Only for a gym with PT plans.
     personal_training: PtMonthRead | None = None
     classes: ClassesMonthRead | None = None
+    # Only for a gym that has products.
+    shop: ShopMonthRead | None = None
 
 
 class ImportPreview(BaseModel):

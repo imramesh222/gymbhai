@@ -75,6 +75,42 @@ class Settings(BaseSettings):
     # SMS credits a new gym starts its trial with.
     trial_sms_credits: int = 50
 
+    # --- WhatsApp messages (PLAN.md §19.3) ---
+    # Meta's Cloud API, one GymBhai number for every gym. `console` logs what
+    # would be sent and is what development and tests use; `meta` sends.
+    whatsapp_provider: Literal["console", "meta"] = "console"
+    # A System User's permanent token with whatsapp_business_messaging.
+    whatsapp_token: str | None = None
+    # The id Meta gives our number (not the number itself).
+    whatsapp_phone_number_id: str | None = None
+    # The Meta app's secret: every webhook call is signed with it.
+    whatsapp_app_secret: str | None = None
+    # Typed into Meta's webhook settings; Meta sends it back to check the URL.
+    whatsapp_verify_token: str | None = None
+    whatsapp_api_version: str = "v21.0"
+    # Meta has no Nepali among its template languages: our Nepali wording is
+    # registered under this code (Hindi shares the script). Empty sends
+    # Nepali-speaking members the English templates instead.
+    whatsapp_nepali_language: str = "hi"
+
+    # --- Wallets confirming members' app payments (PLAN.md §20.2) ---
+    # `live` asks eSewa, Khalti and Fonepay, with each gym's own merchant keys;
+    # `console` puts a pretend checkout on our own page instead, for
+    # development and tests. On a server, `console` leaves the feature off.
+    gateway_provider: Literal["console", "live"] = "console"
+    # Encrypts the gyms' merchant keys in the database (app/core/sealed.py).
+    # Required with GATEWAY_PROVIDER=live; locally SECRET_KEY stands in.
+    gateway_key: str | None = None
+
+    # --- Tax invoices for VAT-registered gyms (PLAN.md §20.4) ---
+    # GymBhai is not IRD-certified billing software: until it is, tax invoices
+    # stay off on a server. Local development and tests always have them.
+    tax_invoices_certified: bool = False
+    # Reporting each bill to IRD's CBMS: `console` logs it; `live` sends it
+    # with each gym's own CBMS credentials.
+    cbms_provider: Literal["console", "live"] = "console"
+    cbms_url: str = "https://cbapi.ird.gov.np"
+
     # Our WhatsApp and Viber number for Help (§16.5, 10.3): country code and
     # number, digits only, e.g. 9779800000000. No number: Help shows the guides.
     support_whatsapp: str | None = None
@@ -135,8 +171,30 @@ class Settings(BaseSettings):
             self.email_provider != "console"
             or self.sms_provider != "console"
             or self.push_provider != "console"
+            or self.whatsapp_provider != "console"
+            or self.gateway_provider != "console"
+            or self.cbms_provider != "console"
         ):
-            raise ValueError("Tests never send real email, SMS or push: use console.")
+            raise ValueError(
+                "Tests never send real email, SMS, push or WhatsApp, nor call a "
+                "wallet or IRD: use console."
+            )
+        if self.gateway_provider == "live" and (
+            not self.gateway_key or len(self.gateway_key) < 32
+        ):
+            raise ValueError(
+                "GATEWAY_PROVIDER=live needs GATEWAY_KEY, a long random value."
+            )
+        if self.whatsapp_provider == "meta" and not (
+            self.whatsapp_token
+            and self.whatsapp_phone_number_id
+            and self.whatsapp_app_secret
+            and self.whatsapp_verify_token
+        ):
+            raise ValueError(
+                "WHATSAPP_PROVIDER=meta needs WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID,"
+                " WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN."
+            )
         if self.push_provider == "webpush" and not self.vapid_private_key:
             raise ValueError("PUSH_PROVIDER=webpush needs VAPID_PRIVATE_KEY.")
         if self.master_otp:

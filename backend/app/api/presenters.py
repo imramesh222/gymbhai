@@ -8,11 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.time import today_in_nepal
+from app.models.gym import Gym
 from app.models.member import Member
 from app.models.member_app import READERS, Device, MemberSession
 from app.models.membership import Membership, MembershipFreeze, MembershipGroup
 from app.models.payment import Payment
 from app.models.staff import StaffUser
+from app.schemas.auth import GymRead
 from app.schemas.members import (
     CurrentMembership,
     FreezeRead,
@@ -222,3 +224,13 @@ def _has_readers(db: Session, gym_id: uuid.UUID) -> bool:
             )
         )
     )
+
+
+def gym_read(gym: Gym) -> GymRead:
+    """The gym as staff screens read it, in /gym and /auth/me alike."""
+    from app.services.whatsapp import service as whatsapp
+
+    read = GymRead.model_validate(gym)
+    read.logo_url = storage.signed_url(gym.logo_key)
+    read.whatsapp_available = whatsapp.available()
+    return read

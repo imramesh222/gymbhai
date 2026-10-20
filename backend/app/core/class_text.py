@@ -21,3 +21,10 @@ CANCELLED: dict[str, str] = {
     "en": "{class}, {day} at {time}, is cancelled. {reason}",
     "ne": "{day} {time} को {class} रद्द भयो। {reason}",
 }
+
+# The gym moved a class they had booked (or are waiting for). {was} is the
+# old day and time, "Monday 5 Kartik at 07:00".
+MOVED: dict[str, str] = {
+    "en": "{class} has moved from {was}: it's now {day} at {time}.",
+    "ne": "{class} {was} बाट सरेको छ: अब {day} {time} मा।",
+}

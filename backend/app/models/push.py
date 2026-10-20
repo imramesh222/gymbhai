@@ -47,6 +47,14 @@ class PushSubscription(IdMixin, TimestampMixin, GymOwned, Base):
     member_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("members.id", ondelete="CASCADE"), index=True
     )
+    # The sign-in that turned it on: signing that device out turns it off, so
+    # a lost phone stops showing their reminders (§17.5). Null for ones made
+    # before this was kept, or once the session is deleted.
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("member_sessions.id", ondelete="SET NULL"),
+        index=True,
+    )
     # "web": the browser's Web Push (M8). "expo": the phone app (PLAN.md §17.6).
     kind: Mapped[str] = mapped_column(
         String(8), default=KIND_WEB, server_default=KIND_WEB

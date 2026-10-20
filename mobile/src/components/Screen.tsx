@@ -27,12 +27,17 @@ export function Screen({
   onRefresh,
   style,
   topInset = false,
+  footer,
+  scrollRef,
 }: {
   children: React.ReactNode;
   onRefresh?: () => Promise<unknown>;
   style?: StyleProp<ViewStyle>;
   /** Screens without a header pad for the status bar themselves. */
   topInset?: boolean;
+  /** Stays at the bottom while the page scrolls: a total and its button. */
+  footer?: React.ReactNode;
+  scrollRef?: React.Ref<React.ComponentRef<typeof ScrollView>>;
 }) {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
@@ -42,6 +47,7 @@ export function Screen({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         // Below iOS's see-through navigation bar, not under it; screens
@@ -71,6 +77,7 @@ export function Screen({
       >
         {children}
       </ScrollView>
+      {footer}
       {topInset ? (
         // The status bar over scrolled content: canvas, not text under the clock.
         <View

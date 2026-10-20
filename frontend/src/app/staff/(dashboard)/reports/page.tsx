@@ -18,7 +18,9 @@ import { PageSkeleton } from "@/components/ui/Skeleton";
 import { t } from "@/i18n";
 import {
   reportsApi,
+  taxApi,
   type ClassesMonth,
+  type MonthlyReport,
   type PtMonth,
   type TrendMonth,
 } from "@/lib/api";
@@ -254,11 +256,86 @@ export default function ReportsPage() {
       </div>
       {data.personal_training && <PersonalTraining pt={data.personal_training} />}
       {data.classes && <Classes month={data.classes} />}
+      {data.shop && <Shop shop={data.shop} />}
+      <VatBook month={data.month} />
     </div>
   );
 }
 
 /** The month's personal training (§18.3), for a gym that sells it. */
+/** What was sold at the desk in the month (§20.1). */
+/** A VAT-registered gym's month (§20.4): sales, returns, the VAT on them. */
+function VatBook({ month }: { month: string }) {
+  const { data } = useLoad(() => taxApi.book(month), [month]);
+  if (!data || (data.invoices.length === 0 && data.returns.length === 0)) return null;
+  return (
+    <section className="space-y-3">
+      <h2 className="pt-2 text-[0.9375rem] font-semibold text-slate-900">
+        {t("tax.book")}
+      </h2>
+      <p className="text-sm text-slate-600">{t("tax.bookHelp")}</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat
+          value={<Money paisa={data.sales_total} />}
+          label={t("tax.sales")}
+          hint={t("tax.invoices", { count: data.invoices.length })}
+        />
+        <Stat value={<Money paisa={data.returns_total} />} label={t("tax.returns")} />
+        <Stat
+          value={<Money paisa={data.sales_vat - data.returns_vat} />}
+          label={t("tax.vatNet")}
+        />
+      </div>
+      <div className="flex flex-wrap gap-2 print:hidden">
+        {(["sales-book", "sales-returns"] as const).map((kind) => (
+          <Button
+            key={kind}
+            variant="secondary"
+            onClick={() => void reportsApi.download(kind)}
+          >
+            {t(`data.export.${kind}`)}
+          </Button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Shop({ shop }: { shop: NonNullable<MonthlyReport["shop"]> }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="pt-2 text-[0.9375rem] font-semibold text-slate-900">
+        {t("shop.title")}
+      </h2>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat
+          value={<Money paisa={shop.income} />}
+          label={t("reports.shop.income")}
+          hint={t("reports.shop.incomeHelp")}
+        />
+        <Stat value={shop.sales} label={t("reports.shop.sales")} />
+      </div>
+      {shop.top.length > 0 && (
+        <Card title={t("shop.topProducts")}>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-hairline">
+              {shop.top.map((row) => (
+                <tr key={row.name}>
+                  <td className="py-2">{row.name}</td>
+                  <td className="py-2 text-right text-slate-500">× {row.quantity}</td>
+                  <td className="py-2 text-right font-semibold">
+                    <Money paisa={row.amount} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </section>
+  );
+}
+
 function PersonalTraining({ pt }: { pt: PtMonth }) {
   return (
     <section className="space-y-3">

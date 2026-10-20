@@ -132,7 +132,13 @@ mobile-env:  ## Point the phone app at this Mac's current Wi-Fi address (after c
 	@ip=$$(ipconfig getifaddr en0 || ipconfig getifaddr en1); \
 	test -n "$$ip" || { echo "No Wi-Fi address found: are you connected?"; exit 1; }; \
 	echo "EXPO_PUBLIC_API_URL=http://$$ip:8001" > mobile/.env.local; \
-	echo "mobile/.env.local -> http://$$ip:8001"
+	echo "mobile/.env.local -> http://$$ip:8001"; \
+	web="http://$$ip:$${WEB_PORT:-3000}"; \
+	if grep -q '^PUBLIC_APP_URL=' .env; then \
+		sed -i '' "s|^PUBLIC_APP_URL=.*|PUBLIC_APP_URL=$$web|" .env; \
+	else echo "PUBLIC_APP_URL=$$web" >> .env; fi; \
+	echo ".env PUBLIC_APP_URL -> $$web (links the API makes, such as a wallet's checkout, open on the phone)"; \
+	$(COMPOSE) up -d --force-recreate api worker >/dev/null && echo "api and worker restarted"
 
 apk:  ## A test .apk of the phone app for Android testers (docs/MOBILE.md §4)
 	@cd mobile && npm run -s build:apk

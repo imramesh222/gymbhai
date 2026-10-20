@@ -12,6 +12,7 @@ const AREAS = [
   "progress",
   "payments",
   "expenses",
+  "shop",
   "reports",
   "door",
   "messages",

@@ -23,6 +23,8 @@ class MemberFields(Strict):
     joined_on: dt.date | None = None
     # The member who sent them (§16.4, 9.6).
     referred_by_id: uuid.UUID | None = None
+    # They agree to messages on WhatsApp (§19.3); off unless ticked.
+    whatsapp_agreed: bool = False
 
 
 class SaleFields(Strict):
@@ -59,8 +61,9 @@ class MemberUpdate(Strict):
     home_branch_id: uuid.UUID | None = None
     joined_on: dt.date | None = None
     referred_by_id: uuid.UUID | None = None
+    whatsapp_agreed: bool | None = None
 
-    @field_validator("name", "phone", "joined_on", "home_branch_id")
+    @field_validator("name", "phone", "joined_on", "home_branch_id", "whatsapp_agreed")
     @classmethod
     def required_fields_not_null(cls, value):
         if value is None:
@@ -176,6 +179,10 @@ class MemberRead(BaseModel):
     # The last time they were let in at the door; lists only.
     last_visit_at: dt.datetime | None = None
     referred_by_id: uuid.UUID | None = None
+    # WhatsApp messages (§19.3): whether they agreed, and when Meta last said
+    # their number isn't on WhatsApp.
+    whatsapp_agreed: bool = False
+    whatsapp_unreachable_at: dt.datetime | None = None
 
 
 class MemberList(BaseModel):

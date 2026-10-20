@@ -18,7 +18,7 @@ from app.core.permissions import Permission
 from app.db.session import get_db
 from app.models.billing import PlatformPlan
 from app.models.gym import Gym
-from app.models.platform import GymReferral, SubscriptionPayment
+from app.models.platform import KIND_APP, GymReferral, SubscriptionPayment
 from app.schemas.platform import (
     MyReferrals,
     PlatformPlanRead,
@@ -27,7 +27,7 @@ from app.schemas.platform import (
     SubscriptionPaymentIn,
     SubscriptionPaymentRead,
 )
-from app.services import activity, gym_referrals, subscription
+from app.services import activity, branded_apps, gym_referrals, subscription
 from app.services.sms import service as sms
 
 router = APIRouter(prefix="/subscription", tags=["subscription"])
@@ -78,6 +78,8 @@ def overview(
             "esewa": settings.platform_pay_to_esewa,
             "bank": settings.platform_pay_to_bank,
         },
+        app_monthly=branded_apps.monthly_due(db, ctx.gym_id),
+        app_setup_due=branded_apps.setup_due(db, ctx.gym_id),
     )
 
 
@@ -98,6 +100,8 @@ def send_payment(
         plan = db.get(PlatformPlan, payload.platform_plan_id)
         if plan is None or not plan.is_active:
             raise AppError(422, "bad_plan", "That plan isn't available.")
+    if payload.kind == KIND_APP and branded_apps.setup_due(db, ctx.gym_id) is None:
+        raise AppError(409, "no_app_due", "There's nothing to pay for your own app.")
     ref = payload.transaction_ref.strip()
     if db.scalar(
         select(SubscriptionPayment.id).where(

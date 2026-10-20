@@ -1,17 +1,20 @@
 /**
  * Me (PLAN.md §17.5): photo, email (a code to the new address first),
- * emergency contact, language, notifications, notices, switching gym and
- * signing out.
+ * emergency contact, language, notifications, WhatsApp, signed-in devices,
+ * notices, switching gym and signing out.
  */
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Pressable, Switch, View } from "react-native";
 
+import { formatDateTime } from "@shared/dates";
 import { t, type Locale } from "@shared/i18n";
 import type { MemberMe } from "@shared/types";
+import { describeDevice } from "@shared/userAgent";
 
+import { useBrand } from "@/components/brand";
 import { Icon } from "@/components/Icon";
 import { PushSetting } from "@/components/PushPrompt";
 import { Screen } from "@/components/Screen";
@@ -27,7 +30,7 @@ import {
   Spinner,
   Txt,
 } from "@/components/ui";
-import { apiUrl } from "@/lib/config";
+import { apiUrl, BRAND_GYM } from "@/lib/config";
 import { useMe } from "@/lib/hooks";
 import { pickImage } from "@/lib/images";
 import { memberApi } from "@/lib/memberApi";
@@ -251,6 +254,125 @@ function Language({ me }: { me: MemberMe }) {
   );
 }
 
+/** Messages from the gym on WhatsApp, their own say (§19.3). */
+function WhatsApp({ me }: { me: MemberMe }) {
+  const setMe = useSetMe();
+  const brand = useBrand();
+  const change = useAction(
+    (_key: string, on: boolean) => memberApi.updateMe({ whatsapp_agreed: on }),
+    { onSuccess: setMe },
+  );
+  if (!me.whatsapp) return null;
+  return (
+    <Card style={{ gap: space(2) }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space(3),
+          minHeight: 44,
+        }}
+      >
+        <Txt weight="semibold" style={{ flex: 1 }}>
+          {t("app.profile.whatsapp")}
+        </Txt>
+        <Switch
+          accessibilityLabel={t("app.profile.whatsapp")}
+          value={Boolean(me.whatsapp_agreed)}
+          disabled={change.busy}
+          onValueChange={(next) => change.run(next)}
+          trackColor={{ true: brand }}
+        />
+      </View>
+      <Txt size={14} color={colors.muted}>
+        {t("app.profile.whatsappHelp")}
+      </Txt>
+      <ActionStatus action={change} />
+    </Card>
+  );
+}
+
+function deviceName(userAgent: string | null): string {
+  const { browser, system } = describeDevice(userAgent);
+  if (browser && system) return t("sessions.browserOn", { browser, system });
+  return browser ?? system ?? t("sessions.unknown");
+}
+
+/** Where they're signed in, and signing a lost phone out (§17.5). */
+function Devices({ me }: { me: MemberMe }) {
+  const slug = useSlug();
+  const queryClient = useQueryClient();
+  const devices = useQuery({
+    queryKey: keys.devices(slug),
+    queryFn: () => memberApi.devices(),
+  });
+  const [done, setDone] = useState<string | null>(null);
+  const reload = () =>
+    void queryClient.invalidateQueries({ queryKey: keys.devices(slug) });
+  const one = useAction((_key: string, id: string) => memberApi.signOutDevice(id), {
+    onSuccess: () => {
+      setDone(t("sessions.signedOut"));
+      reload();
+    },
+  });
+  const others = useAction(() => memberApi.signOutOtherDevices(), {
+    onSuccess: ({ signed_out }) => {
+      setDone(t("sessions.signedOutOthers", { count: signed_out }));
+      reload();
+    },
+  });
+  if (!devices.data) return null;
+  const anyOthers = devices.data.some((d) => !d.current);
+  return (
+    <Card style={{ gap: space(3) }}>
+      <Label>{t("sessions.title")}</Label>
+      {devices.data.map((device) => (
+        <View
+          key={device.id}
+          style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
+        >
+          <View style={{ flex: 1, gap: space(1) }}>
+            <Txt weight="semibold">
+              {deviceName(device.device_label)}
+              {device.current ? ` · ${t("sessions.thisDevice")}` : ""}
+            </Txt>
+            {device.last_used_at ? (
+              <Txt size={13} color={colors.faint}>
+                {t("sessions.lastUsed", {
+                  when: formatDateTime(device.last_used_at, me.gym.date_display),
+                })}
+              </Txt>
+            ) : null}
+          </View>
+          {!device.current ? (
+            <ActionButton
+              action={one}
+              args={[device.id]}
+              variant="secondary"
+              label={t("sessions.signOut")}
+            />
+          ) : null}
+        </View>
+      ))}
+      {anyOthers ? (
+        <ActionButton
+          action={others}
+          args={[]}
+          variant="secondary"
+          label={t("sessions.signOutOthers")}
+        />
+      ) : null}
+      {done ? (
+        <Txt size={14} color={colors.green}>
+          {done}
+        </Txt>
+      ) : null}
+      <ActionStatus action={one} />
+      <ActionStatus action={others} />
+    </Card>
+  );
+}
+
 export default function Me() {
   const me = useMe();
   const { signOut, closeGym, gyms } = useSession();
@@ -295,6 +417,8 @@ export default function Me() {
 
       <Language me={me.data} />
       <PushSetting />
+      <WhatsApp me={me.data} />
+      <Devices me={me.data} />
 
       <Card style={{ gap: space(1) }}>
         <LinkButton
@@ -309,11 +433,14 @@ export default function Me() {
             onPress={() => router.push("/freeze")}
           />
         ) : null}
-        <LinkButton
-          align="flex-start"
-          label={gyms.length > 1 ? t("mobile.switchGym") : t("mobile.addGym")}
-          onPress={() => void closeGym()}
-        />
+        {/* A gym's own app is for its gym only (§20.3). */}
+        {BRAND_GYM ? null : (
+          <LinkButton
+            align="flex-start"
+            label={gyms.length > 1 ? t("mobile.switchGym") : t("mobile.addGym")}
+            onPress={() => void closeGym()}
+          />
+        )}
       </Card>
 
       {confirming ? (

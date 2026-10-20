@@ -107,6 +107,34 @@ def test_personal_training_is_heard_by_trainers_and_sellers() -> None:
     assert not one_branch(event(live.PT, branch=OTHER_BRANCH))
 
 
+def test_messages_are_heard_by_staff_who_send_sms() -> None:
+    """The message log and a member's Messages tab (PLAN.md §19.3): a message
+    sent, failed, delivered or read. The whole gym's, as the log is."""
+    message = event(live.MESSAGE, branch=None, member=None)
+    assert live.staff_filter(staff(Permission.MESSAGES_SMS))(message)
+    assert not live.staff_filter(staff(Permission.MEMBERS_VIEW))(message)
+    assert not live.staff_filter(staff(Permission.MESSAGES_SMS))(
+        event(live.MESSAGE, gym=OTHER_GYM, branch=None, member=None)
+    )
+
+
+def test_the_shop_is_heard_by_who_sells_or_sees_money() -> None:
+    """The Shop screen (PLAN.md §20.1): a sale at a branch; the products,
+    which are the whole gym's, with no branch."""
+    sale = event(live.SHOP)
+    products = event(live.SHOP, branch=None, member=None)
+    for permission in (
+        Permission.SHOP_SELL,
+        Permission.SHOP_MANAGE,
+        Permission.REPORTS_MONEY,
+    ):
+        assert live.staff_filter(staff(permission))(sale)
+    assert not live.staff_filter(staff(Permission.MEMBERS_VIEW))(sale)
+    one_branch = live.staff_filter(staff(Permission.SHOP_SELL, branches=[BRANCH]))
+    assert one_branch(sale) and one_branch(products)
+    assert not one_branch(event(live.SHOP, branch=OTHER_BRANCH))
+
+
 def test_a_member_hears_only_about_themselves() -> None:
     accepts = live.member_filter(MEMBER)
     assert accepts(event(live.CHECK_IN))

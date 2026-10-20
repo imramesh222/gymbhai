@@ -50,6 +50,23 @@ function TabIcon({ name }: { name: string }) {
   );
 }
 
+/**
+ * The tabs' height as `--tab-bar`, for a page's own bar to sit on (Renew's
+ * total and next step). It changes with the phone's safe area and text size.
+ */
+function trackTabBar(nav: HTMLElement | null) {
+  if (!nav || typeof ResizeObserver === "undefined") return;
+  const root = document.documentElement;
+  const watch = new ResizeObserver(() =>
+    root.style.setProperty("--tab-bar", `${nav.offsetHeight}px`),
+  );
+  watch.observe(nav);
+  return () => {
+    watch.disconnect();
+    root.style.removeProperty("--tab-bar");
+  };
+}
+
 function Frame({ children }: { children: React.ReactNode }) {
   const { slug, me, loading, offline } = useMember();
   const pathname = usePathname();
@@ -113,7 +130,10 @@ function Frame({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1 px-4 pt-5 pb-6">{children}</main>
 
-      <nav className="pb-safe sticky bottom-0 grid grid-cols-5 border-t border-hairline bg-surface/95 backdrop-blur-md">
+      <nav
+        ref={trackTabBar}
+        className="pb-safe sticky bottom-0 z-20 grid grid-cols-5 border-t border-hairline bg-surface/95 backdrop-blur-md"
+      >
         {TABS.map((tab) => {
           const href = `/${slug}${tab.path}`;
           const active = pathname === href;
