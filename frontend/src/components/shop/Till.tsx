@@ -183,10 +183,13 @@ export function Till({
                       type="button"
                       disabled={out}
                       onClick={() => add(product)}
+                      title={product.name}
                       className="flex w-full items-center justify-between gap-2 rounded-xl p-3 text-left ring-1 ring-hairline hover:bg-slate-50 disabled:opacity-50"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate font-medium">
+                        {/* Two lines, not one cut short: "Whey protein 2 lb"
+                            and "… 5 lb" must not both read "Whey prote…". */}
+                        <span className="line-clamp-2 block font-medium break-words">
                           {product.name}
                         </span>
                         {left && (

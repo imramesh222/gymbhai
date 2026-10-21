@@ -3,7 +3,7 @@
 import { Check, CheckCheck, MessageCircle, MessageSquare } from "lucide-react";
 import Link from "next/link";
 
-import { t, type MessageKey } from "@/i18n";
+import { plural, t, type MessageKey } from "@/i18n";
 import type { SmsMessage } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
 import type { DateDisplay } from "@/lib/api";
@@ -74,7 +74,7 @@ export function MessageItem({
       <p className="text-xs text-slate-500">
         {formatDateTime(m.created_at, display)} ·{" "}
         {whatsapp
-          ? t("sms.whatsappCredits", { count: m.segments })
+          ? plural(m.segments, "sms.whatsappCreditsOne", "sms.whatsappCredits")
           : t("sms.parts", { count: m.segments, characters: m.body.length })}
         {m.error && ` · ${m.error}`}
       </p>

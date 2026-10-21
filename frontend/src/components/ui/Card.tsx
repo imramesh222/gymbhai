@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { cloneElement, isValidElement } from "react";
+
+import { Money } from "./Money";
 
 /** The one panel everything sits in: a white surface lifted off the canvas. */
 export function Card({
@@ -108,8 +111,14 @@ export function Stat({
       <p className="text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
         {label}
       </p>
-      <p className={`mt-1.5 text-3xl font-bold tracking-tight ${TONES[tone]}`}>
-        {value}
+      {/* Smaller on a phone, where two tiles share the width; never broken
+          over two lines, and an amount's "Rs" set small (Money). */}
+      <p
+        className={`mt-1.5 text-2xl font-bold tracking-tight whitespace-nowrap sm:text-3xl ${TONES[tone]}`}
+      >
+        {isValidElement<{ smallUnit?: boolean }>(value) && value.type === Money
+          ? cloneElement(value, { smallUnit: true })
+          : value}
       </p>
       {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
     </div>

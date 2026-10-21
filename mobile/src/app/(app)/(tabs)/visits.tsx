@@ -1,8 +1,8 @@
 /** This month's visits as a calendar, live (PLAN.md §7, §17.5). */
 import { View } from "react-native";
 
-import { todayInNepal } from "@shared/dates";
-import { t } from "@shared/i18n";
+import { adMonths, todayInNepal } from "@shared/dates";
+import { t, type MessageKey } from "@shared/i18n";
 
 import { useBrand } from "@/components/brand";
 import { Screen } from "@/components/Screen";
@@ -11,6 +11,16 @@ import { useVisits } from "@/lib/hooks";
 import { colors, space } from "@/lib/theme";
 
 const kathmanduDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu" });
+
+const WEEK: MessageKey[] = [
+  "days.sun",
+  "days.mon",
+  "days.tue",
+  "days.wed",
+  "days.thu",
+  "days.fri",
+  "days.sat",
+];
 
 export default function Visits() {
   const brand = useBrand();
@@ -37,7 +47,32 @@ export default function Visits() {
         </Txt>
         <Txt color={colors.faint}>{t("app.visits.thisMonth")}</Txt>
       </View>
-      <Card>
+      <Card style={{ gap: space(2) }}>
+        <Txt
+          weight="semibold"
+          color={colors.ink}
+          style={{ textAlign: "center" }}
+          accessibilityRole="header"
+        >
+          {adMonths()[number - 1]} {year}
+        </Txt>
+        <View
+          style={{ flexDirection: "row" }}
+          importantForAccessibility="no-hide-descendants"
+        >
+          {WEEK.map((key) => (
+            <Txt
+              key={key}
+              accessible={false}
+              size={12}
+              weight="semibold"
+              color={colors.faint}
+              style={{ width: `${100 / 7}%`, textAlign: "center" }}
+            >
+              {t(key)}
+            </Txt>
+          ))}
+        </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
           {cells.map((day, i) => {
             const iso = day ? `${month}-${String(day).padStart(2, "0")}` : "";

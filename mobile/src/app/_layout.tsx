@@ -4,7 +4,7 @@
  */
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -29,6 +29,9 @@ setUpNotifications();
 function Navigator({ fontsReady }: { fontsReady: boolean }) {
   const { ready, gym, signedIn } = useSession();
   const loaded = ready && fontsReady;
+  // Light text on the tabs' header in the gym's colour; dark everywhere else,
+  // the screens over the tabs (classes, progress, the QR…) included.
+  const onTabs = useSegments().some((segment) => segment === "(tabs)");
 
   useEffect(() => {
     if (loaded) void SplashScreen.hideAsync().catch(() => undefined);
@@ -37,7 +40,7 @@ function Navigator({ fontsReady }: { fontsReady: boolean }) {
 
   return (
     <>
-      <StatusBar style={gym && signedIn ? "light" : "dark"} />
+      <StatusBar style={gym && signedIn && onTabs ? "light" : "dark"} />
       <Stack
         screenOptions={{
           headerShown: false,

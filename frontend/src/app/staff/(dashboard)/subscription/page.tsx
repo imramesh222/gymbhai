@@ -145,7 +145,7 @@ export default function SubscriptionPage() {
                 onChange={setPlanId}
                 options={data.plans.map((p) => ({
                   value: p.id,
-                  label: `${p.name}${p.monthly_price !== null ? ` — ${(p.monthly_price / 100).toLocaleString("en-IN")}/${t("subscription.month")}` : ""}`,
+                  label: `${p.name}${p.monthly_price !== null ? ` — ${formatRs(p.monthly_price)}/${t("subscription.month")}` : ""}`,
                 }))}
               />
               <Field

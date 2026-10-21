@@ -1127,6 +1127,7 @@
   "sms.channel.sms": "SMS",
   "sms.channel.whatsapp": "WhatsApp",
   "sms.whatsappCredits": "WhatsApp · {count} credits",
+  "sms.whatsappCreditsOne": "WhatsApp · {count} credit",
   "sms.unicode": "Nepali text fits 70 characters per SMS",
   "sms.title": "Sent messages",
   "sms.balance": "Message credits left",

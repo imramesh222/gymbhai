@@ -2,6 +2,28 @@
 interface Plan {
   duration_months: number | null;
   price: number | null;
+  seats?: number;
+  visit_limit?: number | null;
+  access_hours?: unknown[] | null;
+  classes?: string;
+  class_type_ids?: string[] | null;
+}
+
+/**
+ * What a plan gives besides its length: the people it covers, a visit limit,
+ * off-peak hours and the classes it books. Only plans that give the same are
+ * compared: 3 months against a 10-visit pack or a morning-only month would
+ * show no saving at all.
+ */
+function kind(plan: Plan): string {
+  const classes = plan.classes ?? "all";
+  return JSON.stringify([
+    plan.seats ?? 1,
+    plan.visit_limit ?? null,
+    plan.access_hours?.length ? plan.access_hours : null,
+    classes,
+    classes === "chosen" ? [...(plan.class_type_ids ?? [])].sort() : null,
+  ]);
 }
 
 /**
@@ -14,7 +36,10 @@ export function perMonth(plan: Plan): number | null {
   return Math.round(plan.price / plan.duration_months);
 }
 
-/** Against the cheapest one-month plan; null when there is none to compare. */
+/**
+ * Against the cheapest one-month plan of the same kind; null when there is
+ * none to compare.
+ */
 export function savings(plan: Plan, plans: Plan[]): number | null {
   if (
     plan.price === null ||
@@ -24,7 +49,10 @@ export function savings(plan: Plan, plans: Plan[]): number | null {
     return null;
   }
   const monthly = plans
-    .filter((p) => p.duration_months === 1 && p.price !== null)
+    .filter(
+      (p) =>
+        p.duration_months === 1 && p.price !== null && kind(p) === kind(plan),
+    )
     .map((p) => p.price as number);
   if (monthly.length === 0) return null;
   const saved = Math.min(...monthly) * plan.duration_months - plan.price;

@@ -13,5 +13,8 @@ export function useGymCalendar() {
     calendar: settings?.plan_months ?? "ad",
     display,
     date: (iso: string | null | undefined) => formatDate(iso, display),
+    /** For tight spots, like a list row on a phone: one calendar, BS if both. */
+    compactDate: (iso: string | null | undefined) =>
+      formatDate(iso, display === "both" ? "bs" : display),
   };
 }

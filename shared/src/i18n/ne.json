@@ -1127,6 +1127,7 @@
   "sms.channel.sms": "SMS",
   "sms.channel.whatsapp": "WhatsApp",
   "sms.whatsappCredits": "WhatsApp · {count} क्रेडिट",
+  "sms.whatsappCreditsOne": "WhatsApp · {count} क्रेडिट",
   "sms.unicode": "नेपाली पाठमा एउटा SMS मा ७० अक्षर अट्छ",
   "sms.title": "पठाइएका सन्देश",
   "sms.balance": "बाँकी सन्देश क्रेडिट",
