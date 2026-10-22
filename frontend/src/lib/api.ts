@@ -100,6 +100,8 @@ export interface Staff {
   phone: string | null;
   is_owner: boolean;
   is_platform_admin: boolean;
+  /** The platform admin with every /admin permission, who adds the others. */
+  is_super_admin: boolean;
   last_login_at: string | null;
   two_step_enabled: boolean;
 }
@@ -1996,6 +1998,28 @@ export interface ImportPreview {
   result: { created: number; skipped: number; problems: [number, string][] } | null;
 }
 
+/** What a platform admin may do in /admin (backend app/core/admin_permissions.py). */
+export const ADMIN_PERMISSIONS = [
+  "admin.billing",
+  "admin.gym_accounts",
+  "admin.pricing",
+  "admin.apps",
+  "admin.changelog",
+] as const;
+export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number] | "admin.admins";
+
+export interface PlatformAdmin {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  is_super_admin: boolean;
+  permissions: AdminPermission[];
+  is_active: boolean;
+  two_step_enabled: boolean;
+  last_login_at: string | null;
+}
+
 export interface PlatformPlan {
   id: string;
   name: string;
@@ -2312,4 +2336,25 @@ export const adminApi = {
     request<PlatformPlan>("/api/v1/admin/plans", send("POST", body)),
   updatePlan: (id: string, body: Partial<PlatformPlan>) =>
     request<PlatformPlan>(`/api/v1/admin/plans/${id}`, send("PATCH", body)),
+  admins: () => request<PlatformAdmin[]>("/api/v1/admin/admins"),
+  addAdmin: (body: {
+    name: string;
+    email: string | null;
+    phone: string | null;
+    password: string;
+    permissions: AdminPermission[];
+  }) => request<PlatformAdmin>("/api/v1/admin/admins", send("POST", body)),
+  updateAdmin: (
+    id: string,
+    body: Partial<
+      Pick<PlatformAdmin, "name" | "email" | "phone" | "permissions" | "is_active">
+    >,
+  ) => request<PlatformAdmin>(`/api/v1/admin/admins/${id}`, send("PATCH", body)),
+  adminPassword: (id: string, new_password: string) =>
+    request<void>(
+      `/api/v1/admin/admins/${id}/password`,
+      send("POST", { new_password }),
+    ),
+  resetAdminTwoStep: (id: string) =>
+    request<PlatformAdmin>(`/api/v1/admin/admins/${id}/two-step/reset`, send("POST")),
 };

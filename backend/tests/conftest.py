@@ -298,7 +298,8 @@ def sell(db: Session, fixture: "GymFixture", member, *, paid: int = 0, **sale):
 
 @pytest.fixture
 def platform_admin(db: Session) -> StaffUser:
-    """With two-step sign-in on, as every platform admin must have (§16.1)."""
+    """The super admin, with two-step sign-in on, as every platform admin must
+    have (§16.1)."""
     from app.core.time import utcnow
 
     admin = StaffUser(
@@ -306,6 +307,7 @@ def platform_admin(db: Session) -> StaffUser:
         email="admin@gymbhai.com",
         password_hash=shared_password_hash(),
         is_platform_admin=True,
+        is_super_admin=True,
         totp_nonce="test-nonce",
         totp_enabled_at=utcnow(),
     )

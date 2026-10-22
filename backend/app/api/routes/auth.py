@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_session, current_staff
 from app.api.presenters import gym_read
+from app.core import admin_permissions
 from app.core.config import settings
 from app.core.errors import AppError, not_found
 from app.core.permissions import effective_permissions
@@ -119,9 +120,12 @@ def build_me(db: Session, staff: StaffUser) -> Me:
             ).all()
             branch_ids = sorted(rows) or None
 
-    permissions = (
-        sorted(effective_permissions(is_owner=staff.is_owner, stored=staff.permissions))
+    # A platform admin's are /admin's own (app/core/admin_permissions.py).
+    permissions = sorted(
+        effective_permissions(is_owner=staff.is_owner, stored=staff.permissions)
         if gym is not None
+        else admin_permissions.effective(staff)
+        if staff.is_platform_admin
         else []
     )
     return Me(

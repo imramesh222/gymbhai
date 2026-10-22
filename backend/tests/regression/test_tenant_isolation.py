@@ -366,6 +366,11 @@ NOT_GYM_SCOPED = {
     ("DELETE", "/api/v1/admin/changelog/{entry_id}"),
     ("POST", "/api/v1/admin/gym-referrals/{referral_id}/reward"),
     ("POST", "/api/v1/admin/gym-referrals/{referral_id}/reject"),
+    # Platform admins belong to no gym; the super admin's alone, and refused
+    # to gym staff (test_platform_admins.py).
+    ("PATCH", "/api/v1/admin/admins/{admin_id}"),
+    ("POST", "/api/v1/admin/admins/{admin_id}/password"),
+    ("POST", "/api/v1/admin/admins/{admin_id}/two-step/reset"),
     # The member's own records: tests/regression/test_member_isolation.py.
     ("POST", "/api/v1/m/payment-requests/{request_id}/screenshot"),
     ("POST", "/api/v1/m/payment-requests/{request_id}/withdraw"),

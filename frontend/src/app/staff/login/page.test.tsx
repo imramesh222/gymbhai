@@ -30,6 +30,7 @@ function me(overrides: Partial<Me["staff"]> = {}, required = false): Me {
       phone: "9841000001",
       is_owner: true,
       is_platform_admin: false,
+      is_super_admin: false,
       last_login_at: null,
       two_step_enabled: false,
       ...overrides,

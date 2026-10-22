@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_platform_admin
+from app.api.deps import require_admin, require_platform_admin
+from app.core.admin_permissions import AdminPermission
 from app.core.errors import AppError, not_found
 from app.core.security import hash_password
 from app.core.time import utcnow
@@ -65,7 +66,13 @@ from app.services.whatsapp import service as whatsapp
 
 router = APIRouter(prefix="/admin", tags=["platform admin"])
 
+# Seeing the gyms and the numbers: any admin. Everything else needs its
+# permission (app/core/admin_permissions.py).
 ADMIN = Depends(require_platform_admin)
+BILLING = Depends(require_admin(AdminPermission.BILLING))
+GYM_ACCOUNTS = Depends(require_admin(AdminPermission.GYM_ACCOUNTS))
+PRICING = Depends(require_admin(AdminPermission.PRICING))
+CHANGELOG = Depends(require_admin(AdminPermission.CHANGELOG))
 
 
 def _gym(db: Session, gym_id: uuid.UUID) -> Gym:
@@ -232,7 +239,7 @@ def grant(
     payload: GrantIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> AdminGym:
     """Activate or extend, e.g. after a payment made outside the app."""
     gym = _gym(db, gym_id)
@@ -274,7 +281,7 @@ def add_credits(
     payload: CreditsIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> AdminGym:
     gym = _gym(db, gym_id)
     sms.add_credits(db, gym.id, payload.credits, f"admin: {payload.reason}")
@@ -299,7 +306,7 @@ def suspend(
     payload: ReasonIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = GYM_ACCOUNTS,
 ) -> AdminGym:
     """Staff can't sign in, and the member app and door stop. For abuse, not
     for an unpaid bill: that only makes the dashboard read-only (§5.7)."""
@@ -324,7 +331,7 @@ def unsuspend(
     gym_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = GYM_ACCOUNTS,
 ) -> AdminGym:
     gym = _gym(db, gym_id)
     gym.status = GYM_ACTIVE
@@ -339,7 +346,7 @@ def reset_owner_password(
     payload: OwnerPasswordIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = GYM_ACCOUNTS,
 ) -> None:
     """For an owner locked out of their own gym. Signs them out everywhere."""
     gym = _gym(db, gym_id)
@@ -366,7 +373,7 @@ def reset_owner_two_step(
     gym_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = GYM_ACCOUNTS,
 ) -> AdminGym:
     """For an owner who lost their phone and their recovery codes: two-step
     sign-in off, so they can sign in with their password and set it up again."""
@@ -398,7 +405,7 @@ def list_payments(
         str, Query(alias="status", pattern="^(pending|approved|rejected)$")
     ] = "pending",
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> list[SubscriptionPaymentRead]:
     rows = db.scalars(
         select(SubscriptionPayment)
@@ -432,7 +439,7 @@ def approve_payment(
     payload: ApproveSubscriptionIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> SubscriptionPaymentRead:
     row = _pending(db, payment_id)
     gym = _gym(db, row.gym_id)
@@ -490,7 +497,7 @@ def reject_payment(
     payload: ReasonIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> SubscriptionPaymentRead:
     row = _pending(db, payment_id)
     gym = _gym(db, row.gym_id)
@@ -530,7 +537,7 @@ def create_plan(
     payload: PlatformPlanIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = PRICING,
 ) -> PlatformPlan:
     plan = PlatformPlan(**payload.model_dump())
     db.add(plan)
@@ -555,7 +562,7 @@ def update_plan(
     payload: PlatformPlanUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = PRICING,
 ) -> PlatformPlan:
     plan = db.get(PlatformPlan, plan_id)
     if plan is None:
@@ -609,7 +616,7 @@ def update_settings(
     payload: PlatformSettingsUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = PRICING,
 ) -> PlatformSettingsRead:
     row = whatsapp.platform_settings(db)
     names = ("whatsapp_credits", "branded_app_setup_price", "branded_app_monthly_price")
@@ -641,7 +648,7 @@ def update_settings(
 
 @router.get("/changelog", response_model=list[ChangelogRead])
 def admin_changelog(
-    db: Session = Depends(get_db), admin: StaffUser = ADMIN
+    db: Session = Depends(get_db), admin: StaffUser = CHANGELOG
 ) -> list[ChangelogEntry]:
     """Drafts first, then the newest published."""
     return list(
@@ -661,7 +668,7 @@ def add_changelog(
     payload: ChangelogIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = CHANGELOG,
 ) -> ChangelogEntry:
     entry = ChangelogEntry(**payload.model_dump(), created_by=admin.id)
     db.add(entry)
@@ -686,7 +693,7 @@ def edit_changelog(
     payload: ChangelogUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = CHANGELOG,
 ) -> ChangelogEntry:
     entry = db.get(ChangelogEntry, entry_id)
     if entry is None:
@@ -717,7 +724,7 @@ def delete_changelog(
     entry_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = CHANGELOG,
 ) -> Response:
     entry = db.get(ChangelogEntry, entry_id)
     if entry is None:
@@ -747,7 +754,7 @@ def list_gym_referrals(
         Query(alias="status", pattern="^(pending|ready|rewarded|rejected)$"),
     ] = None,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> list[GymReferralRead]:
     stmt = select(GymReferral)
     if referral_status:
@@ -790,7 +797,7 @@ def reward_gym_referral(
     referral_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> Response:
     """A free month for both gyms."""
     row = _referral(db, referral_id)
@@ -825,7 +832,7 @@ def reject_gym_referral(
     payload: ReasonIn,
     request: Request,
     db: Session = Depends(get_db),
-    admin: StaffUser = ADMIN,
+    admin: StaffUser = BILLING,
 ) -> Response:
     row = _referral(db, referral_id)
     gym_referrals.reject(db, row, admin, payload.reason)

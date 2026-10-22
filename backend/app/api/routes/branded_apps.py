@@ -16,8 +16,9 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require, require_platform_admin
+from app.api.deps import require, require_admin
 from app.api.tenancy import StaffContext
+from app.core.admin_permissions import AdminPermission
 from app.core.errors import AppError, not_found
 from app.core.permissions import Permission
 from app.db.session import get_db
@@ -38,7 +39,7 @@ admin_router = APIRouter(prefix="/admin/apps", tags=["platform admin"])
 
 # Paying us for it is the gym's setup, as the subscription is.
 SETUP = require(Permission.SETUP_GYM)
-ADMIN = Depends(require_platform_admin)
+ADMIN = Depends(require_admin(AdminPermission.APPS))
 
 
 def _read(db: Session, row: BrandedApp | None) -> BrandedAppRead:

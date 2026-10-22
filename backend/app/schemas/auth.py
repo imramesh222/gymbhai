@@ -207,6 +207,7 @@ class StaffRead(BaseModel):
     phone: str | None
     is_owner: bool
     is_platform_admin: bool
+    is_super_admin: bool
     last_login_at: datetime | None
     two_step_enabled: bool
 

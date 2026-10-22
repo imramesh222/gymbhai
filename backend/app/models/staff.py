@@ -30,6 +30,9 @@ class StaffUser(IdMixin, TimestampMixin, Base):
             " OR (NOT is_platform_admin AND gym_id IS NOT NULL)",
             name="gym_or_platform",
         ),
+        CheckConstraint(
+            "NOT is_super_admin OR is_platform_admin", name="super_admin_is_admin"
+        ),
         Index(
             "uq_staff_users_owner_per_gym",
             "gym_id",
@@ -54,8 +57,15 @@ class StaffUser(IdMixin, TimestampMixin, Base):
     is_platform_admin: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
-    # Permission keys (app/core/permissions.py). Ignored for the owner, who
-    # always has every permission.
+    # The platform admin with every /admin permission, who adds the others
+    # (app/core/admin_permissions.py). Made from a shell on the server
+    # (scripts.create_platform_admin), never from /admin.
+    is_super_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    # Permission keys (app/core/permissions.py; for a platform admin,
+    # app/core/admin_permissions.py). Ignored for the owner and the super
+    # admin, who always have every permission.
     permissions: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )

@@ -47,7 +47,8 @@ Automatic payment verification, progress tracking, workout and diet plans, class
 
 | Who | Can do |
 |---|---|
-| **Platform admin** (us) | Every gym: activate subscriptions, add SMS credits, suspend, reset owner passwords |
+| **Super admin** (us) | Everything in `/admin`, always: every gym, activate subscriptions, add SMS credits, suspend, reset owner passwords, our prices. Adds the other platform admins and decides what each can do. Made from a shell on the server (`make admin`), never from `/admin`, so nobody signed in there can take it over |
+| **Platform admin** (us) | Sees every gym and the numbers; does only what the super admin ticked: *payments and subscriptions*, *gym accounts* (suspend, reset an owner's sign-in), *plans and prices*, *gym apps*, *What's new* (`app/core/admin_permissions.py`). Decided 2026-10-22 |
 | **Owner** | Everything in their gym, every branch, always. Creates staff accounts and decides what each one can do |
 | **Staff** | Only what the owner has ticked for them, only in the branches the owner has given them (§2.1) |
 | **Member** | Their own membership, QR, payments, visits and notices only |
@@ -335,7 +336,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 |---|---|
 | `gyms` | `slug` (unique), `name`, `logo_key`, `brand_color`, `phone`, `address`, `sms_sender_name`, `terms_accepted_at`, `terms_version` (the terms and privacy policy accepted at sign-up), `settings` (JSON: plan month counting AD/BS, date display AD/BS/both, dues rule (allow / warn / refuse), grace days, re-scan window, reminder language, `require_two_step` — owner only, §11), `status` |
 | `branches` | `gym_id`, `name`, `address`, `phone`, `is_active` |
-| `staff_users` | `gym_id` (null for platform admin), `name`, `email`, `phone`, `password_hash` — `email` and `phone` unique across all staff, so signing in never needs a gym name — `is_owner` (at most one per gym), `is_platform_admin`, `permissions` (list of permission keys, §2.1), `is_active`, `last_login_at`, `totp_nonce`, `totp_enabled_at`, `totp_last_step` (two-step sign-in, §11); `changelog_seen_at` (What's new, §16.5 10.4); `language` (null = the gym's, §16.6); `muted_notifications` (the kinds of notification turned off, §18.6) |
+| `staff_users` | `gym_id` (null for platform admin), `name`, `email`, `phone`, `password_hash` — `email` and `phone` unique across all staff, so signing in never needs a gym name — `is_owner` (at most one per gym), `is_platform_admin`, `is_super_admin` (a platform admin with every `/admin` permission), `permissions` (list of permission keys, §2.1; for a platform admin, `/admin`'s own), `is_active`, `last_login_at`, `totp_nonce`, `totp_enabled_at`, `totp_last_step` (two-step sign-in, §11); `changelog_seen_at` (What's new, §16.5 10.4); `language` (null = the gym's, §16.6); `muted_notifications` (the kinds of notification turned off, §18.6) |
 | `staff_branch_access` | `staff_user_id`, `branch_id` — empty means all branches |
 | `members` | `gym_id`, `home_branch_id`, `member_code` (e.g. `FZ-0042`, unique per gym; the prefix is a gym setting, derived from the gym's initials at sign-up), `name`, `phone` (**not** unique — family members often share one number), `email`, `gender`, `date_of_birth`, `address`, `emergency_contact`, `photo_key` (a storage key, served by signed link), `joined_on`, `notes`, `app_access` (bool), `qr_secret`, `qr_version`, `card_token`, `is_archived`, `erased_at` (§11); `referred_by_id` (a member who sent them, §16.4 9.6); `language` (null = the gym's); `height_mm` (for BMI on their progress, §19.5); `whatsapp_agreed_at` (null: they haven't agreed) and `whatsapp_unreachable_at` (Meta said the number isn't on WhatsApp; tried again after 30 days or a new number) — §19.3 |
 | `leads` | `gym_id`, `branch_id`, `name`, `phone`, `email`, `source` (walk_in, phone, facebook, instagram, tiktok, referral, other), `plan_id`, `status` (new → contacted → trial → joined, or lost), `follow_up_on`, `lost_reason`, `assigned_to`, `trial_on`, `referred_by_id`, `member_id` (once joined), `notes`, `created_by`, `from_ip` (join form only, cleared after a day) — §16.4, 9.1 |
@@ -484,6 +485,8 @@ Full screen camera, large result card for 3 seconds, then back to scanning. Gym 
 **Gyms list** with plan, active members, SMS balance, subscription end, and each gym's health: last staff sign-in, visits this week, members added in 30 days, a *going quiet* flag (no sign-in and no visits for a week, past its first week), and its setup checklist (10.2). Activate or extend a subscription after payment, top up SMS credits, suspend, reset an owner's password.
 
 **What's new:** write, publish (or keep as draft) and delete entries (10.4). **Gym referrals:** gyms that sent us gyms; once the new gym has paid, *Give both a free month* (10.5).
+
+**Admins** (the super admin only): every platform admin, with what each may do, two-step sign-in and last sign-in. *Add admin* (name, email or phone, a password of at least 12 characters, the permissions ticked); *Edit* changes those, turns an admin off (signed out at once), sets a new password or resets two-step sign-in. Every admin sets up two-step sign-in at their first sign-in. The menu shows each admin only the pages they may open; the gyms list shows only the actions they may take. All of it is in the activity log, under no gym.
 
 Staff side: **Help and guides** (WhatsApp / Viber to `SUPPORT_WHATSAPP`, and short how-tos in `help.en.ts`), **What's new** with a dot until read, and on Subscription the link to share with another gym and who signed up with it.
 
@@ -692,6 +695,8 @@ Platform admin
   POST  /admin/gyms/{id}/sms-credits
   POST  /admin/gyms/{id}/suspend
   POST  /admin/gyms/{id}/owner-password | owner-two-step
+  GET   /admin/admins   POST /admin/admins   PATCH /admin/admins/{id}      the super admin's
+  POST  /admin/admins/{id}/password | two-step/reset
 ```
 
 ---

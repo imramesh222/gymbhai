@@ -149,7 +149,7 @@ apk-dev:  ## A development build .apk: code live from `npx expo start` (docs/MOB
 vapid:  ## Print a new VAPID key for push notifications (paste into .env)
 	@cd backend && ../$(PY) -m scripts.vapid_keys
 
-admin:  ## Create a platform admin: make admin name="Ramesh" email=you@example.com
+admin:  ## Create the super admin (adds the other admins in /admin): make admin name="Ramesh" email=you@example.com
 	@$(COMPOSE) exec api python -m scripts.create_platform_admin \
 		--name "$(name)" $(if $(email),--email $(email)) $(if $(phone),--phone $(phone))
 

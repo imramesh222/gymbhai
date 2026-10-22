@@ -18,6 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.tenancy import StaffContext
+from app.core import admin_permissions
+from app.core.admin_permissions import AdminPermission
 from app.core.errors import AppError, unauthorized
 from app.core.permissions import Permission, effective_permissions
 from app.core.security import (
@@ -259,9 +261,27 @@ def current_device(
 def require_platform_admin(
     staff: StaffUser = Depends(current_staff),
 ) -> StaffUser:
+    """Any platform admin: enough to see the gyms and the numbers."""
     if not staff.is_platform_admin:
         raise AppError(403, "platform_admin_only", "Platform administrators only.")
     # Required for us, always (§16.1).
     if not staff.two_step_enabled:
         raise two_step.setup_pending_error()
     return staff
+
+
+def require_admin(permission: AdminPermission) -> Callable[..., StaffUser]:
+    """A platform admin who may do `permission`: the super admin always, any
+    other admin when it was ticked for them (app/core/admin_permissions.py)."""
+
+    def dependency(staff: StaffUser = Depends(require_platform_admin)) -> StaffUser:
+        if permission not in admin_permissions.effective(staff):
+            raise AppError(
+                403,
+                "admin_permission_denied",
+                "You don't have permission to do this. Ask the super admin.",
+                permission=permission.value,
+            )
+        return staff
+
+    return dependency
