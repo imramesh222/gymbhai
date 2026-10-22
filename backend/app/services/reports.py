@@ -10,7 +10,7 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import Date, DateTime, Integer, and_, case, column, func, select, values
 from sqlalchemy.orm import Session
 
 from app.api.tenancy import StaffContext
@@ -18,6 +18,7 @@ from app.core.calendar import days_in_bs_month, from_bs, to_bs
 from app.core.errors import AppError
 from app.core.gym_settings import GymSettings
 from app.core.time import NEPAL, today_in_nepal, utcnow
+from app.models.expense import Expense
 from app.models.gym import Gym
 from app.models.member import Member
 from app.models.member_app import LET_IN, CheckIn
@@ -414,6 +415,196 @@ def monthly(db: Session, ctx: StaffContext, month: str) -> Monthly:
         visits=visits or 0,
         by_plan=dict(by_plan),
     )
+
+
+def trend(db: Session, ctx: StaffContext, months: list[str]) -> list[Monthly]:
+    """The figures Reports' charts use, for many months at once (§16.2, 7.9).
+
+    `monthly()` a month at a time costs a dozen queries a month; this costs a
+    fixed fifteen or so however many months, each figure grouped by month
+    against a table of the months' bounds (BS months aren't calendar months).
+    It must agree with `monthly()` exactly: tests hold the two together. The
+    breakdowns the charts don't show (by method, category, plan) are empty.
+    """
+    gym = db.get(Gym, ctx.gym_id)
+    assert gym is not None
+    calendar = "ad" if gym.config.date_display == "ad" else "bs"
+    today = today_in_nepal()
+    spans = [(month, *month_range(month, calendar)) for month in months]
+    if not spans:
+        return []
+    bounds = values(
+        column("i", Integer),
+        column("first", Date),
+        column("last", Date),
+        column("as_of", Date),
+        column("start", DateTime(timezone=True)),
+        column("stop", DateTime(timezone=True)),
+        name="month_bounds",
+    ).data(
+        [
+            (
+                i,
+                first,
+                last,
+                min(last, today),
+                day_start(first),
+                day_start(last + dt.timedelta(days=1)),
+            )
+            for i, (_, first, last) in enumerate(spans)
+        ]
+    )
+    lo, hi = spans[0][1], spans[-1][2]
+    lo_start, hi_stop = day_start(lo), day_start(hi + dt.timedelta(days=1))
+    member_ids = members_service.search(ctx, today=today).with_only_columns(Member.id)
+
+    def grouped(stmt) -> dict[int, int]:
+        return {i: int(n or 0) for i, n in db.execute(stmt.group_by(bounds.c.i)).all()}
+
+    # Money in, as money_between(): refunds subtracted, voids ignored.
+    signed = case((Payment.kind == KIND_PAYMENT, Payment.amount), else_=-Payment.amount)
+    paid = (
+        select(bounds.c.i, func.sum(signed))
+        .join_from(
+            Payment,
+            bounds,
+            and_(Payment.paid_at >= bounds.c.start, Payment.paid_at < bounds.c.stop),
+        )
+        .where(Payment.gym_id == ctx.gym_id, Payment.voided_at.is_(None))
+    )
+    if ctx.branch_ids is not None:
+        paid = paid.where(ms.payments_in_branches(ctx.branch_ids))
+    income = grouped(paid)
+
+    spent = grouped(
+        expenses_service.in_branches(
+            select(bounds.c.i, func.sum(Expense.amount))
+            .join_from(
+                Expense,
+                bounds,
+                and_(
+                    Expense.spent_on >= bounds.c.first,
+                    Expense.spent_on <= bounds.c.last,
+                ),
+            )
+            .where(Expense.gym_id == ctx.gym_id, Expense.voided_at.is_(None)),
+            ctx.branch_ids,
+        )
+    )
+    joined = grouped(
+        select(bounds.c.i, func.count())
+        .join_from(
+            Member,
+            bounds,
+            and_(Member.joined_on >= bounds.c.first, Member.joined_on <= bounds.c.last),
+        )
+        .where(Member.id.in_(member_ids))
+    )
+    active = grouped(
+        select(bounds.c.i, func.count(func.distinct(Membership.member_id)))
+        .join_from(
+            Membership,
+            bounds,
+            and_(
+                Membership.start_date <= bounds.c.as_of,
+                Membership.end_date >= bounds.c.as_of,
+            ),
+        )
+        .where(Membership.member_id.in_(member_ids), Membership.cancelled_at.is_(None))
+    )
+    visit_stmt = (
+        select(bounds.c.i, func.count())
+        .join_from(
+            CheckIn,
+            bounds,
+            and_(CheckIn.at >= bounds.c.start, CheckIn.at < bounds.c.stop),
+        )
+        .where(CheckIn.gym_id == ctx.gym_id, CheckIn.result.in_(LET_IN))
+    )
+    if ctx.branch_ids is not None:
+        visit_stmt = visit_stmt.where(CheckIn.branch_id.in_(ctx.branch_ids))
+    visits = grouped(visit_stmt)
+
+    # Renewals: a membership sold to someone with an earlier one, or their
+    # second in the same month; as monthly(), oldest first.
+    sold = db.execute(
+        select(Membership.member_id, Membership.created_at)
+        .where(
+            Membership.gym_id == ctx.gym_id,
+            Membership.member_id.in_(member_ids),
+            Membership.cancelled_at.is_(None),
+            Membership.created_at >= lo_start,
+            Membership.created_at < hi_stop,
+        )
+        .order_by(Membership.created_at)
+    ).all()
+    first_ever = (
+        dict(
+            db.execute(
+                select(Membership.member_id, func.min(Membership.created_at))
+                .where(
+                    Membership.member_id.in_({m for m, _ in sold}),
+                    Membership.cancelled_at.is_(None),
+                )
+                .group_by(Membership.member_id)
+            ).all()
+        )
+        if sold
+        else {}
+    )
+
+    # Due to renew: whoever's membership ended in the month; their states once.
+    ending = db.execute(
+        select(Membership.member_id, Membership.end_date).where(
+            Membership.member_id.in_(member_ids),
+            Membership.cancelled_at.is_(None),
+            Membership.end_date >= lo,
+            Membership.end_date <= hi,
+        )
+    ).all()
+    due_ids = {m for m, _ in ending}
+    due_members = (
+        list(db.scalars(select(Member).where(Member.id.in_(due_ids))))
+        if due_ids
+        else []
+    )
+    states = members_service.states_for(db, due_members, today)
+
+    out = []
+    for i, (month, first, last) in enumerate(spans):
+        start, stop = day_start(first), day_start(last + dt.timedelta(days=1))
+        first_time: set[uuid.UUID] = set()
+        renewals = 0
+        for member_id, created in sold:
+            if not start <= created < stop:
+                continue
+            if first_ever[member_id] < start or member_id in first_time:
+                renewals += 1
+            else:
+                first_time.add(member_id)
+        due = {m for m, end in ending if first <= end <= last}
+        valid = [states[m].valid_until for m in due]
+        out.append(
+            Monthly(
+                month=month,
+                calendar=calendar,
+                first_day=first,
+                last_day=last,
+                income=income.get(i, 0),
+                income_by_method={},
+                expenses=spent.get(i, 0),
+                expenses_by_category={},
+                new_members=joined.get(i, 0),
+                new_memberships=len(first_time),
+                renewals=renewals,
+                lapsed=sum(1 for v in valid if v and v <= last and v < today),
+                due_to_renew=len(due),
+                renewed=sum(1 for v in valid if v and v > last),
+                active_members=active.get(i, 0),
+                visits=visits.get(i, 0),
+            )
+        )
+    return out
 
 
 @dataclass

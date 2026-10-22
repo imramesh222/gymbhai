@@ -31,7 +31,7 @@ import contextlib
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -113,6 +113,34 @@ def member_changed(
     db: Session, gym_id: uuid.UUID, member_id: uuid.UUID, branch_id: uuid.UUID
 ) -> None:
     publish(db, gym_id=gym_id, kind=MEMBER, member_id=member_id, branch_id=branch_id)
+
+
+def members_changed(
+    db: Session,
+    gym_id: uuid.UUID,
+    members: Iterable[tuple[uuid.UUID, uuid.UUID | None]],
+) -> None:
+    """member_changed for many members at once (Extend everyone): one
+    statement however many, each member told once."""
+    payloads = [
+        json.dumps(
+            {
+                "type": MEMBER,
+                "gym": str(gym_id),
+                "member": str(member_id),
+                "branch": str(branch_id) if branch_id else None,
+            }
+        )
+        for member_id, branch_id in dict.fromkeys(members)
+    ]
+    if payloads:
+        db.execute(
+            text(
+                "SELECT pg_notify(:channel, payload) "
+                "FROM unnest(CAST(:payloads AS text[])) AS payload"
+            ),
+            {"channel": CHANNEL, "payloads": payloads},
+        )
 
 
 def staff_changed(db: Session, gym_id: uuid.UUID | None) -> None:

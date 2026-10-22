@@ -17,7 +17,7 @@ import datetime as dt
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -110,6 +110,9 @@ def check_instructor(
 # --- the timetable makes the classes -----------------------------------------------
 
 
+GENERATE_CHUNK = 500
+
+
 def generate(
     db: Session,
     *,
@@ -130,7 +133,7 @@ def generate(
     if slot_id is not None:
         stmt = stmt.where(ClassSlot.id == slot_id)
     now = utcnow()
-    made = 0
+    rows = []
     for slot, _ in db.execute(stmt).all():
         for offset in range(AHEAD_DAYS):
             day = today + dt.timedelta(days=offset)
@@ -139,23 +142,31 @@ def generate(
             start = starts_at(day, slot.starts)
             if start <= now:
                 continue
-            inserted = db.execute(
+            rows.append(
+                {
+                    "id": uuid.uuid4(),
+                    "gym_id": slot.gym_id,
+                    "branch_id": slot.branch_id,
+                    "type_id": slot.type_id,
+                    "slot_id": slot.id,
+                    "starts_at": start,
+                    "ends_at": start + dt.timedelta(minutes=slot.minutes),
+                    "instructor_id": slot.instructor_id,
+                    "places": slot.places,
+                }
+            )
+    # A few statements for every gym's timetable, not one a class; those
+    # already made are left as they are.
+    made = 0
+    for chunk in range(0, len(rows), GENERATE_CHUNK):
+        made += len(
+            db.execute(
                 insert(GymClass)
-                .values(
-                    id=uuid.uuid4(),
-                    gym_id=slot.gym_id,
-                    branch_id=slot.branch_id,
-                    type_id=slot.type_id,
-                    slot_id=slot.id,
-                    starts_at=start,
-                    ends_at=start + dt.timedelta(minutes=slot.minutes),
-                    instructor_id=slot.instructor_id,
-                    places=slot.places,
-                )
+                .values(rows[chunk : chunk + GENERATE_CHUNK])
                 .on_conflict_do_nothing(constraint="uq_classes_slot_start")
                 .returning(GymClass.id)
-            ).first()
-            made += inserted is not None
+            ).all()
+        )
     return made
 
 
@@ -263,15 +274,38 @@ def no_shows(db: Session, member_id: uuid.UUID, now: dt.datetime | None = None) 
     )
 
 
+@dataclass
+class Eligibility:
+    """What `why_not` reads about one member, read once for a whole week of
+    classes rather than once a class (the member app's timetable)."""
+
+    inputs: "members_service.StateInputs"
+    no_shows: int
+    plans: dict = field(default_factory=dict)
+    covers: dict = field(default_factory=dict)
+
+
+def eligibility(db: Session, member: Member) -> Eligibility:
+    return Eligibility(
+        inputs=members_service.state_inputs(db, [member]),
+        no_shows=no_shows(db, member.id),
+    )
+
+
 def why_not(
-    db: Session, gym: Gym, member: Member, gym_class: GymClass
+    db: Session,
+    gym: Gym,
+    member: Member,
+    gym_class: GymClass,
+    known: Eligibility | None = None,
 ) -> tuple[str, str] | None:
     """Why this member may not book this class, as (code, message); None if
-    they may."""
+    they may. `known` saves reading the member again for each class."""
     if member.is_archived:
         return "member_archived", "Restore this member first."
+    known = known or eligibility(db, member)
     day = local_day(gym_class.starts_at)
-    state = members_service.state_inputs(db, [member]).state(member.id, day)
+    state = known.inputs.state(member.id, day)
     if state.status == ms.FROZEN:
         return "frozen", "The membership is frozen on that day."
     current = state.current
@@ -282,11 +316,19 @@ def why_not(
         and str(gym_class.type_id) not in (current.class_type_ids or [])
     ):
         return "plan_no_class", "Their plan doesn't include this class."
-    plan = db.get(Plan, current.plan_id) if current.plan_id else None
-    if plan is not None and not ms.plan_covers_branch(db, plan, gym_class.branch_id):
-        return "branch", "Their plan isn't for this class's branch."
+    if current.plan_id not in known.plans:
+        known.plans[current.plan_id] = (
+            db.get(Plan, current.plan_id) if current.plan_id else None
+        )
+    plan = known.plans[current.plan_id]
+    if plan is not None:
+        key = (plan.id, gym_class.branch_id)
+        if key not in known.covers:
+            known.covers[key] = ms.plan_covers_branch(db, plan, gym_class.branch_id)
+        if not known.covers[key]:
+            return "branch", "Their plan isn't for this class's branch."
     config = gym.config
-    if config.no_show_limit and no_shows(db, member.id) >= config.no_show_limit:
+    if config.no_show_limit and known.no_shows >= config.no_show_limit:
         return (
             "no_shows",
             f"Booked and didn't come {config.no_show_limit} times in "

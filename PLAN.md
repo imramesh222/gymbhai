@@ -823,6 +823,7 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 
 **Testing**
 - Backend: pytest — unit (dates, dues, renewal start dates, QR codes, BS conversion), integration against real Postgres (every route), regression (tenant isolation, permissions).
+- No N+1: each list has a query-count test (one row and many cost the same), and `tests/regression/test_no_repeated_queries.py` sweeps every GET endpoint, the daily jobs and the bulk actions on the demo gym, failing when any of them runs one statement more than three times (added 2026-10-22, when it found the member app's week of classes, Reports' 12-month trend, Extend everyone's notifications and the timetable's daily job doing work once a row).
 - Frontend: Vitest + Testing Library for components.
 - End-to-end (Playwright), the one flow that must never break: *add member → take payment → member signs in → scans QR at kiosk → allowed; membership ends → scan denied.*
 - CI runs all of it on every push.

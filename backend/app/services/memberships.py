@@ -818,11 +818,15 @@ def _log_edit(
     reason: str | None = None,
     extra: dict[str, Any] | None = None,
     request: Request | None = None,
+    tell: bool = True,
 ) -> None:
+    """The edit's log entry, and open screens told (unless the caller tells
+    them all at once, as Extend everyone does)."""
     changes = activity.diff(before, snapshot(membership))
     if extra:
         changes.update(extra)
-    live.member_changed(db, ctx.gym_id, membership.member_id, membership.branch_id)
+    if tell:
+        live.member_changed(db, ctx.gym_id, membership.member_id, membership.branch_id)
     activity.staff_action(
         db,
         ctx.staff,
@@ -1030,6 +1034,7 @@ def extend_all(
     stmt = extend_all_selection(db, ctx, branch_id)
     batch = uuid.uuid4()
     count = 0
+    changed: list[tuple[uuid.UUID, uuid.UUID]] = []
     # Locked in id order, so two runs at once queue up instead of deadlocking.
     for membership in db.scalars(stmt.order_by(Membership.id).with_for_update()):
         before = snapshot(membership)
@@ -1043,8 +1048,12 @@ def extend_all(
             reason=reason,
             extra={"days": days, "batch": batch},
             request=request,
+            tell=False,
         )
+        changed.append((membership.member_id, membership.branch_id))
         count += 1
+    # Every member's screens told in one go, not one notification each.
+    live.members_changed(db, ctx.gym_id, changed)
 
     activity.staff_action(
         db,

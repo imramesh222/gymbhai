@@ -657,14 +657,12 @@ def _app_classes(db: Session, member: Member, first: dt.date) -> AppClasses:
         if rows
         else {}
     )
-    by_day: dict[dt.date, tuple[str, str] | None] = {}
+    # The member read once for the whole week, not once a class.
+    known = service.eligibility(db, member)
     classes = []
     for row, read in zip(rows, reads, strict=True):
         booking = mine.get(row.id)
-        day = service.local_day(row.starts_at)
-        if day not in by_day:
-            by_day[day] = service.why_not(db, gym, member, row)
-        blocked = by_day[day]
+        blocked = service.why_not(db, gym, member, row, known)
         classes.append(
             AppClass(
                 id=row.id,
@@ -687,7 +685,7 @@ def _app_classes(db: Session, member: Member, first: dt.date) -> AppClasses:
         booking_days=config.class_booking_days,
         closes_minutes=config.class_closes_minutes,
         cancel_hours=config.class_cancel_hours,
-        no_shows=service.no_shows(db, member.id),
+        no_shows=known.no_shows,
     )
 
 

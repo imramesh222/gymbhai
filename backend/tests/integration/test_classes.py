@@ -404,6 +404,24 @@ def test_the_week_in_the_app(
     assert (week["booking_days"], week["cancel_hours"]) == (7, 2)
 
 
+def test_each_class_in_the_week_is_checked_for_itself(
+    client: TestClient, db: Session, gym_a: GymFixture, tomorrow_class: GymClass
+) -> None:
+    """A plan with yoga only, and Zumba at 07:00 before yoga at 08:00 the same
+    day: Zumba is refused, yoga isn't. (The timetable once answered for the
+    whole day from its first class.)"""
+    yoga = ClassType(gym_id=gym_a.gym.id, name="Yoga", minutes=60, places=5)
+    db.add(yoga)
+    db.commit()
+    slot_on(db, gym_a, yoga, TOMORROW, starts="08:00")
+    yoga_only = member_with_plan(
+        db, gym_a, "9812000012", classes="chosen", class_type_ids=[str(yoga.id)]
+    )
+    week = app_for(client, db, yoga_only).get("/api/v1/m/classes").json()
+    blocked = {c["type_name"]: c["blocked"] for c in week["classes"]}
+    assert blocked == {"Zumba": "plan_no_class", "Yoga": None}
+
+
 def test_the_reminder_an_hour_before(
     db: Session, gym_a: GymFixture, tomorrow_class: GymClass
 ) -> None:

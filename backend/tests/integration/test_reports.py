@@ -263,3 +263,45 @@ def test_attendance_by_weekday_and_hour(
     now = utcnow().astimezone(NEPAL)
     assert grid[(now.weekday() + 1) % 7][now.hour] == 1
     assert sum(map(sum, grid)) == summary["let_in"] == 1
+
+
+def test_the_trend_agrees_with_each_months_report(db: Session) -> None:
+    """Reports' charts read a year in one go (reports.trend); every figure must
+    be what the month's own report says, for the owner and for staff who see
+    one branch. On the demo gym: a year of members, money, visits, lapses."""
+    from dataclasses import astuple, replace
+
+    from sqlalchemy import select
+
+    from app.api.tenancy import StaffContext
+    from app.models.gym import Branch, Gym
+    from app.models.staff import StaffUser
+    from app.services import reports
+    from scripts import seed_demo
+    from tests.conftest import context_for
+
+    seed_demo.build(db, members=30, say=lambda _: None)
+    gym = db.scalar(select(Gym).where(Gym.slug == "demo"))
+    owner = db.scalar(
+        select(StaffUser).where(StaffUser.gym_id == gym.id, StaffUser.is_owner)
+    )
+    everyone = context_for(db, owner)
+    branch = db.scalar(select(Branch).where(Branch.gym_id == gym.id).limit(1))
+    one_branch = StaffContext(
+        staff=owner,
+        gym_id=gym.id,
+        permissions=everyone.permissions,
+        branch_ids=frozenset({branch.id}),
+    )
+    calendar = "ad" if gym.config.date_display == "ad" else "bs"
+    months = reports.months_back(reports.current_month(calendar), 14)
+    for ctx in (everyone, one_branch):
+        batched = reports.trend(db, ctx, months)
+        for got, month in zip(batched, months, strict=True):
+            expected = reports.monthly(db, ctx, month)
+            # The charts don't show the breakdowns; trend leaves them empty.
+            expected = replace(
+                expected, income_by_method={}, expenses_by_category={}, by_plan={}
+            )
+            assert astuple(got) == astuple(expected), month
+    assert any(m.renewals for m in batched) and any(m.lapsed for m in batched)

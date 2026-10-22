@@ -45,7 +45,11 @@ export default function Visits() {
         <Txt weight="bold" size={32} color={colors.ink}>
           {visited.size}
         </Txt>
-        <Txt color={colors.faint}>{t("app.visits.thisMonth")}</Txt>
+        <Txt color={colors.faint}>
+          {visited.size === 1
+            ? t("app.visits.thisMonthOne")
+            : t("app.visits.thisMonth")}
+        </Txt>
       </View>
       <Card style={{ gap: space(2) }}>
         <Txt

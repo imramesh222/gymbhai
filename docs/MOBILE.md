@@ -43,6 +43,13 @@ npx expo start
 Press `i` for the iPhone simulator or `a` for the Android emulator; Expo Go is
 installed on them automatically. Code changes appear at once.
 
+Expo Go must match the app's SDK (58): an older Expo Go already on a simulator
+or emulator opens the project to "Something went wrong" and nothing else.
+Pressing `a` or `i` offers the right version; Maestro runs (§3) don't, so
+check `adb shell dumpsys package host.exp.exponent | grep versionName` first,
+or test the installed `.apk` (`make apk`, then
+`make e2e-mobile app=com.gymbhai.member`), which needs no Expo Go at all.
+
 Sign in to any gym in the dev database. To get a known one:
 
 ```sh

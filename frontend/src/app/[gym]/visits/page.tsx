@@ -41,7 +41,9 @@ export default function MemberVisits() {
       <p className="text-3xl font-bold">
         {visited.size}{" "}
         <span className="text-base font-normal text-slate-600">
-          {t("app.visits.thisMonth")}
+          {visited.size === 1
+            ? t("app.visits.thisMonthOne")
+            : t("app.visits.thisMonth")}
         </span>
       </p>
       <div className="rounded-2xl bg-white p-3">
