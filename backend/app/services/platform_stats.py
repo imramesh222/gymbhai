@@ -61,7 +61,8 @@ def setups(db: Session, gyms: Sequence[Gym]) -> dict[uuid.UUID, dict[str, bool]]
     members = having(Member)
     return {
         g.id: {
-            "plans_priced": g.id in priced,
+            # Priced, and the gym has said how it counts months (§5.1).
+            "plans_priced": g.id in priced and g.config.plan_months is not None,
             "payment_account": g.id in accounts,
             "logo": g.logo_key is not None,
             "staff_invited": g.id in staff,

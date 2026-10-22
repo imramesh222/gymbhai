@@ -4,18 +4,21 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { AuthSplit } from "@/components/AuthSplit";
 import { Button } from "@/components/Button";
-import { Choice } from "@/components/Choice";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
 import { Trans } from "@/components/Trans";
-import { LogoMark } from "@/components/ui/Logo";
 import { t } from "@/i18n";
-import { errorMessage, type DateDisplay, type PlanMonths } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useLocale } from "@/lib/locale";
 import { memberAppUrl, slugify } from "@/lib/slug";
+
+/** "YOUR GYM" between two hairlines. */
+const SECTION_HEADING =
+  "flex items-center gap-3 text-xs font-semibold tracking-wider text-slate-500 uppercase before:h-px before:flex-1 before:bg-hairline after:h-px after:flex-1 after:bg-hairline";
 
 export default function SignupPage() {
   const { registerGym } = useAuth();
@@ -29,9 +32,6 @@ export default function SignupPage() {
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [branchName, setBranchName] = useState(t("signup.branchDefault"));
-  // No defaults: the owner must choose both (PLAN.md §5.1).
-  const [planMonths, setPlanMonths] = useState<PlanMonths | null>(null);
-  const [dateDisplay, setDateDisplay] = useState<DateDisplay | null>(null);
   const [ownerName, setOwnerName] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
@@ -47,10 +47,6 @@ export default function SignupPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!planMonths || !dateDisplay) {
-      setError(t("signup.chooseCalendar"));
-      return;
-    }
     if (!acceptTerms) {
       setError(t("signup.acceptTermsNeeded"));
       return;
@@ -62,8 +58,6 @@ export default function SignupPage() {
         gym_name: gymName,
         slug,
         branch_name: branchName,
-        plan_months: planMonths,
-        date_display: dateDisplay,
         owner_name: ownerName,
         owner_phone: ownerPhone,
         owner_email: ownerEmail,
@@ -80,27 +74,10 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="relative isolate mx-auto max-w-lg px-4 py-10 sm:px-6">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 bg-[radial-gradient(70%_70%_at_50%_0%,var(--color-brand-200),transparent)] opacity-70"
-      />
-      <Link href="/" className="flex w-fit items-center gap-2.5">
-        <LogoMark />
-        <span className="text-lg font-bold tracking-tight text-slate-900">
-          {t("app.name")}
-        </span>
-      </Link>
-      <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
-        {t("signup.title")}
-      </h1>
-      <p className="mt-2 text-slate-600">{t("signup.subtitle")}</p>
-
-      <form onSubmit={(e) => void submit(e)} className="mt-7 space-y-5">
-        <section className="space-y-4 rounded-2xl bg-surface p-5 shadow-card ring-1 ring-hairline sm:p-6">
-          <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            {t("signup.section.gym")}
-          </h2>
+    <AuthSplit title={t("signup.title")} subtitle={t("signup.subtitle")}>
+      <form onSubmit={(e) => void submit(e)} className="mt-8 space-y-7">
+        <section className="space-y-4">
+          <h2 className={SECTION_HEADING}>{t("signup.section.gym")}</h2>
           <Field
             label={t("signup.gymName")}
             value={gymName}
@@ -125,45 +102,6 @@ export default function SignupPage() {
             onChange={setBranchName}
             required
           />
-        </section>
-
-        <section className="space-y-4 rounded-2xl bg-surface p-5 shadow-card ring-1 ring-hairline sm:p-6">
-          <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            {t("signup.section.calendar")}
-          </h2>
-          <Choice<PlanMonths>
-            legend={t("signup.planMonths")}
-            name="plan_months"
-            value={planMonths}
-            onChange={setPlanMonths}
-            required
-            options={[
-              {
-                value: "bs",
-                label: t("signup.planMonths.bs"),
-                hint: t("signup.planMonths.bsExample"),
-              },
-              {
-                value: "ad",
-                label: t("signup.planMonths.ad"),
-                hint: t("signup.planMonths.adExample"),
-              },
-            ]}
-          />
-          <Choice<DateDisplay>
-            legend={t("signup.dateDisplay")}
-            name="date_display"
-            value={dateDisplay}
-            onChange={setDateDisplay}
-            required
-            columns={3}
-            options={[
-              { value: "bs", label: t("signup.dateDisplay.bs") },
-              { value: "ad", label: t("signup.dateDisplay.ad") },
-              { value: "both", label: t("signup.dateDisplay.both") },
-            ]}
-          />
-          <p className="text-sm text-slate-500">{t("signup.calendarHelp")}</p>
           <div>
             <p className="mb-1.5 text-sm font-medium text-slate-700">
               {t("signup.language")}
@@ -173,10 +111,8 @@ export default function SignupPage() {
           </div>
         </section>
 
-        <section className="space-y-4 rounded-2xl bg-surface p-5 shadow-card ring-1 ring-hairline sm:p-6">
-          <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            {t("signup.section.owner")}
-          </h2>
+        <section className="space-y-4">
+          <h2 className={SECTION_HEADING}>{t("signup.section.owner")}</h2>
           <Field
             label={t("signup.ownerName")}
             value={ownerName}
@@ -252,7 +188,7 @@ export default function SignupPage() {
         </Button>
       </form>
 
-      <p className="mt-6 text-sm text-slate-600">
+      <p className="mt-6 text-center text-sm text-slate-600">
         {t("signup.haveAccount")}{" "}
         <Link
           href="/staff/login"
@@ -261,6 +197,6 @@ export default function SignupPage() {
           {t("home.signIn")}
         </Link>
       </p>
-    </main>
+    </AuthSplit>
   );
 }

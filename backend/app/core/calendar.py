@@ -16,7 +16,16 @@ from typing import Literal
 
 import nepali_datetime as nd
 
+from app.core.errors import AppError
+
 Calendar = Literal["ad", "bs"]
+
+# A new gym hasn't said how it counts plan months yet (§5.1).
+PLAN_MONTHS_NOT_CHOSEN = AppError(
+    409,
+    "plan_months_not_chosen",
+    "Choose how plan months are counted first, in Settings > Plans.",
+)
 
 BS_MONTHS = (
     "Baisakh",
@@ -85,10 +94,16 @@ def plan_end_date(
     *,
     months: int | None,
     days: int | None,
-    calendar: Calendar,
+    calendar: Calendar | None,
 ) -> dt.date:
-    """The last day (inclusive) of a plan starting on `start`."""
+    """The last day (inclusive) of a plan starting on `start`.
+
+    `calendar` is the gym's `plan_months`: None until it's chosen, which only
+    plans counted in days can do without.
+    """
     if months:
+        if calendar is None:
+            raise PLAN_MONTHS_NOT_CHOSEN
         return add_months(start, months, calendar) - dt.timedelta(days=1)
     if days:
         return start + dt.timedelta(days=days - 1)

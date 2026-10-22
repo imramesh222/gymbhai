@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.core.gym_settings import DateDisplay, GymSettings, PlanMonths
+from app.core.gym_settings import GymSettings
 from app.core.phone import normalize_phone
 from app.core.slugs import check_slug
 
@@ -67,9 +67,6 @@ class GymSignup(Strict):
     gym_name: str = Field(min_length=2, max_length=120)
     slug: str
     branch_name: str = Field(default="Main branch", min_length=1, max_length=120)
-    # No defaults: the owner must choose (PLAN.md §5.1).
-    plan_months: PlanMonths
-    date_display: DateDisplay
     owner_name: str = Field(min_length=2, max_length=120)
     owner_phone: OptionalPhone = None
     owner_email: OptionalEmail = None

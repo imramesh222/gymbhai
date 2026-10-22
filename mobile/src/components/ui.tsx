@@ -137,7 +137,7 @@ export function Notice({
 
 // --- buttons ---------------------------------------------------------------------
 
-type Variant = "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 export function Button({
   label,
@@ -163,11 +163,17 @@ export function Button({
   const background =
     variant === "primary"
       ? brand
-      : variant === "secondary"
-        ? colors.surface
-        : "transparent";
+      : variant === "danger"
+        ? colors.red
+        : variant === "secondary"
+          ? colors.surface
+          : "transparent";
   const ink =
-    variant === "primary" ? "#ffffff" : variant === "secondary" ? colors.ink : brand;
+    variant === "primary" || variant === "danger"
+      ? "#ffffff"
+      : variant === "secondary"
+        ? colors.ink
+        : brand;
   return (
     <Pressable
       testID={testID}

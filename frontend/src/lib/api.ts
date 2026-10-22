@@ -51,7 +51,8 @@ export type PlanMonths = "ad" | "bs";
 export type DateDisplay = "ad" | "bs" | "both";
 
 export interface GymSettings {
-  plan_months: PlanMonths;
+  /** Not chosen yet: asked on Plans and before the first sale (§5.1). */
+  plan_months: PlanMonths | null;
   date_display: DateDisplay;
   dues_rule: "allow" | "warn" | "refuse";
   grace_days: number;
@@ -165,8 +166,6 @@ export interface GymSignup {
   gym_name: string;
   slug: string;
   branch_name: string;
-  plan_months: PlanMonths;
-  date_display: DateDisplay;
   owner_name: string;
   owner_phone: string;
   owner_email: string;

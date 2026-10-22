@@ -216,9 +216,9 @@ Every new gym starts with four plans, prices left blank for the owner to fill in
 
 The owner can rename them, set prices, hide any, and add their own ("Morning only — 3 months", "Couple — 1 year", "Student — 1 month"). Each plan has a duration, price, one-time admission fee, and which branches it covers.
 
-- **Calendar — each gym chooses, there is no default.** On sign-up the owner picks:
-  - **Count plans in:** AD months (a 3-month plan from 15 January ends 14 April) or BS months (from 5 Baisakh ends 4 Shrawan). BS months are 29–32 days long, so BS counting uses the BS calendar, not 30 days × N.
-  - **Show dates in:** AD, BS, or both — on every screen, receipt, SMS and the member app.
+- **Calendar — each gym chooses how months are counted; there is no default.** Sign-up doesn't ask (decided 2026-10-22: on the sign-up page "plan" read as the gym's own subscription with us, and nothing is sold yet). Instead:
+  - **Count plans in:** AD months (a member who joins on 15 January for 3 months stays until 14 April) or BS months (joins on 5 Baisakh, stays until 4 Shrawan). BS months are 29–32 days long, so BS counting uses the BS calendar, not 30 days × N. Asked at the top of **Settings → Plans** and in place of every sale form (membership and personal training) until answered; the API refuses anything counted in months with 409 `plan_months_not_chosen` until then (plans counted in days don't need it). The setup checklist's *plans priced* step needs it too. Staff who can't change the gym's settings are told to ask the owner.
+  - **Show dates in:** AD, BS, or both — on every screen, receipt, SMS and the member app. Starts at **both**.
   - Both can be changed later in Settings. Changing how plans are counted only affects memberships sold after the change; existing end dates never move.
 - **Price is copied onto each membership when it's sold.** Raising a plan's price later never changes what existing members paid or owe.
 
@@ -495,7 +495,7 @@ All under `/api/v1`. Staff routes take the gym from the token. The money routes 
 
 ```
 Auth
-  POST /auth/register-gym            gym + owner + first branch + calendar choice, starts a trial
+  POST /auth/register-gym            gym + owner + first branch, starts a trial (months are counted as chosen later, §5.1)
   POST /auth/login                   staff
   POST /auth/refresh | /auth/logout
   POST /auth/password-reset          forgot password: a code to that email or phone,
@@ -1097,13 +1097,13 @@ Everything the member web app does (§7), the same words:
 |---|---|
 | **Choose your gym** | Scan the gym's poster QR with the camera, type its address, or open from the welcome SMS link (deep link `gymbhai://<gym>`, and `https://<domain>/<gym>` once published). Remembers the gym; a member of two gyms can switch |
 | **Sign in** | Mobile number or email, then the code; the code is read from the SMS on Android where the phone allows. *Who are you?* for a shared phone. Or *Scan the QR at the desk* (§18.4); the poster scan on *Choose your gym* signs in too when it finds a desk QR |
-| **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*, latest notice; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
+| **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
 | **Renew** | As on the web app (§7): numbered steps and the total in a bar; back from a wallet's page, the screen asks the wallet until it answers; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
 | **Payments** | Payments and requests; receipts open as PDF and share through the phone's share sheet |
 | **Visits** | The month's calendar, live |
 | **Freeze** | From a day and for how many days, by stepping, not the phone's date picker: that only knows AD, and many gyms show BS |
-| **Notices** | Live; a notification opens the notice |
-| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, WhatsApp (§19.3), notices, switch gym, sign out. **Signed-in devices** (added 2026-10-20, on the web Profile too): each phone or browser they're signed in on, this one marked, *Sign out* for one or *Sign out all other devices*; a device signed out stops getting their notifications too (the app names itself `GymBhai/<version> (Android 14)` so it reads as *GymBhai app on Android*) |
+| **Notices** | Live; a notification opens the notice. Opened from a **bell at the top right of the header** on every tab, with a red dot while there's a notice this phone hasn't opened Notices for (kept on the phone). Decided 2026-10-22: the latest notice used to sit at the bottom of Home, and Notices was a link on Me |
+| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, WhatsApp (§19.3), switch gym, sign out. *Sign out* asks in a sheet from the bottom (*Sign out* in red, *Cancel*), always whole on screen: decided 2026-10-22, after the confirmation at the end of the page was hidden below the fold. **Signed-in devices** (added 2026-10-20, on the web Profile too): each phone or browser they're signed in on, this one marked, *Sign out* for one or *Sign out all other devices*; a device signed out stops getting their notifications too (the app names itself `GymBhai/<version> (Android 14)` so it reads as *GymBhai app on Android*) |
 | **Join** | The gym's join form (§16.4, 9.5), when it has it on |
 | Offline | A banner (no answer from the server counts, whatever the phone's Wi-Fi says); the QR keeps working, drawn at the server's time saved from the last answer; actions wait for the connection and say so, rather than failing |
 

@@ -19,11 +19,9 @@ name: Every screen opens
 - tapOn:
     id: tab-me
 - assertVisible: "9800000104"
-- scrollUntilVisible:
-    element: "Notices"
-    centerElement: true
-- waitForAnimationToEnd
-- tapOn: "Notices"
+# The bell, top right on every tab.
+- tapOn:
+    id: notices
 - assertVisible: "No notices yet."
 - runFlow: subflows/back.yaml
 - tapOn:

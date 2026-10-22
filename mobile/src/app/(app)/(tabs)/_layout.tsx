@@ -1,4 +1,4 @@
-/** The five tabs, as in the web member app, under the gym's header. */
+/** The five tabs, as in the web member app, under the gym's header and its notices bell. */
 import { Tabs } from "expo-router";
 import { View } from "react-native";
 
@@ -7,6 +7,7 @@ import { t, type MessageKey } from "@shared/i18n";
 import { useBrand } from "@/components/brand";
 import { GymHeader } from "@/components/GymParts";
 import { Icon, type IconName } from "@/components/Icon";
+import { NoticesBell } from "@/components/NoticesBell";
 import { OfflineBanner } from "@/components/Screen";
 import { useMe } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
@@ -29,6 +30,7 @@ function Header() {
         name={me?.gym.name ?? gym?.name ?? ""}
         logoUrl={me?.gym.logo_url ?? gym?.logo_url ?? null}
         memberName={me?.name}
+        action={<NoticesBell />}
       />
       <OfflineBanner />
     </View>

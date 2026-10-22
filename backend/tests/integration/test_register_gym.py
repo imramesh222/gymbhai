@@ -9,13 +9,12 @@ from app.models.activity import ActivityLog
 from app.models.billing import GymSubscription
 from app.models.gym import Branch, Gym
 from app.models.staff import StaffUser
+from tests.conftest import make_gym, make_member, priced_plan, sign_in
 
 SIGNUP = {
     "gym_name": "Fitness Zone",
     "slug": "fitness-zone",
     "branch_name": "Baneshwor",
-    "plan_months": "bs",
-    "date_display": "both",
     "owner_name": "Sita Sharma",
     "owner_phone": "+977 984-1234567",
     "owner_email": "Sita@Example.com",
@@ -34,7 +33,8 @@ def test_sign_up_creates_gym_branch_owner_and_trial(
     assert body["access_token"]
     assert body["me"]["staff"]["is_owner"] is True
     assert body["me"]["gym"]["slug"] == "fitness-zone"
-    assert body["me"]["gym"]["settings"]["plan_months"] == "bs"
+    # Months are counted as the owner says, asked before the first sale (§5.1).
+    assert body["me"]["gym"]["settings"]["plan_months"] is None
     assert body["me"]["gym"]["settings"]["date_display"] == "both"
     assert body["me"]["subscription"]["status"] == "trial"
     assert body["me"]["subscription"]["days_left"] == 14
@@ -63,12 +63,28 @@ def test_sign_up_creates_gym_branch_owner_and_trial(
     assert logged.actor_id == owner.id
 
 
-def test_calendar_choice_is_required(client: TestClient) -> None:
-    payload = {k: v for k, v in SIGNUP.items() if k != "plan_months"}
-    response = client.post("/api/v1/auth/register-gym", json=payload)
-    assert response.status_code == 422
-    assert response.json()["code"] == "validation_error"
-    assert {"field": "plan_months", "type": "missing"} in response.json()["fields"]
+def test_months_wait_until_the_gym_says_how_it_counts_them(
+    client: TestClient, db: Session
+) -> None:
+    fixture = make_gym(db, slug="new-gym", phone="9841000009", plan_months=None)
+    member = make_member(db, fixture)
+    month = priced_plan(db, fixture.gym)
+    sign_in(db, client, fixture.owner)
+    url = f"/api/v1/members/{member.id}/memberships"
+
+    refused = client.post(url, json={"plan_id": str(month.id)})
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "plan_months_not_chosen"
+
+    # A plan counted in days needs no calendar.
+    day_pass = client.post(
+        "/api/v1/plans",
+        json={"name": "Day pass", "duration_days": 1, "price": 300_00},
+    ).json()
+    assert client.post(url, json={"plan_id": day_pass["id"]}).status_code == 201
+
+    client.patch("/api/v1/gym", json={"settings": {"plan_months": "bs"}})
+    assert client.post(url, json={"plan_id": str(month.id)}).status_code == 201
 
 
 def test_slug_already_taken(client: TestClient) -> None:

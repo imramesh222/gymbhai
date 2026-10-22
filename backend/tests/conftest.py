@@ -155,17 +155,16 @@ def make_gym(
     slug: str,
     phone: str,
     email: str | None = None,
-    plan_months: str = "bs",
+    plan_months: str | None = "bs",
     date_display: str = "both",
 ) -> GymFixture:
-    """A gym made the way sign-up makes one."""
+    """A gym made the way sign-up makes one, then its calendar chosen as the
+    owner would on Plans (None: not chosen yet)."""
     result = registration.register_gym(
         db,
         GymSignup(
             gym_name=f"Gym {slug}",
             slug=slug,
-            plan_months=plan_months,
-            date_display=date_display,
             owner_name=f"Owner of {slug}",
             owner_phone=phone,
             owner_email=email,
@@ -173,6 +172,11 @@ def make_gym(
             accept_terms=True,
         ),
     )
+    result.gym.settings = {
+        **result.gym.settings,
+        "plan_months": plan_months,
+        "date_display": date_display,
+    }
     db.commit()
     return GymFixture(result.gym, result.branch, result.owner)
 

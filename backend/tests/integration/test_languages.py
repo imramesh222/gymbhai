@@ -18,8 +18,6 @@ def test_a_gym_that_signs_up_in_nepali(client: TestClient, db: Session) -> None:
         json={
             "gym_name": "Shakti Gym",
             "slug": "shakti-gym",
-            "plan_months": "bs",
-            "date_display": "bs",
             "owner_name": "Hari Thapa",
             "owner_phone": "9841800001",
             "password": "correct-horse-battery",

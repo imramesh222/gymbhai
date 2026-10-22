@@ -10,7 +10,8 @@ export function useGymCalendar() {
   const settings = me?.gym?.settings;
   const display: DateDisplay = settings?.date_display ?? "ad";
   return {
-    calendar: settings?.plan_months ?? "ad",
+    /** How plan months are counted; null until the gym chooses (§5.1). */
+    calendar: settings?.plan_months ?? null,
     display,
     date: (iso: string | null | undefined) => formatDate(iso, display),
     /** For tight spots, like a list row on a phone: one calendar, BS if both. */

@@ -18,6 +18,7 @@ const PATHS = {
     "M4 8a1 1 0 0 1 1-1h3l1.5-2h5L16 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   image: "M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5M15.5 9.5h.01",
   share: "M12 15V4m0 0-4 4m4-4 4 4M6 12v7h12v-7",
+  signOut: "M9 20H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3M14 16l4-4-4-4M18 12H9",
 } as const;
 
 export type IconName = keyof typeof PATHS;

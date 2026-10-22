@@ -14,28 +14,23 @@ SIGNUP = dict(
 )
 
 
-def test_calendar_has_no_default() -> None:
+def test_plan_months_start_unchosen_and_dates_show_both() -> None:
+    config = GymSettings()
+    assert config.plan_months is None
+    assert config.date_display == "both"
+
+
+def test_sign_up_asks_nothing_about_the_calendar() -> None:
+    GymSignup(**SIGNUP)  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        GymSettings()  # type: ignore[call-arg]
-
-
-def test_sign_up_requires_both_calendar_choices() -> None:
-    with pytest.raises(ValidationError) as err:
-        GymSignup(**SIGNUP)  # type: ignore[arg-type]
-    missing = {e["loc"][0] for e in err.value.errors()}
-    assert {"plan_months", "date_display"} <= missing
-
-
-def test_sign_up_with_calendar_choices() -> None:
-    signup = GymSignup(**SIGNUP, plan_months="bs", date_display="both")
-    assert signup.plan_months == "bs"
+        GymSignup(**SIGNUP, plan_months="bs")  # type: ignore[call-arg]
 
 
 def test_sign_up_needs_a_phone_or_an_email() -> None:
     with pytest.raises(ValidationError):
-        GymSignup(**{**SIGNUP, "owner_phone": ""}, plan_months="ad", date_display="ad")
+        GymSignup(**{**SIGNUP, "owner_phone": ""})  # type: ignore[arg-type]
 
 
 def test_sign_up_refuses_a_gym_id_in_the_body() -> None:
     with pytest.raises(ValidationError):
-        GymSignup(**SIGNUP, plan_months="ad", date_display="ad", gym_id="anything")  # type: ignore[call-arg]
+        GymSignup(**SIGNUP, gym_id="anything")  # type: ignore[call-arg]

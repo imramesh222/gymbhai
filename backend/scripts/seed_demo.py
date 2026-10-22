@@ -239,8 +239,6 @@ def make_gym(db):
         GymSignup(
             gym_name="Himalayan Fitness Club",
             slug=SLUG,
-            plan_months="bs",
-            date_display="both",
             owner_name=OWNER[0],
             owner_phone=OWNER[1],
             password=PASSWORD,
@@ -252,7 +250,13 @@ def make_gym(db):
     gym.phone = "01-4782150"
     gym.address = "New Baneshwor, Kathmandu"
     # WhatsApp on (§19.3): it works with the console provider on a laptop.
-    gym.settings = {**gym.settings, "join_form": True, "whatsapp": True}
+    gym.settings = {
+        **gym.settings,
+        # Chosen on Plans, before the first sale (§5.1).
+        "plan_months": "bs",
+        "join_form": True,
+        "whatsapp": True,
+    }
     koteshwor = Branch(gym_id=gym.id, name="Koteshwor")
     db.add(koteshwor)
     db.flush()
