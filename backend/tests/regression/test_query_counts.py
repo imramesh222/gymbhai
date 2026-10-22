@@ -590,6 +590,53 @@ def test_classes(engine, client: TestClient, db: Session, gym_a) -> None:
     same_cost(engine, client, "/api/v1/classes", add)
 
 
+def test_the_members_week_of_classes(engine, client: TestClient, db: Session, gym_a):
+    """The member app's timetable reads the member once, not once a class
+    (PLAN.md §19.4): a busy week costs what a quiet one does."""
+    import datetime as dt
+
+    from app.core.time import utcnow
+    from app.models.classes import ClassType, GymClass
+    from app.services import member_auth
+
+    member = make_member(db, gym_a, name="Sita Rai", phone="9812349999")
+    sell(db, gym_a, member, paid=1500_00)
+    kind = ClassType(gym_id=gym_a.gym.id, name="Yoga")
+    db.add(kind)
+    db.commit()
+    issued = member_auth.start_session(db, member, None)
+    db.commit()
+    app = TestClient(client.app)
+    app.headers["Authorization"] = f"Bearer {issued.access_token}"
+
+    def add(n: int) -> None:
+        # A different day each: every one of them was asked about before.
+        start = utcnow() + dt.timedelta(hours=3 + 22 * n)
+        db.add(
+            GymClass(
+                gym_id=gym_a.gym.id,
+                branch_id=gym_a.branch.id,
+                type_id=kind.id,
+                starts_at=start,
+                ends_at=start + dt.timedelta(hours=1),
+                places=5,
+            )
+        )
+        db.commit()
+
+    def week() -> list:
+        response = app.get("/api/v1/m/classes")
+        assert response.status_code == 200, response.text
+        return response.json()["classes"]
+
+    add(0)
+    one = queries(engine, week)
+    for n in range(1, MORE + 1):
+        add(n)
+    assert len(week()) == 1 + MORE
+    assert queries(engine, week) == one
+
+
 def test_messages_and_automations(engine, client: TestClient, db: Session, gym_a):
     """Sent messages with WhatsApp rows among the SMS, and the automations
     with their WhatsApp wording (§19.3)."""
@@ -734,3 +781,74 @@ def test_gym_apps(engine, client: TestClient, db: Session, platform_admin) -> No
 
     add(99)
     same_cost(engine, admin, "/api/v1/admin/apps", add)
+
+
+def test_the_trend_on_reports(engine, client: TestClient, db: Session, gym_a) -> None:
+    """Reports' charts: two years cost what two months do (§16.2, 7.9)."""
+    sign_in(db, client, gym_a.owner)
+    for n in range(3):
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98123900{n:02d}")
+        sell(db, gym_a, member, paid=1500_00)
+
+    def get(months: int):
+        return lambda: client.get(f"/api/v1/reports/trend?months={months}").json()
+
+    assert len(get(24)()["months"]) == 24
+    assert queries(engine, get(2)) == queries(engine, get(24))
+
+
+def test_extend_everyone(engine, client: TestClient, db: Session, gym_a) -> None:
+    """Extend everyone (§5.6): the same statements for 2 memberships or 7."""
+    sign_in(db, client, gym_a.owner)
+
+    def add(n: int) -> None:
+        member = make_member(db, gym_a, name=f"Member {n}", phone=f"98124000{n:02d}")
+        sell(db, gym_a, member, paid=1500_00)
+
+    def extend() -> None:
+        response = client.post(
+            "/api/v1/memberships/extend-all", json={"days": 1, "reason": "Power cut"}
+        )
+        assert response.status_code == 200, response.text
+
+    add(98)
+    add(99)
+    few = queries(engine, extend)
+    for n in range(MORE):
+        add(n)
+    assert queries(engine, extend) == few
+
+
+def test_the_timetables_classes_are_made_in_one_go(engine, db: Session, gym_a) -> None:
+    """The daily job makes four weeks of classes for every slot (§19.4) in a
+    few statements, not one a class."""
+    from app.models.classes import ClassSlot, ClassType
+    from app.services import classes
+
+    kind = ClassType(gym_id=gym_a.gym.id, name="Zumba", minutes=60, places=10)
+    db.add(kind)
+    db.commit()
+
+    def add(n: int) -> None:
+        db.add(
+            ClassSlot(
+                gym_id=gym_a.gym.id,
+                branch_id=gym_a.branch.id,
+                type_id=kind.id,
+                weekday=n % 7,
+                starts=f"{6 + n:02d}:00",
+                minutes=60,
+                places=10,
+            )
+        )
+        db.commit()
+
+    def make() -> None:
+        classes.generate(db)
+        db.commit()
+
+    add(0)
+    one = queries(engine, make)
+    for n in range(1, MORE + 1):
+        add(n)
+    assert queries(engine, make) == one

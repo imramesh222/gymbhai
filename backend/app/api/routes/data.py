@@ -249,16 +249,17 @@ def trend(
 ) -> TrendRead:
     """The last `months` months up to `end`, for the charts on Reports (7.9).
 
-    The same figures as the monthly report, a month at a time: a fixed number
-    of queries per month, however large the gym.
+    The same figures as the monthly report, every month in one go: a fixed
+    number of queries, however many months and however large the gym.
     """
     gym = db.get(Gym, ctx.gym_id)
     assert gym is not None
     calendar = "ad" if gym.config.date_display == "ad" else "bs"
     joined = gym.created_at.astimezone(NEPAL).date()
     rows = []
-    for month in reports.months_back(end or reports.current_month(calendar), months):
-        data = reports.monthly(db, ctx, month)
+    span = reports.months_back(end or reports.current_month(calendar), months)
+    for data in reports.trend(db, ctx, span):
+        month = data.month
         rows.append(
             TrendMonth(
                 month=month,

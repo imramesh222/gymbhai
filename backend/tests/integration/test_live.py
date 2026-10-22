@@ -190,6 +190,51 @@ def test_events_arrive_only_once_committed(engine: sa.Engine) -> None:
     assert received[0]["member"] == str(MEMBER)
 
 
+def test_many_members_told_in_one_statement_each_hear_it(engine: sa.Engine) -> None:
+    """Extend everyone tells every member at once (live.members_changed): each
+    one's app hears its own event, once, and a member listed twice is told
+    once."""
+    others = [uuid.uuid4(), uuid.uuid4()]
+
+    def tell_all() -> None:
+        with Session(engine) as db:
+            live.members_changed(
+                db,
+                GYM,
+                [
+                    (MEMBER, BRANCH),
+                    (others[0], BRANCH),
+                    (MEMBER, BRANCH),
+                    (others[1], None),
+                ],
+            )
+            db.commit()
+
+    async def scenario() -> tuple[list[dict], list[dict]]:
+        hub = live.Hub(TEST_DATABASE_URL)
+        mine = await hub.subscribe(live.member_filter(MEMBER))
+        desk = await hub.subscribe(live.staff_filter(staff(Permission.MEMBERS_VIEW)))
+        try:
+            await asyncio.wait_for(hub.connected.wait(), 5)
+            await asyncio.get_running_loop().run_in_executor(None, tell_all)
+            heard = [await asyncio.wait_for(mine.queue.get(), 5)]
+            await asyncio.sleep(0.3)
+            while not mine.queue.empty():
+                heard.append(mine.queue.get_nowait())
+            seen = []
+            while not desk.queue.empty():
+                seen.append(desk.queue.get_nowait())
+            return heard, seen
+        finally:
+            await hub.stop()
+
+    heard, seen = asyncio.run(scenario())
+    assert [(e["type"], e["member"]) for e in heard] == [(live.MEMBER, str(MEMBER))]
+    assert sorted(e["member"] for e in seen) == sorted(
+        [str(MEMBER), str(others[0]), str(others[1])]
+    )
+
+
 def test_the_stream_is_server_sent_events() -> None:
     class Quiet(live.Hub):
         async def _listen(self) -> None:

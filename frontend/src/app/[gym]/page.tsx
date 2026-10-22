@@ -221,7 +221,9 @@ export default function MemberHome() {
             {me.visits_this_month}
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {t("app.home.visitsThisMonth")}
+            {me.visits_this_month === 1
+              ? t("app.home.visitThisMonth")
+              : t("app.home.visitsThisMonth")}
           </p>
         </div>
         <div className="rounded-2xl bg-surface p-4 shadow-card ring-1 ring-hairline">

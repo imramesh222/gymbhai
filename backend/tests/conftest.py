@@ -20,6 +20,9 @@ os.environ["EMAIL_PROVIDER"] = "console"
 os.environ["SMS_PROVIDER"] = "console"
 os.environ["PUSH_PROVIDER"] = "console"
 os.environ["WHATSAPP_PROVIDER"] = "console"
+# The links in messages, as the tests expect them: `make mobile-env` puts this
+# Mac's Wi-Fi address in .env for the phone.
+os.environ["PUBLIC_APP_URL"] = "http://localhost:3000"
 # A key made for the tests alone, so push is switched on (PLAN.md §16.3, 8.3).
 os.environ["VAPID_PRIVATE_KEY"] = "r6AP-6DFOTeSWbF00ghu1XlddwGWOeRJmODHuo02Siw"
 

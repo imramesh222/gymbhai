@@ -83,7 +83,7 @@ test("the owner pays us, and the admin activates it", async ({
   // The owner tells us they've paid.
   const gym = await signUpGym(page);
   await page.goto("/staff/subscription");
-  await page.getByLabel("Plan").selectOption({ label: `${planName} — 2,000/month` });
+  await page.getByLabel("Plan").selectOption({ label: `${planName} — Rs 2,000/month` });
   await page.getByLabel("Months").fill("3");
   await expect(page.getByLabel("Amount paid")).toHaveValue("6000");
   const ref = `ES-${randomDigits(8)}`;

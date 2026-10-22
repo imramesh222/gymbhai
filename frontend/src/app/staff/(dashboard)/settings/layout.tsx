@@ -8,6 +8,16 @@ import { PageHeader } from "@/components/ui/Card";
 import { t } from "@/i18n";
 import { useAuth } from "@/lib/auth";
 
+/**
+ * On a phone the menu is a row that scrolls sideways: the page that is open is
+ * brought into the middle of it, not left out of sight past the first few.
+ */
+function centre(link: HTMLAnchorElement | null) {
+  const row = link?.parentElement;
+  if (!link || !row || row.scrollWidth <= row.clientWidth) return;
+  row.scrollLeft = link.offsetLeft - (row.clientWidth - link.offsetWidth) / 2;
+}
+
 /** Settings: one page per subject, with a menu of them (PLAN.md §16.2, 7.8). */
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const { can, me } = useAuth();
@@ -23,7 +33,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       <div className="flex flex-col gap-6 lg:flex-row">
         <nav
           aria-label={t("nav.settings")}
-          className="no-scrollbar -mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 lg:mx-0 lg:w-52 lg:flex-col lg:px-0 print:hidden"
+          className="no-scrollbar relative -mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 lg:mx-0 lg:w-52 lg:flex-col lg:px-0 print:hidden"
         >
           {pages.map((page) => {
             const active = pathname === page.href;
@@ -32,6 +42,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 key={page.href}
                 href={page.href}
                 aria-current={active ? "page" : undefined}
+                ref={active ? centre : undefined}
                 className={`shrink-0 rounded-xl px-3 py-2 text-sm font-medium transition ${
                   active
                     ? "bg-white text-brand-700 shadow-card ring-1 ring-hairline"

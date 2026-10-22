@@ -109,7 +109,7 @@ function SmsDialog({
  */
 export default function MembersPage() {
   const { can } = useAuth();
-  const { date, display } = useGymCalendar();
+  const { date, compactDate, display } = useGymCalendar();
   const toast = useToast();
   const router = useRouter();
   const pathname = usePathname();
@@ -380,7 +380,7 @@ export default function MembersPage() {
                     {m.status === "active" || m.status === "frozen"
                       ? t("members.daysLeft", { count: m.days_left })
                       : m.valid_until
-                        ? date(m.valid_until)
+                        ? compactDate(m.valid_until)
                         : ""}
                   </span>
                   {m.dues > 0 && (

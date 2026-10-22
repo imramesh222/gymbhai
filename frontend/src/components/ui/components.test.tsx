@@ -2,9 +2,11 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Stat } from "./Card";
 import { ConfirmProvider, useConfirm } from "./ConfirmDialog";
 import { DataTable } from "./DataTable";
 import { Menu } from "./Menu";
+import { Money } from "./Money";
 import { Tabs } from "./Tabs";
 import { ToastProvider, useToast } from "./Toast";
 
@@ -214,5 +216,27 @@ describe("DataTable", () => {
       />,
     );
     expect(screen.getByText("No members yet")).toBeVisible();
+  });
+});
+
+describe("Stat", () => {
+  it("keeps an amount on one line, its Rs set small", () => {
+    render(<Stat value={<Money paisa={1_23_400_00} />} label="Owed" />);
+    const amount = screen.getByText("1,23,400", { exact: false });
+    expect(amount).toHaveClass("whitespace-nowrap");
+    // Rs and the number are joined by a no-break space.
+    expect(amount.textContent).toBe("Rs\u00a01,23,400");
+    expect(screen.getByText("Rs")).toHaveClass("text-[0.6em]");
+  });
+
+  it("leaves other values and amounts elsewhere as they are", () => {
+    render(
+      <>
+        <Stat value={63} label="Check-ins" />
+        <Money paisa={500_00} />
+      </>,
+    );
+    expect(screen.getByText("63")).toBeInTheDocument();
+    expect(screen.getByText("Rs 500")).toBeInTheDocument();
   });
 });

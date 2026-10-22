@@ -232,7 +232,9 @@ export default function Home() {
             {me.data.visits_this_month}
           </Txt>
           <Txt size={13} color={colors.faint}>
-            {t("app.home.visitsThisMonth")}
+            {me.data.visits_this_month === 1
+              ? t("app.home.visitThisMonth")
+              : t("app.home.visitsThisMonth")}
           </Txt>
         </Card>
         <Card style={{ flex: 1 }}>

@@ -43,4 +43,20 @@ describe("plan value", () => {
     expect(bestValue(plans)).toBe(quarter.id);
     expect(bestValue([monthly, year, day])).toBeNull();
   });
+
+  it("compares only plans of the same kind", () => {
+    // A gym like the demo one: a visit pack and a morning-only month are the
+    // cheapest one-month plans, but not what 3 months is compared with.
+    const pack = { ...plan(1, 1000_00), visit_limit: 10 } as Plan;
+    const morning = {
+      ...plan(1, 1200_00),
+      access_hours: [{ days: [0], from: "06:00", to: "10:00" }],
+    } as Plan;
+    const couple = { ...plan(12, 30000_00), seats: 2 } as Plan;
+    const all = [monthly, quarter, pack, morning, couple];
+    expect(savings(quarter, all)).toBe(500_00); // against 1,500 a month
+    expect(savings(couple, all)).toBeNull(); // no couple's month to compare
+    const morningQuarter = { ...morning, duration_months: 3, price: 3000_00 } as Plan;
+    expect(savings(morningQuarter, [...all, morningQuarter])).toBe(600_00);
+  });
 });
