@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -152,7 +153,7 @@ function TypeDialog({
       onClose={onClose}
       title={kind ? t("classes.editType") : t("classes.addType")}
     >
-      <form onSubmit={(e) => void save(e)} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <Field
           label={t("classes.name")}
           value={form.name}
@@ -197,7 +198,7 @@ function TypeDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -322,7 +323,7 @@ function SlotDialog({
       ...(form.places ? { places: Number(form.places) } : {}),
       instructor_id: form.instructor_id || null,
     };
-    void run(() =>
+    return run(() =>
       slot
         ? classesApi.updateSlot(slot.id, body)
         : classesApi.createSlot({ ...body, branch_id: branchId }),
@@ -334,7 +335,7 @@ function SlotDialog({
       onClose={onClose}
       title={slot ? t("classes.editSlot") : t("classes.addSlot")}
     >
-      <form onSubmit={save} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <Select
           label={t("classes.name")}
           value={form.type_id}
@@ -410,7 +411,7 @@ function SlotDialog({
             {t("classes.removeSlot")}
           </Button>
         )}
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -453,7 +454,7 @@ function RulesCard() {
   );
   return (
     <Card title={t("classes.rules")}>
-      <form onSubmit={(e) => void save(e)} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-3">
           {field(
             "class_booking_days",
@@ -475,7 +476,7 @@ function RulesCard() {
         </div>
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit">{t("common.save")}</Button>
-      </form>
+      </Form>
     </Card>
   );
 }

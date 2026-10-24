@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -33,7 +34,7 @@ function RejectDialog({
   const [error, setError] = useState<string | null>(null);
   return (
     <Dialog open onClose={onClose} title={t("freezes.reject")}>
-      <form
+      <Form
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
@@ -55,7 +56,7 @@ function RejectDialog({
         <Button type="submit" variant="danger" block>
           {t("freezes.reject")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -148,7 +149,7 @@ export default function FreezeRequestsPage() {
             </div>
             {r.status === "pending" && (
               <div className="flex gap-2">
-                <Button onClick={() => void approve(r)}>{t("freezes.approve")}</Button>
+                <Button onClick={() => approve(r)}>{t("freezes.approve")}</Button>
                 <Button variant="secondary" onClick={() => setRejecting(r)}>
                   {t("freezes.reject")}
                 </Button>

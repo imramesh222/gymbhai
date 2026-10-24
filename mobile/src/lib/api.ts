@@ -147,6 +147,10 @@ export async function freshAccessToken(
 
 // --- requests --------------------------------------------------------------------
 
+const TIMEOUT_MS = 20_000;
+/** A photo over a slow connection takes longer. */
+const UPLOAD_TIMEOUT_MS = 60_000;
+
 async function send(path: string, options: RequestOptions, token?: string | null) {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -156,6 +160,13 @@ async function send(path: string, options: RequestOptions, token?: string | null
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
   const sentAt = Date.now();
+  // No answer in time is no signal. Without a limit React Native's fetch
+  // waits for ever on a dead connection, and the button spins with it.
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    options.form ? UPLOAD_TIMEOUT_MS : TIMEOUT_MS,
+  );
   let response: Response;
   try {
     response = await fetch(API_URL + path, {
@@ -164,9 +175,12 @@ async function send(path: string, options: RequestOptions, token?: string | null
       body:
         options.form ??
         (options.body === undefined ? undefined : JSON.stringify(options.body)),
+      signal: controller.signal,
     });
   } catch (error) {
     throw new NetworkError(error);
+  } finally {
+    clearTimeout(timer);
   }
   observe(response.headers.get("date"), sentAt, Date.now());
   return response;

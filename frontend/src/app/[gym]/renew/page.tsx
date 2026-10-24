@@ -292,7 +292,7 @@ export default function RenewPage() {
     );
   } else if (online) {
     next = (
-      <Button block disabled={pending} onClick={() => void payOnline()}>
+      <Button block disabled={pending} onClick={() => payOnline()}>
         {pending
           ? t("app.renew.opening", { wallet })
           : t("app.renew.payWithShort", { wallet })}
@@ -501,10 +501,7 @@ export default function RenewPage() {
                       variant="secondary"
                       block
                       onClick={() =>
-                        void saveQr(
-                          method.qr_image_url!,
-                          `${slug}-${method.kind}-qr.png`,
-                        )
+                        saveQr(method.qr_image_url!, `${slug}-${method.kind}-qr.png`)
                       }
                     >
                       {t("pay.saveQr")}

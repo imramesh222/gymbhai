@@ -6,13 +6,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.auth import Strict
+from app.schemas.auth import Digits, Strict
 
 
 class TaxSettingsIn(Strict):
     vat_registered: bool
     # Permanent Account Number: 9 digits.
-    pan: str | None = Field(default=None, pattern=r"^\d{9}$")
+    pan: Digits | None = Field(default=None, pattern=r"^[0-9]{9}$")
     starts_on: dt.date | None = None
 
 

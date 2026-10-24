@@ -1678,8 +1678,15 @@ export const messagesApi = {
     request<{ balance: number; items: SmsMessage[] }>(
       `/api/v1/sms${query({ member_id: memberId })}`,
     ),
-  smsMember: (memberId: string, body: { reminder?: boolean; body?: string }) =>
-    request<SmsMessage>(`/api/v1/members/${memberId}/sms`, send("POST", body)),
+  smsMember: (
+    memberId: string,
+    body: { reminder?: boolean; body?: string },
+    key?: string,
+  ) =>
+    request<SmsMessage>(
+      `/api/v1/members/${memberId}/sms`,
+      once(send("POST", body), key),
+    ),
   /** The gym's wording for this member, to send on WhatsApp (§18.5). */
   memberMessage: (memberId: string, purpose: MessagePurpose) =>
     request<{ text: string; phone: string }>(
@@ -1706,8 +1713,8 @@ export const messagesApi = {
       total_credits: number;
       balance: number;
     }>("/api/v1/notices/cost", send("POST", body)),
-  publishNotice: (body: NoticeInput) =>
-    request<Notice>("/api/v1/notices", send("POST", body)),
+  publishNotice: (body: NoticeInput, key?: string) =>
+    request<Notice>("/api/v1/notices", once(send("POST", body), key)),
   deleteNotice: (id: string) => request<void>(`/api/v1/notices/${id}`, send("DELETE")),
 };
 

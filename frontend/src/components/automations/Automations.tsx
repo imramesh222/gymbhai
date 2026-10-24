@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -110,7 +111,7 @@ function RuleEditor({
             );
           }}
         />
-        <Button variant="ghost" onClick={() => void remove()}>
+        <Button variant="ghost" onClick={() => remove()}>
           <Trash2 className="size-4" aria-hidden />
           <span className="sr-only sm:not-sr-only">{t("automations.delete")}</span>
         </Button>
@@ -143,7 +144,7 @@ function RuleEditor({
         <Button
           variant="secondary"
           onClick={() =>
-            void save(
+            save(
               { template, ...(hasDays ? { days: Number(days) } : {}) },
               t("common.saved"),
             )
@@ -173,7 +174,7 @@ function AddRule({ info, onAdded }: { info: TriggerInfo; onAdded: () => void }) 
     );
 
   return (
-    <form
+    <Form
       onSubmit={async (e) => {
         e.preventDefault();
         setError(null);
@@ -228,7 +229,7 @@ function AddRule({ info, onAdded }: { info: TriggerInfo; onAdded: () => void }) 
           {t("common.cancel")}
         </Button>
       </div>
-    </form>
+    </Form>
   );
 }
 

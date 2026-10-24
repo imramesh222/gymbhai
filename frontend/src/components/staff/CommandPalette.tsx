@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/Toast";
 import { t, type MessageKey } from "@/i18n";
 import { branchesApi, doorApi, errorMessage, membersApi, type Member } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useOnce } from "@/lib/useOnce";
 
 interface Action {
   id: string;
@@ -166,6 +167,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     [onClose, router],
   );
 
+  // One check-in per tap.
+  const checking = useOnce();
   async function checkIn(member: Member) {
     if (!singleBranch) return go("/staff/door");
     try {
@@ -320,8 +323,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                     <button
                       type="button"
                       tabIndex={-1}
-                      onClick={() => void checkIn(member)}
-                      className="rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+                      disabled={checking.busy}
+                      onClick={() => checking.run(() => checkIn(member))}
+                      className="rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:opacity-50"
                     >
                       {t("palette.checkIn")}
                     </button>

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
@@ -265,7 +266,7 @@ function ActionDialog({
   function submit(event: React.FormEvent) {
     event.preventDefault();
     if (action === "grant")
-      void run(
+      return run(
         () =>
           adminApi.grant(gym.id, {
             platform_plan_id: planId || null,
@@ -274,24 +275,24 @@ function ActionDialog({
         "admin.granted",
       );
     else if (action === "credits")
-      void run(
+      return run(
         () => adminApi.credits(gym.id, Number(value), reason),
         "admin.creditsAdded",
       );
     else if (action === "suspend")
-      void run(
+      return run(
         () =>
           unsuspend ? adminApi.unsuspend(gym.id) : adminApi.suspend(gym.id, reason),
         unsuspend ? "admin.unsuspendedDone" : "admin.suspendedDone",
       );
     else if (action === "two_step")
-      void run(() => adminApi.resetOwnerTwoStep(gym.id), "admin.twoStepReset");
-    else void run(() => adminApi.ownerPassword(gym.id, value), "admin.passwordReset");
+      return run(() => adminApi.resetOwnerTwoStep(gym.id), "admin.twoStepReset");
+    return run(() => adminApi.ownerPassword(gym.id, value), "admin.passwordReset");
   }
 
   return (
     <Dialog open onClose={onClose} title={`${gym.name}`}>
-      <form onSubmit={submit} className="space-y-3">
+      <Form onSubmit={submit} className="space-y-3">
         {action === "grant" && (
           <>
             <Select
@@ -357,7 +358,7 @@ function ActionDialog({
         >
           {t("common.confirm")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

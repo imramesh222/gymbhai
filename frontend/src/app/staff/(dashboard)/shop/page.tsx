@@ -62,7 +62,16 @@ export default function ShopPage() {
         ) : tab === "products" ? (
           <Products products={products.data} onChanged={products.reload} />
         ) : sales.data ? (
-          <SalesList data={sales.data} onMonth={setMonth} onChanged={sales.reload} />
+          <SalesList
+            data={sales.data}
+            onMonth={setMonth}
+            // A void puts the stock back: the till must show it without
+            // waiting for the live stream, which a flaky Wi-Fi may have lost.
+            onChanged={() => {
+              sales.reload();
+              products.reload();
+            }}
+          />
         ) : (
           <PageSkeleton label={t("common.loading")} />
         )}

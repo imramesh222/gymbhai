@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 from app.core.gym_settings import GymSettings
-from app.core.phone import normalize_phone
+from app.core.phone import ascii_digits, normalize_phone
 from app.core.slugs import check_slug
 
 MIN_PASSWORD_LENGTH = 8
@@ -57,6 +57,15 @@ NewPassword = Annotated[
 ]
 
 Phone = Annotated[str, AfterValidator(normalize_phone)]
+
+
+def _ascii_digits(value: object) -> object:
+    return ascii_digits(value) if isinstance(value, str) else value
+
+
+# A code or number typed on a Nepali keyboard: ४२१ is 421. Check it with
+# [0-9], not \d, which also lets ४२१ through unchanged.
+Digits = Annotated[str, BeforeValidator(_ascii_digits)]
 OptionalPhone = Annotated[Phone | None, BeforeValidator(_blank_to_none)]
 OptionalEmail = Annotated[
     EmailStr | None, BeforeValidator(_blank_to_none), AfterValidator(_lower)
@@ -109,7 +118,7 @@ class PasswordResetRequest(Strict):
 
 class PasswordResetConfirm(Strict):
     identifier: str = Field(min_length=3, max_length=254)
-    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    code: Digits = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
     new_password: NewPassword
 
 

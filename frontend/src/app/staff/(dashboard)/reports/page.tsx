@@ -291,7 +291,7 @@ function VatBook({ month }: { month: string }) {
           <Button
             key={kind}
             variant="secondary"
-            onClick={() => void reportsApi.download(kind)}
+            onClick={() => reportsApi.download(kind)}
           >
             {t(`data.export.${kind}`)}
           </Button>

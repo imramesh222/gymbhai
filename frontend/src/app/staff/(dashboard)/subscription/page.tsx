@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, PageHeader, Row } from "@/components/ui/Card";
 import { MoneyInput, Select } from "@/components/ui/inputs";
@@ -121,7 +122,7 @@ export default function SubscriptionPage() {
       </div>
 
       <Card title={t("subscription.sendPayment")}>
-        <form onSubmit={(e) => void submit(e)} className="space-y-3">
+        <Form onSubmit={submit} className="space-y-3">
           <div className="flex gap-2">
             {kinds.map((k) => (
               <button
@@ -186,7 +187,7 @@ export default function SubscriptionPage() {
           />
           {message && <Notice tone={message.tone}>{message.text}</Notice>}
           <Button type="submit">{t("subscription.send")}</Button>
-        </form>
+        </Form>
       </Card>
 
       {data.payments.length > 0 && (

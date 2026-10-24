@@ -31,7 +31,10 @@ export const queryClient = new QueryClient({
       // Fresh until the server says otherwise (or the app comes back).
       staleTime: 60_000,
       // Kept for the persisted cache, so the QR survives a week offline.
-      gcTime: 4 * WEEK,
+      // Never collected while the app runs: 4 weeks is past the longest
+      // timer JavaScript can set (24.8 days), and fires at once instead.
+      // Signing out of a gym forgets its data (forgetGymData).
+      gcTime: Infinity,
       retry: (count, error) =>
         error instanceof NetworkError
           ? count < 2

@@ -64,7 +64,7 @@ export default function AdminReferralsPage() {
               <div className="flex gap-2">
                 <Button
                   onClick={() =>
-                    void act(() => adminApi.rewardReferral(r.id), "referrals.rewarded")
+                    act(() => adminApi.rewardReferral(r.id), "referrals.rewarded")
                   }
                 >
                   {t("referrals.reward")}

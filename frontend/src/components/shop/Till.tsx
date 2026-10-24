@@ -278,11 +278,7 @@ export function Till({
             <Money paisa={total} className="text-2xl font-bold" />
           </div>
           {error && <Notice tone="error">{error}</Notice>}
-          <Button
-            block
-            onClick={() => void sell()}
-            disabled={selling || lines.length === 0}
-          >
+          <Button block onClick={() => sell()} disabled={selling || lines.length === 0}>
             {selling ? t("common.saving") : t("shop.sell")}
           </Button>
         </div>

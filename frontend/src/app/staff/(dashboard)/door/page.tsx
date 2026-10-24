@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/Button";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Scanner } from "@/components/Scanner";
 import { ScanCard } from "@/components/door/ScanCard";
@@ -47,12 +48,23 @@ export default function DoorPage() {
     }
   }
 
-  async function find(q: string) {
-    setSearch(q);
-    if (q.trim().length < 2) return setFound([]);
-    const list = await membersApi.list({ q, limit: 8 }).catch(() => null);
-    setFound(list?.items ?? []);
-  }
+  // Once typing pauses, and only the answer for what's in the box now: a
+  // slow answer for "ra" must not replace the one for "ram".
+  useEffect(() => {
+    if (search.trim().length < 2) return;
+    let gone = false;
+    const timer = setTimeout(() => {
+      membersApi
+        .list({ q: search, limit: 8 })
+        .then((list) => !gone && setFound(list.items))
+        .catch(() => !gone && setFound([]));
+    }, 200);
+    return () => {
+      gone = true;
+      clearTimeout(timer);
+    };
+  }, [search]);
+  const shown = search.trim().length >= 2 ? found : [];
 
   return (
     <div className="space-y-4">
@@ -70,18 +82,17 @@ export default function DoorPage() {
         <div className="space-y-2">
           <ScanCard result={result} display={display} />
           {result.can_override && result.member_id && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(() =>
+            <Form
+              onSubmit={() =>
+                run(() =>
                   doorApi.manual({
                     member_id: result.member_id!,
                     branch_id: branch,
                     override: true,
                     note: overrideNote,
                   }),
-                );
-              }}
+                )
+              }
               className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3"
             >
               <TextArea
@@ -93,7 +104,7 @@ export default function DoorPage() {
               <Button type="submit" variant="secondary">
                 {t("door.letInAnyway")}
               </Button>
-            </form>
+            </Form>
           )}
           <Button variant="ghost" onClick={() => setResult(null)}>
             {t("door.next")}
@@ -122,11 +133,11 @@ export default function DoorPage() {
           <input
             id="door-search"
             value={search}
-            onChange={(e) => void find(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="mt-1.5 w-full rounded-xl bg-white px-3 py-2.5 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500"
           />
           <ul className="mt-2 divide-y divide-hairline rounded-lg bg-white">
-            {found.map((m) => (
+            {shown.map((m) => (
               <li
                 key={m.id}
                 className="flex items-center justify-between gap-2 px-3 py-2 text-sm"

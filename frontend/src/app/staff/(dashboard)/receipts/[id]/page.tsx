@@ -130,7 +130,7 @@ export default function ReceiptPage() {
       </Button>
       <ShareButtons id={id} counted={documents.length > 0} />
       {r.whatsapp && <SendOnWhatsApp id={id} />}
-      <Button onClick={() => void print()}>{t("receipt.print")}</Button>
+      <Button onClick={() => print()}>{t("receipt.print")}</Button>
     </div>
   );
 

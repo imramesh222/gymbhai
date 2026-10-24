@@ -327,6 +327,8 @@ export function Field({
   help,
   value,
   onChangeText,
+  onFocus,
+  onBlur,
   style,
   ...props
 }: TextInputProps & { label: string; help?: string }) {
@@ -344,15 +346,16 @@ export function Field({
         onChangeText={onChangeText}
         placeholderTextColor={colors.faint}
         maxFontSizeMultiplier={1.6}
+        {...props}
+        // After the spread, so a screen's own onFocus can't replace the ring's.
         onFocus={(event) => {
           setFocused(true);
-          props.onFocus?.(event);
+          onFocus?.(event);
         }}
         onBlur={(event) => {
           setFocused(false);
-          props.onBlur?.(event);
+          onBlur?.(event);
         }}
-        {...props}
         style={{
           minHeight: 50,
           borderRadius: radius.md,

@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { History } from "@/components/member/History";
 import { MemberPicker, type Picked } from "@/components/member/MemberPicker";
@@ -438,7 +439,7 @@ function EditDialog({
   display: "ad" | "bs" | "both";
   error: string | null;
   onClose: () => void;
-  onSave: (body: Record<string, unknown>) => void;
+  onSave: (body: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [form, setForm] = useState({
     plan_id: membership.plan_id ?? "",
@@ -452,9 +453,8 @@ function EditDialog({
   });
   return (
     <Dialog open onClose={onClose} title={t("membership.edit")}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
+      <Form
+        onSubmit={() => {
           // Only what changed, so a plan change can still recalculate the rest.
           const body: Record<string, unknown> = { reason: form.reason || null };
           for (const key of [
@@ -470,7 +470,7 @@ function EditDialog({
               body[key] = form[key];
             }
           }
-          onSave(body);
+          return onSave(body);
         }}
         className="space-y-3"
       >
@@ -535,7 +535,7 @@ function EditDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -551,19 +551,13 @@ function ReasonDialog({
   withDays?: boolean;
   error: string | null;
   onClose: () => void;
-  onSave: (reason: string, days: number) => void;
+  onSave: (reason: string, days: number) => Promise<unknown>;
 }) {
   const [reason, setReason] = useState("");
   const [days, setDays] = useState("7");
   return (
     <Dialog open onClose={onClose} title={title}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(reason, Number(days));
-        }}
-        className="space-y-3"
-      >
+      <Form onSubmit={() => onSave(reason, Number(days))} className="space-y-3">
         {withDays && (
           <Field
             label={t("membership.days")}
@@ -584,7 +578,7 @@ function ReasonDialog({
         <Button type="submit" block>
           {t("common.confirm")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -598,20 +592,14 @@ function FreezeDialog({
   display: "ad" | "bs" | "both";
   error: string | null;
   onClose: () => void;
-  onSave: (from: string, to: string, reason: string) => void;
+  onSave: (from: string, to: string, reason: string) => Promise<unknown>;
 }) {
   const [from, setFrom] = useState(todayInNepal());
   const [to, setTo] = useState(todayInNepal());
   const [reason, setReason] = useState("");
   return (
     <Dialog open onClose={onClose} title={t("membership.freeze")}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(from, to, reason);
-        }}
-        className="space-y-3"
-      >
+      <Form onSubmit={() => onSave(from, to, reason)} className="space-y-3">
         <p className="text-sm text-slate-600">{t("membership.freezeHelp")}</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <DateInput
@@ -634,7 +622,7 @@ function FreezeDialog({
         <Button type="submit" block>
           {t("membership.freeze")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -655,7 +643,10 @@ function CancelDialog({
   canRefund: boolean;
   error: string | null;
   onClose: () => void;
-  onSave: (reason: string, refund: ReturnType<typeof toPaymentInput>) => void;
+  onSave: (
+    reason: string,
+    refund: ReturnType<typeof toPaymentInput>,
+  ) => Promise<unknown>;
 }) {
   const [reason, setReason] = useState("");
   const [refund, setRefund] = useState<PaymentDraft>({
@@ -665,11 +656,8 @@ function CancelDialog({
   });
   return (
     <Dialog open onClose={onClose} title={title}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(reason, canRefund ? toPaymentInput(refund) : null);
-        }}
+      <Form
+        onSubmit={() => onSave(reason, canRefund ? toPaymentInput(refund) : null)}
         className="space-y-3"
       >
         {everyone && (
@@ -699,7 +687,7 @@ function CancelDialog({
         <Button type="submit" variant="danger" block>
           {title}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

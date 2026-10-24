@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Dialog } from "@/components/ui/Dialog";
@@ -56,7 +57,7 @@ export function ExtendEveryone({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open onClose={onClose} title={t("extendAll.title")}>
-      <form onSubmit={(e) => void submit(e)} className="space-y-3">
+      <Form onSubmit={submit} className="space-y-3">
         <p className="text-sm text-slate-600">{t("extendAll.help")}</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
@@ -89,7 +90,7 @@ export function ExtendEveryone({ onClose }: { onClose: () => void }) {
         <Button type="submit" block>
           {t("extendAll.continue")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

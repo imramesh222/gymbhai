@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { PageSkeleton } from "@/components/ui/Skeleton";
@@ -44,7 +45,7 @@ function MessagePrices() {
   const value = credits ?? String(data.whatsapp_credits);
   return (
     <Card title={t("admin.messagePrices")}>
-      <form
+      <Form
         className="space-y-3"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -74,7 +75,7 @@ function MessagePrices() {
         <Button type="submit" variant="secondary">
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Card>
   );
 }
@@ -97,7 +98,7 @@ function AppPrices() {
   };
   return (
     <Card title={t("admin.appPrices")}>
-      <form
+      <Form
         className="space-y-3"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -132,7 +133,7 @@ function AppPrices() {
         <Button type="submit" variant="secondary">
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Card>
   );
 }
@@ -184,7 +185,7 @@ function PlanEditor({
 
   return (
     <Card title={plan ? plan.name : t("admin.newPlan")}>
-      <form onSubmit={(e) => void save(e)} className="grid gap-3 sm:grid-cols-3">
+      <Form onSubmit={save} className="grid gap-3 sm:grid-cols-3">
         <Field
           label={t("plans.name")}
           value={form.name}
@@ -229,7 +230,7 @@ function PlanEditor({
             {plan ? t("common.save") : t("common.add")}
           </Button>
         </div>
-      </form>
+      </Form>
     </Card>
   );
 }

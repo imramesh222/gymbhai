@@ -38,3 +38,14 @@ def test_97_prefix_is_a_mobile_number() -> None:
 def test_anything_else_is_refused(raw: str) -> None:
     with pytest.raises(ValueError):
         normalize_phone(raw)
+
+
+@pytest.mark.parametrize("raw", ["९८४१२३४५६७", "+९७७ ९८४-१२३४५६७", "98४१२३४५६७"])
+def test_a_nepali_keyboard_types_the_same_number(raw: str) -> None:
+    assert normalize_phone(raw) == "9841234567"
+
+
+def test_other_scripts_digits_are_not_a_number() -> None:
+    # \d would let these through, to be stored as a number no SMS reaches.
+    with pytest.raises(ValueError):
+        normalize_phone("98٤١٢٣٤٥٦٧")

@@ -38,12 +38,12 @@ export function NotificationsCard() {
           {reason ? t(reason) : state === "on" ? t("notify.isOn") : t("notify.isOff")}
         </p>
         {state === "off" && (
-          <Button size="sm" onClick={() => void on()}>
+          <Button size="sm" onClick={() => on()}>
             {t("app.push.turnOn")}
           </Button>
         )}
         {state === "on" && (
-          <Button size="sm" variant="secondary" onClick={() => void off()}>
+          <Button size="sm" variant="secondary" onClick={() => off()}>
             {t("notify.turnOff")}
           </Button>
         )}
@@ -91,7 +91,7 @@ export function NotificationsPrompt() {
         {error && <p className="mt-1 text-sm text-red-700">{t("app.push.failed")}</p>}
       </div>
       <div className="flex gap-2">
-        <Button size="sm" onClick={() => void on()}>
+        <Button size="sm" onClick={() => on()}>
           {t("app.push.turnOn")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => dismiss(true)}>

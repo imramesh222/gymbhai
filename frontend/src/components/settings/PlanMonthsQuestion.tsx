@@ -62,7 +62,7 @@ export function PlanMonthsQuestion() {
         {t("planMonths.intro")} {t("planMonths.later")}
       </p>
       {error && <Notice tone="error">{error}</Notice>}
-      <Button onClick={() => void save()} disabled={!choice || pending}>
+      <Button onClick={() => save()} disabled={!choice || pending}>
         {t("common.save")}
       </Button>
     </div>

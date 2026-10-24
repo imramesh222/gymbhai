@@ -55,16 +55,19 @@ function DaysRing({
           stroke={colors.track}
           strokeWidth={12}
         />
-        <Circle
-          cx={60}
-          cy={60}
-          r={RING_RADIUS}
-          fill="none"
-          stroke={color}
-          strokeWidth={12}
-          strokeLinecap="round"
-          strokeDasharray={`${filled * RING} ${RING}`}
-        />
+        {/* Empty is no arc at all: a round cap on nothing draws a dot. */}
+        {filled > 0 ? (
+          <Circle
+            cx={60}
+            cy={60}
+            r={RING_RADIUS}
+            fill="none"
+            stroke={color}
+            strokeWidth={12}
+            strokeLinecap="round"
+            strokeDasharray={`${filled * RING} ${RING}`}
+          />
+        ) : null}
       </Svg>
       <Txt weight="bold" size={30} color={colors.ink}>
         {days}

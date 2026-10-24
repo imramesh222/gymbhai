@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
 import { Checkbox, TextArea } from "@/components/ui/inputs";
@@ -59,7 +60,7 @@ export function DeskSms({ initial }: { initial: Templates }) {
   const [error, setError] = useState<string | null>(null);
   return (
     <Card title={t("automations.deskSms")}>
-      <form
+      <Form
         onSubmit={async (e) => {
           e.preventDefault();
           setError(null);
@@ -96,7 +97,7 @@ export function DeskSms({ initial }: { initial: Templates }) {
         <Button type="submit" variant="secondary">
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Card>
   );
 }

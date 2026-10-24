@@ -103,7 +103,7 @@ export function DevicesCard() {
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  void run(async () => {
+                  run(async () => {
                     await authApi.signOutDevice(session.id);
                     return t("sessions.signedOut");
                   })

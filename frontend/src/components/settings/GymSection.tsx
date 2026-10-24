@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/Button";
 import { Choice } from "@/components/Choice";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
 import { Checkbox, Select } from "@/components/ui/inputs";
@@ -92,7 +93,7 @@ export function GymSection({ gym }: { gym: Gym }) {
 
   return (
     <Card title={t("settings.gym")}>
-      <form onSubmit={(e) => void save(e)} className="space-y-4">
+      <Form onSubmit={save} className="space-y-4">
         <div className="flex items-center gap-4">
           {gym.logo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -228,7 +229,7 @@ export function GymSection({ gym }: { gym: Gym }) {
         {dirty && <Notice tone="warning">{t("settings.unsaved")}</Notice>}
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <Button type="submit">{t("common.save")}</Button>
-      </form>
+      </Form>
     </Card>
   );
 }
@@ -266,7 +267,7 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
 
   return (
     <Card title={t("settings.checkInRules")}>
-      <form onSubmit={(e) => void save(e)} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <Select
           label={t("settings.duesRule")}
           value={form.dues_rule}
@@ -313,7 +314,7 @@ export function CheckInRulesSection({ gym }: { gym: Gym }) {
         </div>
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <Button type="submit">{t("common.save")}</Button>
-      </form>
+      </Form>
     </Card>
   );
 }

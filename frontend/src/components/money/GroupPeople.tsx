@@ -150,7 +150,7 @@ function NewPerson({
         />
       </div>
       {error && <Notice tone="error">{error}</Notice>}
-      <Button size="sm" onClick={() => void add()} disabled={pending}>
+      <Button size="sm" onClick={() => add()} disabled={pending}>
         {pending ? t("common.saving") : t("sale.withNewAdd")}
       </Button>
     </div>
