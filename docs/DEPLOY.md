@@ -10,12 +10,12 @@ What you need first — none of this can be done from the code:
 | | What | Notes |
 |---|---|---|
 | 1 | A VPS | 2 vCPU, 4 GB RAM, 40 GB disk is plenty for the pilot. Ubuntu 24.04. |
-| 2 | The domain | `gymbhai.com`, with DNS you control. |
+| 2 | The domain | `rawatramesh.com.np`, with DNS on Cloudflare. |
 | 3 | An S3-compatible bucket account | Cloudflare R2: two buckets, `gymbhai-files` and `gymbhai-backups`, and an API token for both. |
 | 4 | An SMS gateway account | Sparrow or Aakash, with credit. Apply for sender IDs early: approval takes time (PLAN.md §10). |
 | 5 | An email account for sending | Any SMTP provider. Member sign-in codes by email are free for gyms. |
 | 6 | Optional: Sentry | A free project for error alerts. |
-| 7 | An uptime check | Any service that fetches `https://app.gymbhai.com/health/ready` every few minutes. |
+| 7 | An uptime check | Any service that fetches `https://gymbhai.rawatramesh.com.np/health/ready` every few minutes. |
 
 ## 1. The server
 
@@ -27,8 +27,8 @@ adduser --disabled-password gymbhai && usermod -aG docker gymbhai
 ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw --force enable
 ```
 
-Point DNS at the server: an `A` record for `app.gymbhai.com` and for
-`gymbhai.com`. Caddy fetches the certificates itself once DNS resolves.
+Point DNS at the server: an `A` record for `gymbhai.rawatramesh.com.np` and for
+`rawatramesh.com.np`. Caddy fetches the certificates itself once DNS resolves.
 
 ## 2. The code and settings
 
@@ -52,13 +52,13 @@ Keep `SMS_PROVIDER=console` until you have tested the gateway (step 5).
 ```sh
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 docker compose -f docker-compose.prod.yml --env-file .env.prod ps
-curl https://app.gymbhai.com/health/ready     # {"status":"ok","database":"ok"}
+curl https://gymbhai.rawatramesh.com.np/health/ready     # {"status":"ok","database":"ok"}
 ```
 
 The API applies database migrations every time it starts.
 
 Create the platform admin account (you), then sign in at
-`https://app.gymbhai.com/staff/login` — it opens `/admin`:
+`https://gymbhai.rawatramesh.com.np/staff/login` — it opens `/admin`:
 
 ```sh
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec api \
@@ -144,7 +144,7 @@ the server must reach `exp.host` (it does, unless outbound traffic is
 blocked). `EXPO_ACCESS_TOKEN` is needed only if Expo's "enhanced push
 security" is turned on for the project. A test `.apk` for the pilot gyms'
 members is built against this server with
-`EXPO_PUBLIC_API_URL=https://app.gymbhai.com make apk` (`docs/MOBILE.md` §4).
+`EXPO_PUBLIC_API_URL=https://gymbhai.rawatramesh.com.np make apk` (`docs/MOBILE.md` §4).
 `MASTER_OTP` must be gone before members install it: with a real SMS gateway,
 the app signs in like the web.
 

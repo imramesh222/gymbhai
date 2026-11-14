@@ -28,6 +28,7 @@ import { errorMessage, messagesApi, reportsApi, type TodayData } from "@/lib/api
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
+import { useHost } from "@/lib/host";
 import { useIdempotencyKey } from "@/lib/idempotency";
 import { useLive } from "@/lib/live";
 import { formatRs } from "@/lib/money";
@@ -278,6 +279,7 @@ function ToDo({ data }: { data: TodayData }) {
 export default function TodayPage() {
   const { me, can } = useAuth();
   const { display } = useGymCalendar();
+  const host = useHost();
   const { data, error, reload } = useLoad(
     () => (me?.gym && can("members.view") ? reportsApi.today() : Promise.resolve(null)),
     [me?.gym?.id],
@@ -323,7 +325,7 @@ export default function TodayPage() {
       {error && <Notice tone="error">{error}</Notice>}
       <NotificationsPrompt />
       {!can("members.view") && (
-        <Notice>{t("staff.memberAppAt", { url: memberAppUrl(me.gym.slug) })}</Notice>
+        <Notice>{t("staff.memberAppAt", { url: memberAppUrl(host, me.gym.slug) })}</Notice>
       )}
       {!data && !error && can("members.view") && (
         <PageSkeleton label={t("common.loading")} />
@@ -445,7 +447,7 @@ export default function TodayPage() {
             </div>
           </div>
           <p className="pt-1 text-sm text-slate-500">
-            {t("staff.memberAppAt", { url: memberAppUrl(me.gym.slug) })}
+            {t("staff.memberAppAt", { url: memberAppUrl(host, me.gym.slug) })}
           </p>
         </>
       )}

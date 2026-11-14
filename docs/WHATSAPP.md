@@ -16,7 +16,7 @@ Meta's checks take days to weeks, so start them early.
 
 1. **A Meta business for GymBhai**, verified: business.facebook.com →
    Security Centre → *Start verification*. It needs the company's registration
-   documents, and the website (`gymbhai.com`) should name the company.
+   documents, and the website (`gymbhai.rawatramesh.com.np`) should name the company.
 2. **A WhatsApp Business Account and app**: developers.facebook.com → *Create
    app* → *Business* → add the *WhatsApp* product, linked to that business.
 3. **A phone number not already on WhatsApp** (a new SIM, or a landline that
@@ -46,7 +46,7 @@ WHATSAPP_TOKEN=<the System User's token>
 WHATSAPP_PHONE_NUMBER_ID=<the number's id>
 WHATSAPP_APP_SECRET=<the app secret>
 WHATSAPP_VERIFY_TOKEN=<any long random string you choose>
-PUBLIC_APP_URL=https://app.gymbhai.com   # the buttons' links start here
+PUBLIC_APP_URL=https://gymbhai.rawatramesh.com.np   # the buttons' links start here
 ```
 
 `WHATSAPP_API_VERSION` defaults to `v21.0`; set it to the version your Meta app
@@ -83,7 +83,7 @@ get the English templates.
 
 developers.facebook.com → your app → WhatsApp → *Configuration* → Webhook:
 
-- Callback URL: `https://app.gymbhai.com/api/v1/whatsapp/webhook`
+- Callback URL: `https://gymbhai.rawatramesh.com.np/api/v1/whatsapp/webhook`
 - Verify token: the `WHATSAPP_VERIFY_TOKEN` above
 
 Then *Manage* → subscribe to **messages**. Meta checks the address at once

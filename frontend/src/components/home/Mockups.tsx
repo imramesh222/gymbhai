@@ -12,6 +12,7 @@ import {
 
 import { QrCode } from "@/components/QrCode";
 import { localDigits, t } from "@/i18n";
+import { useHost } from "@/lib/host";
 import { formatRs } from "@/lib/money";
 
 /**
@@ -52,6 +53,7 @@ function DaysRing({ days, filled }: { days: number; filled: number }) {
 
 /** The member's app on a phone: days left and the QR for the door. */
 export function PhoneMock() {
+  const host = useHost();
   return (
     <div className="relative mx-auto w-[16.5rem] rounded-[2.6rem] bg-slate-900 p-2.5 shadow-[0_50px_100px_-30px_rgba(0,0,0,0.85)] ring-1 ring-white/15 sm:w-[17.5rem]">
       <div className="overflow-hidden rounded-[2.1rem] bg-canvas">
@@ -88,7 +90,7 @@ export function PhoneMock() {
             </p>
             <div className="mx-auto mt-2 w-fit">
               <QrCode
-                value="https://app.gymbhai.com"
+                value={`https://${host}`}
                 size={128}
                 label={t("app.home.showAtDoor")}
               />

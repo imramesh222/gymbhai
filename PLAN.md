@@ -1,6 +1,6 @@
 # GymBhai — implementation plan
 
-*Drafted 2026-09-19. Domain: gymbhai.com.*
+*Drafted 2026-09-19. Domain: gymbhai.rawatramesh.com.np (decision log, "Name and domain").*
 
 One product, used by many gyms. Each gym signs up, manages its members, collects fees and tracks visits; its members get a phone app with their membership, payments and a personal QR code for check-in. Gyms pay us monthly.
 
@@ -129,10 +129,10 @@ Staff sign in with email or phone and a password. Members sign in with a one-tim
 
 | URL | What |
 |---|---|
-| `app.gymbhai.com/fitness-zone` | Fitness Zone's member app; the gym QR opens this |
-| `app.gymbhai.com/staff` | Staff dashboard (gym comes from the login) |
-| `app.gymbhai.com/kiosk` | Door scanner on a registered tablet or phone |
-| `app.gymbhai.com/admin` | Platform admin |
+| `gymbhai.rawatramesh.com.np/fitness-zone` | Fitness Zone's member app; the gym QR opens this |
+| `gymbhai.rawatramesh.com.np/staff` | Staff dashboard (gym comes from the login) |
+| `gymbhai.rawatramesh.com.np/kiosk` | Door scanner on a registered tablet or phone |
+| `gymbhai.rawatramesh.com.np/admin` | Platform admin |
 
 Each gym's member app has its own web manifest (`/fitness-zone/manifest.webmanifest`), so "Add to Home Screen" installs an icon with **that gym's** name and logo.
 
@@ -144,7 +144,7 @@ Two kinds, as decided.
 
 ### 4.1 Gym QR (one per gym, one per branch)
 
-- Opens `app.gymbhai.com/<gym-slug>` (branch QR adds `?b=<branch>` so the app starts on that branch's notices).
+- Opens `gymbhai.rawatramesh.com.np/<gym-slug>` (branch QR adds `?b=<branch>` so the app starts on that branch's notices).
 - Printed as an A4 poster from **Settings → QR poster**: gym logo, "Scan to see your membership", QR.
 - Used for: first sign-in, installing the app, a member who lost the welcome SMS.
 - Static. Nothing secret in it.
@@ -866,7 +866,7 @@ All of these can be changed later.
 
 | Topic | Decision | What the build does now |
 |---|---|---|
-| **Name and domain** | **GymBhai**, `gymbhai.com` | Used in every URL, the member app and the code. Register the domain (and the Facebook / Instagram names) soon — it was free on 2026-09-19 |
+| **Name and domain** | **GymBhai**, at `gymbhai.rawatramesh.com.np` | `gymbhai.com` was registered by someone else on 2026-07-28 (another gym app, for India). On 2026-11-14 we requested `rawatramesh.com.np` (free .np domain, in the owner's name) and `gymbhai.com.np` (needs a registered firm; likely refused); DNS on Cloudflare. The address is one setting: the web shows whatever it is served from, the server has `PUBLIC_APP_URL`, the phone app `DOMAIN` in `mobile/app.config.ts` |
 | **SMS gateway** | Later | Built ready: one SMS interface, `console` provider for development, Sparrow and Aakash adapters ready. Until one is chosen, members sign in with `MASTER_OTP` (§11). Choosing one is an environment setting plus the account's API key. The adapters follow the gateways' published APIs but have not been run against a live account: `python -m scripts.sms_check` reads the account's credit balance before anything is sent (docs/DEPLOY.md §5). Sparrow (checked against docs.sparrowsms.com on 2026-09-20) also whitelists the caller's IP address and queues without giving a message id, so there is no delivery report to record |
 | **Pricing** | Later | Plans with us are rows edited in `/admin`, never hard-coded; the trial works without any price set |
 | **Door hardware** | Fingerprint and face readers: ZKTeco / eSSL and Hikvision, the brand chosen for each reader (§18.2, M14) | v1 ships QR (kiosk, staff phone, USB scanner, manual). The check-in service accepts other sources, so fingerprint / face readers plug in without changing it (§4.3) |

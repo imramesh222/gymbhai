@@ -1,6 +1,6 @@
 /**
  * A link into the app (PLAN.md §17.5): gymbhai://<gym>[/<screen>] from the
- * welcome SMS, https://app.gymbhai.com/<gym>/... once app links are
+ * welcome SMS, https://<our address>/<gym>/... once app links are
  * published, or a notification about another gym. Opens that gym, then the
  * screen the link was for.
  */

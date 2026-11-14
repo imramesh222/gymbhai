@@ -14,7 +14,9 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * EXPO_PUBLIC_API_URL is the API it talks to: the production domain by
  * default, the Mac's LAN address in development (see README.md).
  */
-const DOMAIN = "app.gymbhai.com";
+// Where GymBhai is served from: the one place the phone app has it. The app
+// reads it back from extra.apiUrl (src/lib/config.ts).
+const DOMAIN = "gymbhai.rawatramesh.com.np";
 const EAS_PROJECT_ID = "f1c93320-114b-47df-b684-9870466dbb7e";
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? `https://${DOMAIN}`;
 
@@ -63,7 +65,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     bundleIdentifier: BRAND?.ios_bundle_id ?? "com.gymbhai.member",
     supportsTablet: false,
-    // app.gymbhai.com's links open the GymBhai app, not a gym's own.
+    // Links to our address open the GymBhai app, not a gym's own.
     ...(BRAND ? {} : { associatedDomains: [`applinks:${DOMAIN}`] }),
     infoPlist: {
       // Development talks to the Mac over plain HTTP on the LAN.
@@ -155,6 +157,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   owner: process.env.EAS_OWNER ?? "mero-gym",
   extra: {
     eas: { projectId: PROJECT_ID },
+    apiUrl: API_URL,
     // The one gym a gym's own app is for (src/lib/config.ts, BRAND_GYM).
     ...(BRAND ? { gym: BRAND.gym } : {}),
   },

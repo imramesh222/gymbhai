@@ -17,7 +17,7 @@ they hit. This is the checklist for each gym, and how to collect what they hit.
 ## At the gym (about an hour)
 
 1. **Sign up** together at `/signup` on the owner's phone: gym name, address
-   (`app.gymbhai.com/<slug>`), calendar choice, owner's mobile.
+   (`gymbhai.rawatramesh.com.np/<slug>`), calendar choice, owner's mobile.
 2. **Settings → Plans:** set prices on the four starting plans; hide any they
    don't sell; add their own (e.g. "Morning only — 3 months").
 3. **Settings → Your payment accounts:** add each account and upload its QR.

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { slugify } from "./slug";
+import { memberAppUrl, slugify } from "./slug";
+
+describe("memberAppUrl", () => {
+  it("is the gym's address at this site's", () => {
+    expect(memberAppUrl("gymbhai.com.np", "fitness-zone")).toBe(
+      "gymbhai.com.np/fitness-zone",
+    );
+    expect(memberAppUrl("localhost:3000", "")).toBe("localhost:3000/…");
+  });
+});
 
 describe("slugify", () => {
   it.each([

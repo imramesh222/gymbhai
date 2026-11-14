@@ -7,11 +7,15 @@ import type { LegalDocument } from "@/i18n/legal.en";
 /** The terms of service and the privacy policy: readable, and printable. */
 export function LegalPage({
   document,
+  contact,
   other,
 }: {
   document: LegalDocument;
+  /** The address the documents' {contact} stands for (contactEmail()). */
+  contact: string;
   other: { href: string; label: string };
 }) {
+  const fill = (text: string) => text.replaceAll("{contact}", contact);
   return (
     <main className="mx-auto max-w-2xl px-4 py-10 sm:py-14">
       <Link href="/" className="flex w-fit items-center gap-2.5 print:hidden">
@@ -37,13 +41,13 @@ export function LegalPage({
             </h2>
             {section.paragraphs?.map((text) => (
               <p key={text} className="mt-3 leading-relaxed text-slate-700">
-                {text}
+                {fill(text)}
               </p>
             ))}
             {section.bullets && (
               <ul className="mt-3 list-disc space-y-2 pl-5 leading-relaxed text-slate-700">
                 {section.bullets.map((text) => (
-                  <li key={text}>{text}</li>
+                  <li key={text}>{fill(text)}</li>
                 ))}
               </ul>
             )}

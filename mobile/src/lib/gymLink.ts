@@ -1,6 +1,6 @@
 /**
  * A gym's address from whatever the member has: the poster's QR
- * ("https://app.gymbhai.com/fitness-zone?b=..."), the welcome SMS link,
+ * ("https://<our address>/fitness-zone?b=..."), the welcome SMS link,
  * gymbhai://fitness-zone, or the address typed in.
  */
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -25,7 +25,7 @@ export function parseGymLink(input: string): GymLink | null {
       return null;
     }
   } else {
-    // Typed: "app.gymbhai.com/fitness-zone", or just "fitness-zone".
+    // Typed: "gymbhai.com.np/fitness-zone", or just "fitness-zone".
     path = text.replace(/^[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?\//i, "");
   }
   const parts = path

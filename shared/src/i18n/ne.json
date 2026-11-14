@@ -1960,7 +1960,7 @@
   "mobile.chooseGym.yours": "तपाईंका जिमहरू",
   "mobile.chooseGym.scan": "जिमको QR कोड स्क्यान गर्नुहोस्",
   "mobile.chooseGym.address": "वा जिमको ठेगाना टाइप गर्नुहोस्",
-  "mobile.chooseGym.addressHelp": "पोस्टर वा SMS मा app.gymbhai.com/ पछिको भाग।",
+  "mobile.chooseGym.addressHelp": "पोस्टर वा SMS मा {domain}/ पछिको भाग।",
   "mobile.chooseGym.open": "खोल्नुहोस्",
   "mobile.scan.title": "क्यामेरालाई जिमको QR तिर देखाउनुहोस्: पोस्टरको, वा डेस्कले देखाएको",
   "mobile.scan.permission": "जिमको QR कोड स्क्यान गर्न क्यामेरा चलाउन दिनुहोस्।",

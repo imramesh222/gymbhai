@@ -1,7 +1,7 @@
 /**
  * The QR staff show at the desk to sign a member in with no SMS code
  * (PLAN.md §18.4): the gym's address with a one-time token after "#desk=",
- * as in https://app.gymbhai.com/fitness-zone#desk=Q2x… . The token rides in
+ * as in https://<our address>/fitness-zone#desk=Q2x… . The token rides in
  * the fragment, which a browser never sends, so no server or log sees it.
  *
  * Read by hand rather than with URLSearchParams, which React Native's

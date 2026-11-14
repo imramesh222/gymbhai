@@ -38,7 +38,7 @@ nothing else is needed at the gym.
 1. In GymBhai: add the reader with its **serial number** (Menu → System Info,
    or the label on the back). That is how the reader says who it is.
 2. On the reader: **Menu → Comm. → Cloud Server Setting**: server address the
-   app's domain (for example `app.gymbhai.com`), port `443`, **HTTPS** on.
+   app's domain (for example `gymbhai.rawatramesh.com.np`), port `443`, **HTTPS** on.
 3. Set the reader's clock to Nepal time: it reports scans in its own time.
 
 It calls `/iclock/cdata`, `/iclock/getrequest` and `/iclock/devicecmd`

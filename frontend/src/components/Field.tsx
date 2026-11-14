@@ -15,6 +15,8 @@ interface FieldProps {
   help?: string;
   autoComplete?: string;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  /** Shown from tablet width up: a long one leaves no room to type on a
+   * phone, so say it in `help` as well. */
   prefix?: string;
   name?: string;
 }
@@ -69,7 +71,7 @@ export function Field({
       </label>
       <div className="mt-1.5 flex rounded-xl bg-white ring-1 ring-hairline transition focus-within:ring-2 focus-within:ring-brand-500">
         {prefix && (
-          <span className="flex items-center rounded-l-xl bg-slate-50 px-3 text-sm text-slate-500">
+          <span className="hidden items-center rounded-l-xl bg-slate-50 px-3 text-sm text-slate-500 sm:flex">
             {prefix}
           </span>
         )}

@@ -21,7 +21,14 @@ export interface LegalDocument {
 }
 
 export const LEGAL_VERSION = "2026-10-17";
-export const CONTACT_EMAIL = "support@gymbhai.com";
+
+/**
+ * Where questions go: support@ at the address the site is served from.
+ * The documents say {contact}; LegalPage puts this in.
+ */
+export function contactEmail(host: string): string {
+  return `support@${host.replace(/:\d+$/, "")}`;
+}
 
 export const terms: LegalDocument = {
   title: "Terms of service",
@@ -40,7 +47,7 @@ export const terms: LegalDocument = {
       bullets: [
         "The person who signs up is the gym's owner. The owner adds staff and decides what each of them may do.",
         "Keep passwords to yourselves, and turn on two-step sign-in. You are responsible for what is done with your gym's accounts.",
-        `Tell us straight away at ${CONTACT_EMAIL} if you think an account has been misused.`,
+        "Tell us straight away at {contact} if you think an account has been misused.",
       ],
     },
     {
@@ -116,7 +123,7 @@ export const terms: LegalDocument = {
     },
     {
       heading: "13. Contact",
-      paragraphs: [`Questions about these terms: ${CONTACT_EMAIL}.`],
+      paragraphs: ["Questions about these terms: {contact}."],
     },
   ],
 };
@@ -188,7 +195,7 @@ export const privacy: LegalDocument = {
     },
     {
       heading: "9. Contact",
-      paragraphs: [`Questions about privacy: ${CONTACT_EMAIL}.`],
+      paragraphs: ["Questions about privacy: {contact}."],
     },
   ],
 };

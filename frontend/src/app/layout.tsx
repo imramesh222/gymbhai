@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
 
 import { t } from "@/i18n";
 import { DIGITS_COOKIE, LOCALE_COOKIE } from "@/i18n/cookies";
+import { HostProvider } from "@/lib/host";
 import { LocaleProvider } from "@/lib/locale";
 import "./globals.css";
 
@@ -52,10 +53,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const jar = await cookies();
   const locale = jar.get(LOCALE_COOKIE)?.value === "ne" ? "ne" : "en";
   const digits = jar.get(DIGITS_COOKIE)?.value === "nepali" ? "nepali" : "western";
+  // The address the visitor typed (lib/host.tsx): Caddy passes it through.
+  const host = (await headers()).get("host") ?? "";
   return (
     <html lang={locale} className={`${inter.variable} ${devanagari.variable}`}>
       <body className="min-h-dvh bg-canvas font-sans text-slate-900 antialiased">
-        <LocaleProvider initial={{ locale, digits }}>{children}</LocaleProvider>
+        <LocaleProvider initial={{ locale, digits }}>
+          <HostProvider host={host}>{children}</HostProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

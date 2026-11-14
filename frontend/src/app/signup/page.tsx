@@ -13,6 +13,7 @@ import { Trans } from "@/components/Trans";
 import { t } from "@/i18n";
 import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useHost } from "@/lib/host";
 import { useLocale } from "@/lib/locale";
 import { memberAppUrl, slugify } from "@/lib/slug";
 
@@ -27,6 +28,7 @@ export default function SignupPage() {
   const ref = useSearchParams().get("ref");
   // The language they sign up in is the gym's (§16.6).
   const { locale } = useLocale();
+  const host = useHost();
 
   const [gymName, setGymName] = useState("");
   const [slug, setSlug] = useState("");
@@ -92,9 +94,9 @@ export default function SignupPage() {
               setSlugEdited(true);
               setSlug(value.toLowerCase());
             }}
-            prefix="app.gymbhai.com/"
+            prefix={`${host}/`}
             required
-            help={t("signup.slugHelp", { url: memberAppUrl(slug) })}
+            help={t("signup.slugHelp", { url: memberAppUrl(host, slug) })}
           />
           <Field
             label={t("signup.branchName")}

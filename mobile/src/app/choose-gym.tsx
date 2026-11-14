@@ -13,7 +13,7 @@ import { Icon } from "@/components/Icon";
 import { Screen } from "@/components/Screen";
 import { ActionStatus, Button, Card, Field, Label, Title, Txt } from "@/components/ui";
 import { ApiError, NetworkError } from "@/lib/api";
-import { BRAND_GYM, DEFAULT_BRAND } from "@/lib/config";
+import { APP_DOMAIN, BRAND_GYM, DEFAULT_BRAND } from "@/lib/config";
 import { parseGymLink } from "@/lib/gymLink";
 import { memberApi } from "@/lib/memberApi";
 import { useSession, type SavedGym } from "@/lib/session";
@@ -147,7 +147,7 @@ export default function ChooseGym() {
       <Card style={{ gap: space(3) }}>
         <Field
           label={t("mobile.chooseGym.address")}
-          help={t("mobile.chooseGym.addressHelp")}
+          help={t("mobile.chooseGym.addressHelp", { domain: APP_DOMAIN })}
           value={address}
           onChangeText={(value) => {
             setAddress(value);

@@ -65,7 +65,7 @@ submit apps on behalf of their clients". So:
    iOS: EAS asks to sign in with an Apple ID that is on the gym's team.
 6. **Store listing**: the gym's name, a short description, screenshots
    (from a phone signed in to the gym), the privacy policy
-   (`https://app.gymbhai.com/privacy`), and the data-safety answers (phone
+   (`https://gymbhai.rawatramesh.com.np/privacy`), and the data-safety answers (phone
    number, name, photos the member adds; nothing sold or shared).
 7. When review starts: *in review*. When it's out: *live*, with the two store
    links. The gym's members then see *Get the <name> app* on their web app's

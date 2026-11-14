@@ -106,7 +106,7 @@ npx expo start       # dev server; the development build loads code from here
 
 ```sh
 cd mobile
-EXPO_PUBLIC_API_URL=https://app.gymbhai.com npx eas-cli update --channel preview --message "..."
+EXPO_PUBLIC_API_URL=https://gymbhai.rawatramesh.com.np npx eas-cli update --channel preview --message "..."
 npx eas-cli update --channel production --message "..."   # after publishing
 npx eas-cli update:list                                   # what was sent
 npx eas-cli update:republish --group <id>                 # roll back

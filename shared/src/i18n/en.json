@@ -1960,7 +1960,7 @@
   "mobile.chooseGym.yours": "Your gyms",
   "mobile.chooseGym.scan": "Scan the gym's QR code",
   "mobile.chooseGym.address": "Or type the gym's address",
-  "mobile.chooseGym.addressHelp": "The part after app.gymbhai.com/ on the poster or in your SMS.",
+  "mobile.chooseGym.addressHelp": "The part after {domain}/ on the poster or in your SMS.",
   "mobile.chooseGym.open": "Open",
   "mobile.scan.title": "Point the camera at your gym's QR: on its poster, or the one the desk shows you",
   "mobile.scan.permission": "Allow the camera to scan your gym's QR code.",
