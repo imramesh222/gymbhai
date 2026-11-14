@@ -1,7 +1,9 @@
 name: Mirror to GitLab
 
 on:
-  push:
+  # Off until the GITLAB_MIRROR_TOKEN secret is added: uncomment `push` to
+  # mirror every push. Until then it only runs by hand ("Run workflow").
+  # push:
   workflow_dispatch:
 
 concurrency:
