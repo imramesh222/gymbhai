@@ -831,7 +831,7 @@ Estimates are for one developer working with Claude, full time. Each milestone e
 - No N+1: each list has a query-count test (one row and many cost the same), and `tests/regression/test_no_repeated_queries.py` sweeps every GET endpoint, the daily jobs and the bulk actions on the demo gym, failing when any of them runs one statement more than three times (added 2026-10-22, when it found the member app's week of classes, Reports' 12-month trend, Extend everyone's notifications and the timetable's daily job doing work once a row).
 - Frontend: Vitest + Testing Library for components.
 - End-to-end (Playwright), the one flow that must never break: *add member → take payment → member signs in → scans QR at kiosk → allowed; membership ends → scan denied.*
-- CI runs all of it on every push.
+- CI runs it in the pull request into `main`, before the merge, and only the parts the pull request touches: the backend tests, the frontend tests, the end-to-end flow when either changed, and the image builds when a Dockerfile, a Compose file or a dependency list changed. A draft waits until it is marked ready, "Run workflow" runs everything on a branch by hand, and nothing runs again after the merge (changed 2026-11-14: until then all of it ran on every push, so one change was tested up to three times: on the branch, in the pull request and again on `main`).
 - Migrations are checked (apply, match the models, roll back) in CI and with `make migration-check`, always in a scratch database: rolling back empties whatever database it runs in.
 
 **Deployment (first gyms)**
