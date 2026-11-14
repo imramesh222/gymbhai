@@ -1,15 +1,54 @@
 name: CI
 
+# The checks run in the pull request into main, before the merge, and only for
+# the parts it touches. Nothing runs again after the merge: the pull request
+# already tested the merged result. A draft waits until it is marked ready;
+# "Run workflow" runs everything on a branch at any time.
 on:
-  push:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.paths.outputs.backend }}
+      frontend: ${{ steps.paths.outputs.frontend }}
+      images: ${{ steps.paths.outputs.images }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: Which parts the pull request touches
+        id: paths
+        run: |
+          all=true
+          files=""
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # HEAD is the pull request merged into main; its first parent is main.
+            files=$(git diff --name-only HEAD^1 HEAD)
+            grep -qxF .github/workflows/ci.yml <<<"$files" || all=false
+          fi
+          touched() {
+            if $all || grep -qE "$1" <<<"$files"; then echo true; else echo false; fi
+          }
+          {
+            # The backend tests also read the bridge and the shared door cases.
+            echo "backend=$(touched '^(backend|bridge|shared/src/door)/')"
+            echo "frontend=$(touched '^(frontend|shared)/')"
+            echo "images=$(touched '(^|/)(Dockerfile[^/]*|\.dockerignore)$|^docker-compose[^/]*\.yml$|^\.env\.prod\.example$|^deploy/|^backend/requirements[^/]*\.txt$|^frontend/package(-lock)?\.json$')"
+          } >> "$GITHUB_OUTPUT"
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -49,6 +88,8 @@ jobs:
         run: pytest -q
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,7 +108,10 @@ jobs:
       - run: npm run build
 
   e2e:
-    needs: [backend, frontend]
+    needs: [changes, backend, frontend]
+    # Runs when either side changed and neither failed; the side that did not
+    # change was left out, which would otherwise leave this out too.
+    if: ${{ !cancelled() && !failure() && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -139,6 +183,8 @@ jobs:
           path: .e2e/report
 
   images:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -148,3 +194,14 @@ jobs:
         run: |
           cp .env.prod.example .env.prod
           docker compose -f docker-compose.prod.yml --env-file .env.prod build
+
+  # The one check to require on main: it passes when every job that ran
+  # passed, so a part that was left out does not block the merge.
+  checks:
+    needs: [changes, backend, frontend, e2e, images]
+    if: ${{ !cancelled() && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: A job failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
