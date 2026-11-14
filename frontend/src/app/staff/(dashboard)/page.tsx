@@ -99,8 +99,9 @@ function ToDo({ data }: { data: TodayData }) {
   }
 
   const row = "flex items-center justify-between gap-3 py-2.5";
+  // Never squeezed by a long sentence beside it: "See who" stays on one line.
   const button =
-    "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50";
+    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap text-brand-700 transition hover:bg-brand-50 disabled:opacity-50";
 
   return (
     <Card title={t("today.todo")}>
@@ -114,7 +115,7 @@ function ToDo({ data }: { data: TodayData }) {
           {pending > 0 && (
             <div className={row}>
               <span className="flex items-center gap-2 text-sm font-medium text-slate-900">
-                <Inbox className="size-4 text-red-600" aria-hidden />
+                <Inbox className="size-4 shrink-0 text-red-600" aria-hidden />
                 {t("today.requestsWaiting", { count: pending })}
               </span>
               <Link href="/staff/payment-requests" className={button}>
@@ -160,7 +161,7 @@ function ToDo({ data }: { data: TodayData }) {
           {data.not_visiting > 0 && (
             <div className={row}>
               <span className="flex items-center gap-2 text-sm font-medium text-slate-900">
-                <UserX className="size-4 text-amber-600" aria-hidden />
+                <UserX className="size-4 shrink-0 text-amber-600" aria-hidden />
                 {data.not_visiting === 1
                   ? t("today.notVisitingOne")
                   : t("today.notVisiting", { count: data.not_visiting })}

@@ -184,7 +184,9 @@ export function Till({
                       disabled={out}
                       onClick={() => add(product)}
                       title={product.name}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl p-3 text-left ring-1 ring-hairline hover:bg-slate-50 disabled:opacity-50"
+                      // h-full: a one-line name sits in a tile as tall as the
+                      // two-line name beside it.
+                      className="flex h-full w-full items-center justify-between gap-2 rounded-xl p-3 text-left ring-1 ring-hairline hover:bg-slate-50 disabled:opacity-50"
                     >
                       <span className="min-w-0">
                         {/* Two lines, not one cut short: "Whey protein 2 lb"

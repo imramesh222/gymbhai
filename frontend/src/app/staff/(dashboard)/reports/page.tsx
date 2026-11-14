@@ -117,19 +117,26 @@ export default function ReportsPage() {
           label={t("reports.active")}
           hint={vs(data.active_members, previous?.active_members)}
         />
+      </div>
+      {/* Three across, so the row is full: in the grid of four above, these
+          left a hole at the end. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Stat
           value={rate}
-          label={t("reports.renewalRate", {
+          label={t("reports.renewalRate")}
+          hint={t("reports.renewalRateOf", {
             renewed: data.renewed,
             due: data.due_to_renew,
           })}
         />
         <Stat value={data.new_memberships} label={t("reports.firstMemberships")} />
-        <Stat
-          value={data.visits}
-          label={t("reports.visits")}
-          hint={vs(data.visits, previous?.visits)}
-        />
+        <div className="col-span-2 md:col-span-1">
+          <Stat
+            value={data.visits}
+            label={t("reports.visits")}
+            hint={vs(data.visits, previous?.visits)}
+          />
+        </div>
       </div>
 
       {months.length > 0 && (

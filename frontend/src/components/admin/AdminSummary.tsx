@@ -4,6 +4,7 @@ import { Card, Stat } from "@/components/ui/Card";
 import { Money } from "@/components/ui/Money";
 import { t, type MessageKey } from "@/i18n";
 import { adminApi } from "@/lib/api";
+import { monthName } from "@/lib/months";
 import { useLoad } from "@/lib/useLoad";
 
 const STATES = ["trial", "paying", "grace", "read_only", "suspended"] as const;
@@ -23,7 +24,8 @@ export function AdminSummary() {
         <Stat value={data.gyms} label={t("admin.gymsTotal")} />
         <Stat
           value={conversion}
-          label={t("admin.trialConversion", {
+          label={t("admin.trialConversion")}
+          hint={t("admin.trialConversionOf", {
             converted: data.trials_converted,
             ended: data.trials_ended,
           })}
@@ -49,7 +51,7 @@ export function AdminSummary() {
           <dl className="divide-y divide-hairline text-sm">
             {data.lost_by_month.map((m) => (
               <div key={m.month} className="flex justify-between py-1.5">
-                <dt>{m.month}</dt>
+                <dt>{monthName(m.month, "ad", true)}</dt>
                 <dd className="font-semibold tabular-nums">{m.gyms}</dd>
               </div>
             ))}
@@ -58,10 +60,11 @@ export function AdminSummary() {
         <Card title={t("admin.smsSold")}>
           <dl className="divide-y divide-hairline text-sm">
             {data.sms_sold_by_month.map((m) => (
-              <div key={m.month} className="flex justify-between py-1.5">
-                <dt>{m.month}</dt>
-                <dd className="tabular-nums">
-                  {m.credits} · <Money paisa={m.amount} />
+              <div key={m.month} className="flex justify-between gap-3 py-1.5">
+                <dt>{monthName(m.month, "ad", true)}</dt>
+                <dd className="text-right tabular-nums">
+                  {t("subscription.smsCredits", { count: m.credits })} ·{" "}
+                  <Money paisa={m.amount} />
                 </dd>
               </div>
             ))}

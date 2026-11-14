@@ -13,7 +13,12 @@ import { Money } from "@/components/ui/Money";
 import { t, type MessageKey } from "@/i18n";
 import { AdminSummary } from "@/components/admin/AdminSummary";
 import { STEPS } from "@/components/today/SetupChecklist";
-import { adminApi, errorMessage, type AdminGym } from "@/lib/api";
+import {
+  adminApi,
+  errorMessage,
+  type AdminGym,
+  type SubscriptionPayment,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatAd, formatDateTime } from "@/lib/dates";
 import { useLoad } from "@/lib/useLoad";
@@ -33,10 +38,36 @@ export default function AdminGymsPage() {
   );
   const plans = useLoad(() => adminApi.plans(), []).data ?? [];
   const [open, setOpen] = useState<{ gym: AdminGym; action: Action } | null>(null);
+  const [rejecting, setRejecting] = useState<SubscriptionPayment | null>(null);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
     text: string;
   } | null>(null);
+
+  /** What this admin may do to a gym (backend app/core/admin_permissions.py). */
+  function actionsFor(g: AdminGym): { value: Action; label: string }[] {
+    return [
+      ...(billing
+        ? [
+            { value: "grant" as const, label: t("admin.grant") },
+            { value: "credits" as const, label: t("admin.addCredits") },
+          ]
+        : []),
+      ...(accounts
+        ? [
+            {
+              value: "suspend" as const,
+              label:
+                g.status === "suspended" ? t("admin.unsuspend") : t("admin.suspend"),
+            },
+            { value: "password" as const, label: t("admin.resetOwner") },
+          ]
+        : []),
+      ...(accounts && g.owner_two_step
+        ? [{ value: "two_step" as const, label: t("admin.resetOwnerTwoStep") }]
+        : []),
+    ];
+  }
 
   async function run(action: () => Promise<unknown>, done: MessageKey) {
     setMessage(null);
@@ -84,14 +115,7 @@ export default function AdminGymsPage() {
                   >
                     {t("requests.approve")}
                   </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      const reason = window.prompt(t("requests.reason"));
-                      if (reason)
-                        void run(() => adminApi.reject(p.id, reason), "admin.rejected");
-                    }}
-                  >
+                  <Button variant="secondary" onClick={() => setRejecting(p)}>
                     {t("requests.reject")}
                   </Button>
                 </span>
@@ -109,7 +133,87 @@ export default function AdminGymsPage() {
         aria-label={t("admin.search")}
         className="w-full rounded-xl bg-white px-3 py-2.5 ring-1 ring-hairline outline-none transition focus:ring-2 focus:ring-brand-500"
       />
-      <div className="overflow-x-auto rounded-2xl bg-surface shadow-card ring-1 ring-hairline">
+      {/* A phone gets one card per gym: nine columns don't fit its width. */}
+      <ul className="space-y-3 md:hidden">
+        {gyms.data?.map((g) => (
+          <li
+            key={g.id}
+            className={`rounded-2xl p-4 text-sm shadow-card ring-1 ring-hairline ${
+              g.status === "suspended" ? "bg-red-50" : "bg-surface"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-900">{g.name}</p>
+                <p className="text-xs text-slate-500">
+                  /{g.slug}
+                  {g.status === "suspended" && ` · ${t("admin.suspended")}`}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="font-medium text-slate-900">{g.plan_name ?? "—"}</p>
+                <p className="text-xs text-slate-500">
+                  {g.ends_on ? formatAd(g.ends_on) : "—"} ·{" "}
+                  {t(`subscription.phase.${g.phase}` as MessageKey)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-slate-700">
+              {g.owner_name}
+              <span className="text-xs text-slate-500">
+                {" "}
+                · {g.owner_phone ?? g.owner_email}
+                {g.owner_two_step && ` · ${t("team.twoStepOn")}`}
+              </span>
+            </p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-hairline pt-3">
+              <div>
+                <dt className="text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
+                  {t("admin.members")}
+                </dt>
+                <dd className="font-semibold tabular-nums">{g.active_members}</dd>
+              </div>
+              <div>
+                <dt className="text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
+                  {t("admin.sms")}
+                </dt>
+                <dd className="font-semibold tabular-nums">{g.sms_balance}</dd>
+              </div>
+              <div className="text-xs text-slate-600">
+                <dt className="mb-0.5 text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
+                  {t("admin.health")}
+                </dt>
+                <dd>
+                  <GymHealth gym={g} />
+                </dd>
+              </div>
+              <div className="text-xs">
+                <dt className="mb-0.5 text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
+                  {t("admin.setup")}
+                </dt>
+                <dd>
+                  <GymSetup gym={g} />
+                </dd>
+              </div>
+            </dl>
+            {(billing || accounts) && (
+              <div className="mt-3">
+                <Select<Action>
+                  compact
+                  label={t("admin.actions")}
+                  placeholder={t("admin.actionsMenu")}
+                  value=""
+                  onChange={(action) => setOpen({ gym: g, action })}
+                  options={actionsFor(g)}
+                />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {/* relative: the actions' hidden labels sit inside the scrolling box, not
+          past the edge of the page. */}
+      <div className="relative hidden overflow-x-auto rounded-2xl bg-surface shadow-card ring-1 ring-hairline md:block">
         <table className="w-full text-sm">
           <thead className="border-b border-hairline bg-slate-50/80 text-left text-[0.6875rem] font-semibold tracking-wider text-slate-500 uppercase">
             <tr>
@@ -158,70 +262,20 @@ export default function AdminGymsPage() {
                 <td className="px-3 py-3 align-top">{g.active_members}</td>
                 <td className="px-3 py-3 align-top">{g.sms_balance}</td>
                 <td className="px-3 py-3 align-top text-xs text-slate-600">
-                  {g.going_quiet && (
-                    <span className="mb-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
-                      {t("admin.quiet")}
-                    </span>
-                  )}
-                  <p>
-                    {t("admin.lastSignIn")}:{" "}
-                    {g.last_sign_in_at ? formatDateTime(g.last_sign_in_at, "ad") : "—"}
-                  </p>
-                  <p>{t("admin.visits7d", { count: g.check_ins_7d })}</p>
-                  <p>{t("admin.added30d", { count: g.members_added_30d })}</p>
+                  <GymHealth gym={g} />
                 </td>
                 <td className="px-3 py-3 align-top text-xs">
-                  <p className="font-semibold">
-                    {Object.values(g.setup).filter(Boolean).length}/
-                    {Object.keys(g.setup).length}
-                  </p>
-                  <ul className="text-slate-500">
-                    {STEPS.filter((step) => g.setup[step.key] === false).map((step) => (
-                      <li key={step.key}>{t(step.label)}</li>
-                    ))}
-                  </ul>
+                  <GymSetup gym={g} />
                 </td>
                 {(billing || accounts) && (
-                  <td className="px-3 py-3 align-top">
+                  <td className="w-40 px-3 py-3 align-top">
                     <Select<Action>
                       compact
                       label={t("admin.actions")}
+                      placeholder={t("admin.actionsMenu")}
                       value=""
                       onChange={(action) => setOpen({ gym: g, action })}
-                      options={[
-                        ...(billing
-                          ? [
-                              { value: "grant" as const, label: t("admin.grant") },
-                              {
-                                value: "credits" as const,
-                                label: t("admin.addCredits"),
-                              },
-                            ]
-                          : []),
-                        ...(accounts
-                          ? [
-                              {
-                                value: "suspend" as const,
-                                label:
-                                  g.status === "suspended"
-                                    ? t("admin.unsuspend")
-                                    : t("admin.suspend"),
-                              },
-                              {
-                                value: "password" as const,
-                                label: t("admin.resetOwner"),
-                              },
-                            ]
-                          : []),
-                        ...(accounts && g.owner_two_step
-                          ? [
-                              {
-                                value: "two_step" as const,
-                                label: t("admin.resetOwnerTwoStep"),
-                              },
-                            ]
-                          : []),
-                      ]}
+                      options={actionsFor(g)}
                     />
                   </td>
                 )}
@@ -239,7 +293,94 @@ export default function AdminGymsPage() {
           run={run}
         />
       )}
+      {rejecting && (
+        <RejectDialog
+          payment={rejecting}
+          onClose={() => setRejecting(null)}
+          run={async (action, done) => {
+            await run(action, done);
+            setRejecting(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** Is the gym in use: a badge when it has gone quiet, and last week's signs. */
+function GymHealth({ gym }: { gym: AdminGym }) {
+  return (
+    <>
+      {gym.going_quiet && (
+        <span className="mb-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+          {t("admin.quiet")}
+        </span>
+      )}
+      <p>
+        {t("admin.lastSignIn")}:{" "}
+        {gym.last_sign_in_at ? formatDateTime(gym.last_sign_in_at, "ad") : "—"}
+      </p>
+      <p>{t("admin.visits7d", { count: gym.check_ins_7d })}</p>
+      <p>{t("admin.added30d", { count: gym.members_added_30d })}</p>
+    </>
+  );
+}
+
+/** How far the gym got with its setup checklist, and what is still to do. */
+function GymSetup({ gym }: { gym: AdminGym }) {
+  return (
+    <>
+      <p className="font-semibold">
+        {Object.values(gym.setup).filter(Boolean).length}/
+        {Object.keys(gym.setup).length}
+      </p>
+      <ul className="text-slate-500">
+        {STEPS.filter((step) => gym.setup[step.key] === false).map((step) => (
+          <li key={step.key}>{t(step.label)}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** A gym's payment to us that doesn't check out: the gym is told why. */
+function RejectDialog({
+  payment,
+  onClose,
+  run,
+}: {
+  payment: SubscriptionPayment;
+  onClose: () => void;
+  run: (action: () => Promise<unknown>, done: MessageKey) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <Dialog open onClose={onClose} title={t("admin.rejectTitle")}>
+      <Form
+        onSubmit={(event) => {
+          event.preventDefault();
+          return run(
+            () => adminApi.reject(payment.id, reason.trim()),
+            "admin.rejected",
+          );
+        }}
+        className="space-y-3"
+      >
+        <p className="text-sm text-slate-600">
+          <span className="font-semibold text-slate-900">{payment.gym_name}</span> ·{" "}
+          <Money paisa={payment.amount} /> · {payment.transaction_ref}
+        </p>
+        <Field
+          label={t("admin.rejectReason")}
+          value={reason}
+          onChange={setReason}
+          required
+        />
+        <Button type="submit" block variant="danger" disabled={!reason.trim()}>
+          {t("requests.reject")}
+        </Button>
+      </Form>
+    </Dialog>
   );
 }
 

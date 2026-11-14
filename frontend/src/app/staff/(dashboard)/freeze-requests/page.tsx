@@ -9,6 +9,7 @@ import { Notice } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Dialog } from "@/components/ui/Dialog";
+import { FilterChips } from "@/components/ui/FilterChips";
 import { TextArea } from "@/components/ui/inputs";
 import { PageSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
@@ -103,19 +104,15 @@ export default function FreezeRequestsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("freezes.title")} subtitle={t("freezes.help")} />
-      <div className="flex gap-2">
-        {(["pending", "approved", "rejected"] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={status === s}
-            onClick={() => setStatus(s)}
-            className={`rounded-full border px-3 py-1 text-sm ${status === s ? "border-brand-600 bg-brand-600 text-white" : "border-slate-300"}`}
-          >
-            {t(`app.request.${s}` as MessageKey)}
-          </button>
-        ))}
-      </div>
+      <FilterChips
+        label={t("members.filters")}
+        chips={(["pending", "approved", "rejected"] as const).map((s) => ({
+          key: s,
+          label: t(`app.request.${s}` as MessageKey),
+        }))}
+        value={status}
+        onChange={setStatus}
+      />
       {error && <Notice tone="error">{error}</Notice>}
       {!data && !error && <PageSkeleton label={t("common.loading")} />}
       {data?.length === 0 && <EmptyState title={t("freezes.none")} />}

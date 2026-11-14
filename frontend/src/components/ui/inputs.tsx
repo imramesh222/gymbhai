@@ -207,6 +207,7 @@ export function Select<T extends string>({
   required,
   compact,
   help,
+  placeholder = t("common.choose"),
 }: {
   label: string;
   value: T | "";
@@ -216,6 +217,8 @@ export function Select<T extends string>({
   /** In a table row, where the column heading already says what it is. */
   compact?: boolean;
   help?: string;
+  /** What it shows before anything is chosen. */
+  placeholder?: string;
 }) {
   const id = useId();
   return (
@@ -239,7 +242,7 @@ export function Select<T extends string>({
         }
       >
         <option value="" disabled>
-          {t("common.choose")}
+          {placeholder}
         </option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -303,7 +306,8 @@ export function Checkbox({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 size-4 accent-brand-600"
+        // shrink-0: a long hint beside it otherwise squeezes the box smaller.
+        className="mt-0.5 size-4 shrink-0 accent-brand-600"
       />
       <span>
         <span className="text-slate-900">{label}</span>

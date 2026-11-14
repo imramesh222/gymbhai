@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Stat } from "./Card";
 import { ConfirmProvider, useConfirm } from "./ConfirmDialog";
 import { DataTable } from "./DataTable";
+import { FilterChips } from "./FilterChips";
 import { Menu } from "./Menu";
 import { Money } from "./Money";
 import { Tabs } from "./Tabs";
@@ -238,5 +239,50 @@ describe("Stat", () => {
     );
     expect(screen.getByText("63")).toBeInTheDocument();
     expect(screen.getByText("Rs 500")).toBeInTheDocument();
+  });
+});
+
+describe("FilterChips", () => {
+  it("marks the one that is on and reports a tap on another", async () => {
+    const onChange = vi.fn();
+    render(
+      <FilterChips
+        label="Show"
+        chips={[
+          { key: "all", label: "All", count: 175 },
+          { key: "expired", label: "Expired", count: 55 },
+          { key: "waiting", label: "Waiting for the gym" },
+        ]}
+        value="all"
+        onChange={onChange}
+      />,
+    );
+    // Read as "All 175": the count is part of the name.
+    expect(screen.getByRole("button", { name: "All 175" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const waiting = screen.getByRole("button", { name: "Waiting for the gym" });
+    expect(waiting).toHaveAttribute("aria-pressed", "false");
+    // A long label stays on one line; the row scrolls instead.
+    expect(waiting).toHaveClass("whitespace-nowrap", "shrink-0");
+    await userEvent.click(screen.getByRole("button", { name: "Expired 55" }));
+    expect(onChange).toHaveBeenCalledWith("expired");
+  });
+
+  it("has none on when the value matches no chip", () => {
+    render(
+      <FilterChips
+        label="Range"
+        chips={[
+          { key: "7", label: "Last 7 days" },
+          { key: "30", label: "Last 30 days" },
+        ]}
+        value={null}
+        onChange={() => {}}
+      />,
+    );
+    for (const chip of screen.getAllByRole("button"))
+      expect(chip).toHaveAttribute("aria-pressed", "false");
   });
 });
