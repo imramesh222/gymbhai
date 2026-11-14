@@ -137,7 +137,7 @@ export function Notice({
 
 // --- buttons ---------------------------------------------------------------------
 
-type Variant = "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 export function Button({
   label,
@@ -163,11 +163,17 @@ export function Button({
   const background =
     variant === "primary"
       ? brand
-      : variant === "secondary"
-        ? colors.surface
-        : "transparent";
+      : variant === "danger"
+        ? colors.red
+        : variant === "secondary"
+          ? colors.surface
+          : "transparent";
   const ink =
-    variant === "primary" ? "#ffffff" : variant === "secondary" ? colors.ink : brand;
+    variant === "primary" || variant === "danger"
+      ? "#ffffff"
+      : variant === "secondary"
+        ? colors.ink
+        : brand;
   return (
     <Pressable
       testID={testID}
@@ -321,6 +327,8 @@ export function Field({
   help,
   value,
   onChangeText,
+  onFocus,
+  onBlur,
   style,
   ...props
 }: TextInputProps & { label: string; help?: string }) {
@@ -338,15 +346,16 @@ export function Field({
         onChangeText={onChangeText}
         placeholderTextColor={colors.faint}
         maxFontSizeMultiplier={1.6}
+        {...props}
+        // After the spread, so a screen's own onFocus can't replace the ring's.
         onFocus={(event) => {
           setFocused(true);
-          props.onFocus?.(event);
+          onFocus?.(event);
         }}
         onBlur={(event) => {
           setFocused(false);
-          props.onBlur?.(event);
+          onBlur?.(event);
         }}
-        {...props}
         style={{
           minHeight: 50,
           borderRadius: radius.md,

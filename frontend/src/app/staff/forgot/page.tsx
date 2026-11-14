@@ -109,7 +109,7 @@ export default function ForgotPasswordPage() {
             variant="ghost"
             block
             disabled={pending}
-            onClick={() => void sendCode()}
+            onClick={() => sendCode()}
           >
             {t("forgot.resend")}
           </Button>

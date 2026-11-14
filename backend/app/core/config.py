@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -124,7 +125,8 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str | None = None
     smtp_password: str | None = None
-    email_from: str = "GymBhai <no-reply@gymbhai.com>"
+    # Unset: no-reply@ at PUBLIC_APP_URL's address.
+    email_from: str = ""
 
     # --- Web Push to the member app (PLAN.md §16.3, 8.3) ---
     # `console` logs what would be sent; `webpush` sends it. Push works only
@@ -132,8 +134,9 @@ class Settings(BaseSettings):
     push_provider: Literal["console", "webpush"] = "console"
     # The VAPID private key: base64url of the raw 32-byte P-256 key.
     vapid_private_key: str | None = None
-    # Who push services contact about our messages.
-    vapid_subject: str = "mailto:support@gymbhai.com"
+    # Who push services contact about our messages. Unset: support@ at
+    # PUBLIC_APP_URL's address.
+    vapid_subject: str = ""
     # The phone app's push goes through Expo (§17.6). A token is optional;
     # with "enhanced push security" on in the Expo project, it is required.
     expo_access_token: str | None = None
@@ -156,6 +159,17 @@ class Settings(BaseSettings):
 
     # --- Worker ---
     worker_poll_seconds: float = 5.0
+
+    @model_validator(mode="after")
+    def addresses_from_the_app_url(self) -> "Settings":
+        """Our own email addresses are at the address we're served from, so
+        moving to another domain is one setting (PUBLIC_APP_URL)."""
+        host = urlsplit(self.public_app_url).hostname or "localhost"
+        if not self.email_from:
+            self.email_from = f"GymBhai <no-reply@{host}>"
+        if not self.vapid_subject:
+            self.vapid_subject = f"mailto:support@{host}"
+        return self
 
     @model_validator(mode="after")
     def refuse_placeholder_secret(self) -> "Settings":

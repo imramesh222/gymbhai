@@ -1,7 +1,7 @@
 """Gym sign-up (PLAN.md §1, §5.1, §5.7).
 
-One step creates the gym with its calendar choice, its first branch, the owner
-account and a free trial.
+One step creates the gym, its first branch, the owner account and a free
+trial. How plan months are counted is asked later, before the first sale.
 """
 
 import datetime as dt
@@ -74,8 +74,6 @@ def register_gym(
         raise ACCOUNT_EXISTS
 
     config = GymSettings(
-        plan_months=payload.plan_months,
-        date_display=payload.date_display,
         language=payload.language,
         welcome_sms=sms_defaults.WELCOME[payload.language],
         membership_sms=sms_defaults.MEMBERSHIP[payload.language],

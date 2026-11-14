@@ -122,7 +122,7 @@ export function ChartFrame({
       <button
         type="button"
         onClick={() => setAsTable(!asTable)}
-        className="mt-2 text-xs font-medium text-slate-500 hover:text-slate-800 print:hidden"
+        className="mt-1 py-1 text-xs font-medium text-slate-500 hover:text-slate-800 print:hidden"
       >
         {asTable ? t("chart.showChart") : t("chart.showTable")}
       </button>

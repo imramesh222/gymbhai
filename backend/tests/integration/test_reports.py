@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 from app.core.calendar import to_bs
 from app.core.time import today_in_nepal
 from app.services import checkins
-from tests.conftest import GymFixture, make_member, sell, sign_in
+from tests.conftest import (
+    GymFixture,
+    make_gym,
+    make_member,
+    priced_plan,
+    sell,
+    sign_in,
+)
 
 TODAY = today_in_nepal()
 
@@ -206,8 +213,22 @@ def test_the_setup_checklist(
     setup = client.get("/api/v1/dashboard/today").json()["setup"]
     assert setup["first_member"] and setup["poster_printed"]
 
+    priced_plan(db, gym_a.gym)
+    assert client.get("/api/v1/dashboard/today").json()["setup"]["plans_priced"]
+
     client.patch("/api/v1/gym", json={"settings": {"setup_dismissed": True}})
     assert client.get("/api/v1/dashboard/today").json()["setup"] is None
+
+
+def test_plans_arent_set_up_until_months_are_counted_somehow(
+    client: TestClient, db: Session
+) -> None:
+    fixture = make_gym(db, slug="new-gym", phone="9841000009", plan_months=None)
+    priced_plan(db, fixture.gym)
+    sign_in(db, client, fixture.owner)
+    assert not client.get("/api/v1/dashboard/today").json()["setup"]["plans_priced"]
+    client.patch("/api/v1/gym", json={"settings": {"plan_months": "ad"}})
+    assert client.get("/api/v1/dashboard/today").json()["setup"]["plans_priced"]
 
 
 def test_the_setup_checklist_is_for_whoever_sets_the_gym_up(

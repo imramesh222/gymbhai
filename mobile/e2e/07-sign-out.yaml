@@ -19,10 +19,14 @@ name: Sign out and switch gym
 - waitForAnimationToEnd
 - tapOn:
     id: sign-out
-- scrollUntilVisible:
-    element:
-      id: confirm-sign-out
-    centerElement: true
+# A sheet from the bottom: cancelling keeps them signed in.
+- waitForAnimationToEnd
+- tapOn:
+    id: cancel-sign-out
+- assertNotVisible:
+    id: confirm-sign-out
+- tapOn:
+    id: sign-out
 - waitForAnimationToEnd
 - tapOn:
     id: confirm-sign-out

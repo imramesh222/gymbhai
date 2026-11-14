@@ -41,7 +41,7 @@ export function ReferGyms() {
         {typeof navigator !== "undefined" && "share" in navigator && (
           <Button
             variant="secondary"
-            onClick={() => void navigator.share({ text }).catch(() => undefined)}
+            onClick={() => navigator.share({ text }).catch(() => undefined)}
           >
             <Share2 className="size-4" aria-hidden />
             {t("receipt.share")}

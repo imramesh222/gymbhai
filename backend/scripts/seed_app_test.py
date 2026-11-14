@@ -75,8 +75,6 @@ def main() -> int:
             GymSignup(
                 gym_name="App Test Gym",
                 slug=SLUG,
-                plan_months="bs",
-                date_display="both",
                 owner_name="App Test Owner",
                 owner_phone=OWNER_PHONE,
                 password="app-test-password-123",
@@ -84,7 +82,7 @@ def main() -> int:
             ),
         )
         gym = made.gym
-        gym.settings = {**gym.settings, "join_form": True}
+        gym.settings = {**gym.settings, "plan_months": "bs", "join_form": True}
         plan = db.scalars(
             select(Plan).where(Plan.gym_id == gym.id, Plan.duration_months == 1)
         ).one()

@@ -44,7 +44,7 @@ export function RecoveryCodes({
           variant="secondary"
           size="sm"
           onClick={() =>
-            void navigator.clipboard
+            navigator.clipboard
               ?.writeText(text)
               .then(() => setCopied(true))
               .catch(() => undefined)

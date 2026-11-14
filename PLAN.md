@@ -1,6 +1,6 @@
 # GymBhai — implementation plan
 
-*Drafted 2026-09-19. Domain: gymbhai.com.*
+*Drafted 2026-09-19. Domain: gymbhai.rawatramesh.com.np (decision log, "Name and domain").*
 
 One product, used by many gyms. Each gym signs up, manages its members, collects fees and tracks visits; its members get a phone app with their membership, payments and a personal QR code for check-in. Gyms pay us monthly.
 
@@ -47,7 +47,8 @@ Automatic payment verification, progress tracking, workout and diet plans, class
 
 | Who | Can do |
 |---|---|
-| **Platform admin** (us) | Every gym: activate subscriptions, add SMS credits, suspend, reset owner passwords |
+| **Super admin** (us) | Everything in `/admin`, always: every gym, activate subscriptions, add SMS credits, suspend, reset owner passwords, our prices. Adds the other platform admins and decides what each can do. Made from a shell on the server (`make admin`), never from `/admin`, so nobody signed in there can take it over |
+| **Platform admin** (us) | Sees every gym and the numbers; does only what the super admin ticked: *payments and subscriptions*, *gym accounts* (suspend, reset an owner's sign-in), *plans and prices*, *gym apps*, *What's new* (`app/core/admin_permissions.py`). Decided 2026-10-22 |
 | **Owner** | Everything in their gym, every branch, always. Creates staff accounts and decides what each one can do |
 | **Staff** | Only what the owner has ticked for them, only in the branches the owner has given them (§2.1) |
 | **Member** | Their own membership, QR, payments, visits and notices only |
@@ -128,10 +129,10 @@ Staff sign in with email or phone and a password. Members sign in with a one-tim
 
 | URL | What |
 |---|---|
-| `app.gymbhai.com/fitness-zone` | Fitness Zone's member app; the gym QR opens this |
-| `app.gymbhai.com/staff` | Staff dashboard (gym comes from the login) |
-| `app.gymbhai.com/kiosk` | Door scanner on a registered tablet or phone |
-| `app.gymbhai.com/admin` | Platform admin |
+| `gymbhai.rawatramesh.com.np/fitness-zone` | Fitness Zone's member app; the gym QR opens this |
+| `gymbhai.rawatramesh.com.np/staff` | Staff dashboard (gym comes from the login) |
+| `gymbhai.rawatramesh.com.np/kiosk` | Door scanner on a registered tablet or phone |
+| `gymbhai.rawatramesh.com.np/admin` | Platform admin |
 
 Each gym's member app has its own web manifest (`/fitness-zone/manifest.webmanifest`), so "Add to Home Screen" installs an icon with **that gym's** name and logo.
 
@@ -143,7 +144,7 @@ Two kinds, as decided.
 
 ### 4.1 Gym QR (one per gym, one per branch)
 
-- Opens `app.gymbhai.com/<gym-slug>` (branch QR adds `?b=<branch>` so the app starts on that branch's notices).
+- Opens `gymbhai.rawatramesh.com.np/<gym-slug>` (branch QR adds `?b=<branch>` so the app starts on that branch's notices).
 - Printed as an A4 poster from **Settings → QR poster**: gym logo, "Scan to see your membership", QR.
 - Used for: first sign-in, installing the app, a member who lost the welcome SMS.
 - Static. Nothing secret in it.
@@ -216,9 +217,9 @@ Every new gym starts with four plans, prices left blank for the owner to fill in
 
 The owner can rename them, set prices, hide any, and add their own ("Morning only — 3 months", "Couple — 1 year", "Student — 1 month"). Each plan has a duration, price, one-time admission fee, and which branches it covers.
 
-- **Calendar — each gym chooses, there is no default.** On sign-up the owner picks:
-  - **Count plans in:** AD months (a 3-month plan from 15 January ends 14 April) or BS months (from 5 Baisakh ends 4 Shrawan). BS months are 29–32 days long, so BS counting uses the BS calendar, not 30 days × N.
-  - **Show dates in:** AD, BS, or both — on every screen, receipt, SMS and the member app.
+- **Calendar — each gym chooses how months are counted; there is no default.** Sign-up doesn't ask (decided 2026-10-22: on the sign-up page "plan" read as the gym's own subscription with us, and nothing is sold yet). Instead:
+  - **Count plans in:** AD months (a member who joins on 15 January for 3 months stays until 14 April) or BS months (joins on 5 Baisakh, stays until 4 Shrawan). BS months are 29–32 days long, so BS counting uses the BS calendar, not 30 days × N. Asked at the top of **Settings → Plans** and in place of every sale form (membership and personal training) until answered; the API refuses anything counted in months with 409 `plan_months_not_chosen` until then (plans counted in days don't need it). The setup checklist's *plans priced* step needs it too. Staff who can't change the gym's settings are told to ask the owner.
+  - **Show dates in:** AD, BS, or both — on every screen, receipt, SMS and the member app. Starts at **both**.
   - Both can be changed later in Settings. Changing how plans are counted only affects memberships sold after the change; existing end dates never move.
 - **Price is copied onto each membership when it's sold.** Raising a plan's price later never changes what existing members paid or owe.
 
@@ -335,7 +336,7 @@ All tables have `id` (UUID), `created_at`, `updated_at`. Gym-owned tables have `
 |---|---|
 | `gyms` | `slug` (unique), `name`, `logo_key`, `brand_color`, `phone`, `address`, `sms_sender_name`, `terms_accepted_at`, `terms_version` (the terms and privacy policy accepted at sign-up), `settings` (JSON: plan month counting AD/BS, date display AD/BS/both, dues rule (allow / warn / refuse), grace days, re-scan window, reminder language, `require_two_step` — owner only, §11), `status` |
 | `branches` | `gym_id`, `name`, `address`, `phone`, `is_active` |
-| `staff_users` | `gym_id` (null for platform admin), `name`, `email`, `phone`, `password_hash` — `email` and `phone` unique across all staff, so signing in never needs a gym name — `is_owner` (at most one per gym), `is_platform_admin`, `permissions` (list of permission keys, §2.1), `is_active`, `last_login_at`, `totp_nonce`, `totp_enabled_at`, `totp_last_step` (two-step sign-in, §11); `changelog_seen_at` (What's new, §16.5 10.4); `language` (null = the gym's, §16.6); `muted_notifications` (the kinds of notification turned off, §18.6) |
+| `staff_users` | `gym_id` (null for platform admin), `name`, `email`, `phone`, `password_hash` — `email` and `phone` unique across all staff, so signing in never needs a gym name — `is_owner` (at most one per gym), `is_platform_admin`, `is_super_admin` (a platform admin with every `/admin` permission), `permissions` (list of permission keys, §2.1; for a platform admin, `/admin`'s own), `is_active`, `last_login_at`, `totp_nonce`, `totp_enabled_at`, `totp_last_step` (two-step sign-in, §11); `changelog_seen_at` (What's new, §16.5 10.4); `language` (null = the gym's, §16.6); `muted_notifications` (the kinds of notification turned off, §18.6) |
 | `staff_branch_access` | `staff_user_id`, `branch_id` — empty means all branches |
 | `members` | `gym_id`, `home_branch_id`, `member_code` (e.g. `FZ-0042`, unique per gym; the prefix is a gym setting, derived from the gym's initials at sign-up), `name`, `phone` (**not** unique — family members often share one number), `email`, `gender`, `date_of_birth`, `address`, `emergency_contact`, `photo_key` (a storage key, served by signed link), `joined_on`, `notes`, `app_access` (bool), `qr_secret`, `qr_version`, `card_token`, `is_archived`, `erased_at` (§11); `referred_by_id` (a member who sent them, §16.4 9.6); `language` (null = the gym's); `height_mm` (for BMI on their progress, §19.5); `whatsapp_agreed_at` (null: they haven't agreed) and `whatsapp_unreachable_at` (Meta said the number isn't on WhatsApp; tried again after 30 days or a new number) — §19.3 |
 | `leads` | `gym_id`, `branch_id`, `name`, `phone`, `email`, `source` (walk_in, phone, facebook, instagram, tiktok, referral, other), `plan_id`, `status` (new → contacted → trial → joined, or lost), `follow_up_on`, `lost_reason`, `assigned_to`, `trial_on`, `referred_by_id`, `member_id` (once joined), `notes`, `created_by`, `from_ip` (join form only, cleared after a day) — §16.4, 9.1 |
@@ -485,6 +486,8 @@ Full screen camera, large result card for 3 seconds, then back to scanning. Gym 
 
 **What's new:** write, publish (or keep as draft) and delete entries (10.4). **Gym referrals:** gyms that sent us gyms; once the new gym has paid, *Give both a free month* (10.5).
 
+**Admins** (the super admin only): every platform admin, with what each may do, two-step sign-in and last sign-in. *Add admin* (name, email or phone, a password of at least 12 characters, the permissions ticked); *Edit* changes those, turns an admin off (signed out at once), sets a new password or resets two-step sign-in. Every admin sets up two-step sign-in at their first sign-in. The menu shows each admin only the pages they may open; the gyms list shows only the actions they may take. All of it is in the activity log, under no gym.
+
 Staff side: **Help and guides** (WhatsApp / Viber to `SUPPORT_WHATSAPP`, and short how-tos in `help.en.ts`), **What's new** with a dot until read, and on Subscription the link to share with another gym and who signed up with it.
 
 ---
@@ -495,7 +498,7 @@ All under `/api/v1`. Staff routes take the gym from the token. The money routes 
 
 ```
 Auth
-  POST /auth/register-gym            gym + owner + first branch + calendar choice, starts a trial
+  POST /auth/register-gym            gym + owner + first branch, starts a trial (months are counted as chosen later, §5.1)
   POST /auth/login                   staff
   POST /auth/refresh | /auth/logout
   POST /auth/password-reset          forgot password: a code to that email or phone,
@@ -692,6 +695,8 @@ Platform admin
   POST  /admin/gyms/{id}/sms-credits
   POST  /admin/gyms/{id}/suspend
   POST  /admin/gyms/{id}/owner-password | owner-two-step
+  GET   /admin/admins   POST /admin/admins   PATCH /admin/admins/{id}      the super admin's
+  POST  /admin/admins/{id}/password | two-step/reset
 ```
 
 ---
@@ -861,7 +866,7 @@ All of these can be changed later.
 
 | Topic | Decision | What the build does now |
 |---|---|---|
-| **Name and domain** | **GymBhai**, `gymbhai.com` | Used in every URL, the member app and the code. Register the domain (and the Facebook / Instagram names) soon — it was free on 2026-09-19 |
+| **Name and domain** | **GymBhai**, at `gymbhai.rawatramesh.com.np` | `gymbhai.com` was registered by someone else on 2026-07-28 (another gym app, for India). On 2026-11-14 we requested `rawatramesh.com.np` (free .np domain, in the owner's name) and `gymbhai.com.np` (needs a registered firm; likely refused); DNS on Cloudflare. The address is one setting: the web shows whatever it is served from, the server has `PUBLIC_APP_URL`, the phone app `DOMAIN` in `mobile/app.config.ts` |
 | **SMS gateway** | Later | Built ready: one SMS interface, `console` provider for development, Sparrow and Aakash adapters ready. Until one is chosen, members sign in with `MASTER_OTP` (§11). Choosing one is an environment setting plus the account's API key. The adapters follow the gateways' published APIs but have not been run against a live account: `python -m scripts.sms_check` reads the account's credit balance before anything is sent (docs/DEPLOY.md §5). Sparrow (checked against docs.sparrowsms.com on 2026-09-20) also whitelists the caller's IP address and queues without giving a message id, so there is no delivery report to record |
 | **Pricing** | Later | Plans with us are rows edited in `/admin`, never hard-coded; the trial works without any price set |
 | **Door hardware** | Fingerprint and face readers: ZKTeco / eSSL and Hikvision, the brand chosen for each reader (§18.2, M14) | v1 ships QR (kiosk, staff phone, USB scanner, manual). The check-in service accepts other sources, so fingerprint / face readers plug in without changing it (§4.3) |
@@ -889,7 +894,7 @@ All of these can be changed later.
 | 6.2 | Forgot password | A link on `/staff/login`. A 6-digit code is sent to the email or phone that was typed, if it belongs to an account: email is free, and SMS is on us, like member sign-in codes (§5.7). It lasts 10 minutes, allows 5 tries and has the same rate limits as the OTP. A new password signs out every other device. Table `staff_password_resets` (`staff_user_id`, `code_hash`, `expires_at`, `attempts`, `consumed_at`, `ip`) |
 | 6.3 | Two-step sign-in | An authenticator app (TOTP): no SMS cost, and it works without signal. **Required for platform admins.** Optional for gym staff, and the owner can require it for everyone in the gym (in Settings → Security). 10 single-use recovery codes, stored hashed. A platform admin can reset an owner's two-step sign-in, and that is logged. The secret is never stored: it is derived from `TOTP_KEY` and a random `staff_users.totp_nonce`, which needs no encryption library and gives the same protection. Also `totp_enabled_at`, `totp_last_step` (no code works twice) and a table `staff_recovery_codes` |
 | 6.4 | Signed-in devices | **My account → Devices** lists each `staff_sessions` row (browser, IP, last used), with **Sign out** for one device and **Sign out all others**. On **Staff**, the owner can sign out any staff member's devices |
-| 6.5 | No double payments | Every money POST takes an `Idempotency-Key` header, which the frontend makes once per form. That covers selling or renewing, collecting, refunds, approving a payment request, and sending us a subscription payment. Table `idempotency_keys` (`gym_id`, `key`, `route`, `request_hash`, `status_code`, `response`, `created_at`), unique on `gym_id` + `key`. The same key with the same body returns the first response again; the same key with a different body gets 409. Rows are removed after 24 hours. A test sends the same sale twice and finds one membership and one payment |
+| 6.5 | No double payments | Every money POST takes an `Idempotency-Key` header, which the frontend makes once per form. That covers selling or renewing, collecting, refunds, approving a payment request, and sending us a subscription payment; also publishing a notice and a one-off SMS to a member, which cost the gym SMS credits (added 2026-10-24). On screen, a `Button` whose click returns a promise, and a `Form`, stay disabled until it settles (`frontend/src/lib/useOnce.ts`), so a double click is one request on the web too. Table `idempotency_keys` (`gym_id`, `key`, `route`, `request_hash`, `status_code`, `response`, `created_at`), unique on `gym_id` + `key`. The same key with the same body returns the first response again; the same key with a different body gets 409. Rows are removed after 24 hours. A test sends the same sale twice and finds one membership and one payment |
 | 6.6 | Security headers | `Content-Security-Policy` with script nonces from the Next.js middleware (the App Router inlines scripts), allowing `blob:`/`data:` for QR codes and photos, the storage host and Sentry. Plus `frame-ancestors 'none'`. Set in the Caddyfile, with the same policy in development so problems show up early |
 | 6.7 | Continuous backups | Keep the nightly `pg_dump`, and add WAL archiving with `wal-g` to R2. Any moment in the last 7 days can be restored, so a failure loses about a minute of payments instead of a day. Restoring to a chosen time is written up in `docs/DEPLOY.md` and tested once |
 | 6.8 | Terms, privacy, erasing a member | `/terms` and `/privacy` pages: we draft them, and a lawyer reviews them before the first gym pays. They are accepted at gym sign-up (`gyms.terms_accepted_at`, `terms_version`). The gym controls its members' data; we process it for the gym (Individual Privacy Act 2075). **Erase member** is for the owner only. The name becomes "Erased member". Phone, email, address, date of birth, emergency contact and notes are cleared, and the photo is deleted. Sessions, the QR and the card are revoked. Memberships, payments and check-ins stay, for the gym's accounts. The activity log records the erasure without the erased details |
@@ -1097,13 +1102,13 @@ Everything the member web app does (§7), the same words:
 |---|---|
 | **Choose your gym** | Scan the gym's poster QR with the camera, type its address, or open from the welcome SMS link (deep link `gymbhai://<gym>`, and `https://<domain>/<gym>` once published). Remembers the gym; a member of two gyms can switch |
 | **Sign in** | Mobile number or email, then the code; the code is read from the SMS on Android where the phone allows. *Who are you?* for a shared phone. Or *Scan the QR at the desk* (§18.4); the poster scan on *Choose your gym* signs in too when it finds a desk QR |
-| **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*, latest notice; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
+| **Home** | Days left ring, *visits left* for packs, plan hours, dues, *how busy now*; **the QR** (17.1), full brightness while shown, works with no signal; *Ask to freeze* |
 | **Renew** | As on the web app (§7): numbered steps and the total in a bar; back from a wallet's page, the screen asks the wallet until it answers; the gym's payment QR can be saved to the gallery to pay in the wallet app; screenshot from the gallery or camera |
 | **Payments** | Payments and requests; receipts open as PDF and share through the phone's share sheet |
 | **Visits** | The month's calendar, live |
 | **Freeze** | From a day and for how many days, by stepping, not the phone's date picker: that only knows AD, and many gyms show BS |
-| **Notices** | Live; a notification opens the notice |
-| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, WhatsApp (§19.3), notices, switch gym, sign out. **Signed-in devices** (added 2026-10-20, on the web Profile too): each phone or browser they're signed in on, this one marked, *Sign out* for one or *Sign out all other devices*; a device signed out stops getting their notifications too (the app names itself `GymBhai/<version> (Android 14)` so it reads as *GymBhai app on Android*) |
+| **Notices** | Live; a notification opens the notice. Opened from a **bell at the top right of the header** on every tab, with a red dot while there's a notice this phone hasn't opened Notices for (kept on the phone). Decided 2026-10-22: the latest notice used to sit at the bottom of Home, and Notices was a link on Me |
+| **Me** | Photo, email (code to the new address), emergency contact, language, notifications, WhatsApp (§19.3), switch gym, sign out. *Sign out* asks in a sheet from the bottom (*Sign out* in red, *Cancel*), always whole on screen: decided 2026-10-22, after the confirmation at the end of the page was hidden below the fold. **Signed-in devices** (added 2026-10-20, on the web Profile too): each phone or browser they're signed in on, this one marked, *Sign out* for one or *Sign out all other devices*; a device signed out stops getting their notifications too (the app names itself `GymBhai/<version> (Android 14)` so it reads as *GymBhai app on Android*) |
 | **Join** | The gym's join form (§16.4, 9.5), when it has it on |
 | Offline | A banner (no answer from the server counts, whatever the phone's Wi-Fi says); the QR keeps working, drawn at the server's time saved from the last answer; actions wait for the connection and say so, rather than failing |
 

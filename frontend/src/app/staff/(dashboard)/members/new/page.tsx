@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Notice } from "@/components/Notice";
+import { PlanMonthsQuestion } from "@/components/settings/PlanMonthsQuestion";
 import { MemberPicker, type Picked } from "@/components/member/MemberPicker";
 import { PhotoCapture } from "@/components/member/PhotoCapture";
 import {
@@ -230,18 +231,21 @@ export default function NewMemberPage() {
             />
           }
         >
-          {selling && (
-            <SaleForm
-              plans={plans}
-              branches={branches}
-              value={{ ...sale, branchId: sale.branchId || home }}
-              onChange={setSale}
-              calendar={calendar}
-              display={display}
-              firstMembership
-              payer={{ phone }}
-            />
-          )}
+          {selling &&
+            (calendar ? (
+              <SaleForm
+                plans={plans}
+                branches={branches}
+                value={{ ...sale, branchId: sale.branchId || home }}
+                onChange={setSale}
+                calendar={calendar}
+                display={display}
+                firstMembership
+                payer={{ phone }}
+              />
+            ) : (
+              <PlanMonthsQuestion />
+            ))}
         </Card>
       )}
 

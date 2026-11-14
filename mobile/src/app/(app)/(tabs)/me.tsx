@@ -1,7 +1,7 @@
 /**
  * Me (PLAN.md §17.5): photo, email (a code to the new address first),
  * emergency contact, language, notifications, WhatsApp, signed-in devices,
- * notices, switching gym and signing out.
+ * freezing, switching gym and signing out. Notices are the bell in the header.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
@@ -18,6 +18,7 @@ import { useBrand } from "@/components/brand";
 import { Icon } from "@/components/Icon";
 import { PushSetting } from "@/components/PushPrompt";
 import { Screen } from "@/components/Screen";
+import { Sheet } from "@/components/Sheet";
 import {
   ActionButton,
   ActionStatus,
@@ -378,7 +379,6 @@ export default function Me() {
   const { signOut, closeGym, gyms } = useSession();
   const [editingEmail, setEditingEmail] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const out = useAction(() => signOut());
   if (!me.data) return <Spinner />;
 
   return (
@@ -420,57 +420,99 @@ export default function Me() {
       <WhatsApp me={me.data} />
       <Devices me={me.data} />
 
-      <Card style={{ gap: space(1) }}>
-        <LinkButton
-          align="flex-start"
-          label={t("app.notices")}
-          onPress={() => router.push("/notices")}
-        />
-        {me.data.state.status === "active" ? (
-          <LinkButton
-            align="flex-start"
-            label={t("app.freeze.title")}
-            onPress={() => router.push("/freeze")}
-          />
-        ) : null}
-        {/* A gym's own app is for its gym only (§20.3). */}
-        {BRAND_GYM ? null : (
-          <LinkButton
-            align="flex-start"
-            label={gyms.length > 1 ? t("mobile.switchGym") : t("mobile.addGym")}
-            onPress={() => void closeGym()}
-          />
-        )}
-      </Card>
-
-      {confirming ? (
-        <Card style={{ gap: space(3) }}>
-          <Txt weight="semibold" color={colors.ink} accessibilityRole="header">
-            {t("mobile.signOut.confirm")}
-          </Txt>
-          <Txt size={14} color={colors.muted}>
-            {t("mobile.signOut.help")}
-          </Txt>
-          <ActionButton
-            action={out}
-            args={[]}
-            label={t("common.signOut")}
-            testID="confirm-sign-out"
-          />
-          <LinkButton
-            label={t("common.cancel")}
-            color={colors.faint}
-            onPress={() => setConfirming(false)}
-          />
+      {me.data.state.status === "active" || !BRAND_GYM ? (
+        <Card style={{ gap: space(1) }}>
+          {me.data.state.status === "active" ? (
+            <LinkButton
+              align="flex-start"
+              label={t("app.freeze.title")}
+              onPress={() => router.push("/freeze")}
+            />
+          ) : null}
+          {/* A gym's own app is for its gym only (§20.3). */}
+          {BRAND_GYM ? null : (
+            <LinkButton
+              align="flex-start"
+              label={gyms.length > 1 ? t("mobile.switchGym") : t("mobile.addGym")}
+              onPress={() => void closeGym()}
+            />
+          )}
         </Card>
-      ) : (
+      ) : null}
+
+      <Button
+        variant="secondary"
+        label={t("common.signOut")}
+        onPress={() => setConfirming(true)}
+        testID="sign-out"
+      />
+      <SignOutSheet
+        visible={confirming}
+        onClose={() => setConfirming(false)}
+        signOut={signOut}
+      />
+    </Screen>
+  );
+}
+
+/** "Sign out of this phone?", from the bottom: always on screen (§17.5). */
+function SignOutSheet({
+  visible,
+  onClose,
+  signOut,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  signOut: () => Promise<void>;
+}) {
+  const out = useAction(() => signOut());
+  // Once it's going, it finishes: the sheet stays until the app leaves.
+  const close = () => {
+    if (!out.busy) onClose();
+  };
+  return (
+    <Sheet visible={visible} onClose={close}>
+      <View style={{ alignItems: "center", gap: space(2) }}>
+        <View
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: colors.redBg,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name="signOut" color={colors.red} size={26} />
+        </View>
+        <Txt
+          weight="semibold"
+          size={18}
+          color={colors.ink}
+          accessibilityRole="header"
+          style={{ textAlign: "center" }}
+        >
+          {t("mobile.signOut.confirm")}
+        </Txt>
+        <Txt size={14} color={colors.muted} style={{ textAlign: "center" }}>
+          {t("mobile.signOut.help")}
+        </Txt>
+      </View>
+      <View style={{ gap: space(2.5) }}>
+        <ActionButton
+          action={out}
+          args={[]}
+          variant="danger"
+          label={t("common.signOut")}
+          testID="confirm-sign-out"
+        />
         <Button
           variant="secondary"
-          label={t("common.signOut")}
-          onPress={() => setConfirming(true)}
-          testID="sign-out"
+          label={t("common.cancel")}
+          onPress={close}
+          testID="cancel-sign-out"
         />
-      )}
-    </Screen>
+      </View>
+    </Sheet>
   );
 }

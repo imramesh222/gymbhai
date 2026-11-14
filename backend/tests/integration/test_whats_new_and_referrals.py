@@ -52,8 +52,6 @@ def signup(client: TestClient, slug: str, phone: str, ref: str | None):
         json={
             "gym_name": f"Gym {slug}",
             "slug": slug,
-            "plan_months": "ad",
-            "date_display": "ad",
             "owner_name": "New Owner",
             "owner_phone": phone,
             "password": "correct-horse-battery",

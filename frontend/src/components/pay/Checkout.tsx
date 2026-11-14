@@ -188,7 +188,7 @@ export function OpenCheckout({
             <QrCode value={checkout.qr} size={240} label={t("pay.goNow", { wallet })} />
           </div>
           <p className="text-sm text-slate-600">{t("pay.qrHelp")}</p>
-          <Button variant="secondary" onClick={() => void saveQr()}>
+          <Button variant="secondary" onClick={() => saveQr()}>
             {t("pay.saveQr")}
           </Button>
           <p className="text-sm text-slate-500" aria-live="polite">
@@ -200,12 +200,12 @@ export function OpenCheckout({
         <div className="space-y-3 rounded-xl bg-white p-4 ring-1 ring-hairline">
           <p className="text-sm text-slate-600">{t("pay.pretend", { wallet })}</p>
           <div className="flex justify-center gap-2">
-            <Button onClick={() => void pretend(true)} disabled={pending}>
+            <Button onClick={() => pretend(true)} disabled={pending}>
               {t("pay.pretendPay")}
             </Button>
             <Button
               variant="secondary"
-              onClick={() => void pretend(false)}
+              onClick={() => pretend(false)}
               disabled={pending}
             >
               {t("pay.pretendCancel")}

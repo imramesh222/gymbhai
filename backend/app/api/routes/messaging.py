@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api import idempotency
 from app.api.deps import require
 from app.api.presenters import member_read
 from app.api.routes.members import load_member
@@ -236,8 +237,10 @@ def sms_member(
     request: Request,
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(require(Permission.MESSAGES_SMS)),
-) -> SmsMessage:
-    """A one-off SMS, or "Send reminder now" from Follow up."""
+) -> SmsRead:
+    """A one-off SMS, or "Send reminder now" from Follow up: sent once,
+    however often Send is tapped (it costs the gym a credit)."""
+    idem = idempotency.begin(db, ctx, request, payload)
     member = load_member(db, ctx, member_id)
     members_service.ensure_not_erased(member)
     gym = _gym(db, ctx)
@@ -263,8 +266,10 @@ def sms_member(
         changes={"sms_id": message.id, "reminder": payload.reminder},
         request=request,
     )
+    answer = SmsRead.model_validate(message)
+    idem.finish(answer)
     db.commit()
-    return message
+    return answer
 
 
 @router.post("/members/sms", response_model=BulkSmsResult)
@@ -551,7 +556,10 @@ def create_notice(
     request: Request,
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(NOTICES),
-) -> Notice:
+) -> NoticeRead:
+    # Published once, however often Publish is tapped: a second time would
+    # message every member again.
+    idem = idempotency.begin(db, ctx, request, payload)
     if payload.branch_id is not None and not ctx.can_access_branch(payload.branch_id):
         raise AppError(403, "branch_denied", "You don't work at that branch.")
     gym = _gym(db, ctx)
@@ -614,8 +622,10 @@ def create_notice(
         request=request,
     )
     live.publish(db, gym_id=ctx.gym_id, kind=live.NOTICE, branch_id=notice.branch_id)
+    answer = NoticeRead.model_validate(notice)
+    idem.finish(answer)
     db.commit()
-    return notice
+    return answer
 
 
 @router.delete("/notices/{notice_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { areasOf } from "@/components/staff/permissionAreas";
 import { Card, PageHeader } from "@/components/ui/Card";
@@ -150,10 +151,7 @@ function StaffDialog({
 
   return (
     <Dialog open onClose={onClose} title={staff ? t("team.edit") : t("team.add")}>
-      <form
-        onSubmit={(e) => void save(e)}
-        className="max-h-[75vh] space-y-3 overflow-y-auto"
-      >
+      <Form onSubmit={save} className="max-h-[75vh] space-y-3 overflow-y-auto">
         <Field label={t("team.name")} value={name} onChange={setName} required />
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t("team.phone")} value={phone} onChange={setPhone} type="tel" />
@@ -298,7 +296,7 @@ function StaffDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

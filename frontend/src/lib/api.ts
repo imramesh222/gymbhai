@@ -51,7 +51,8 @@ export type PlanMonths = "ad" | "bs";
 export type DateDisplay = "ad" | "bs" | "both";
 
 export interface GymSettings {
-  plan_months: PlanMonths;
+  /** Not chosen yet: asked on Plans and before the first sale (§5.1). */
+  plan_months: PlanMonths | null;
   date_display: DateDisplay;
   dues_rule: "allow" | "warn" | "refuse";
   grace_days: number;
@@ -99,6 +100,8 @@ export interface Staff {
   phone: string | null;
   is_owner: boolean;
   is_platform_admin: boolean;
+  /** The platform admin with every /admin permission, who adds the others. */
+  is_super_admin: boolean;
   last_login_at: string | null;
   two_step_enabled: boolean;
 }
@@ -165,8 +168,6 @@ export interface GymSignup {
   gym_name: string;
   slug: string;
   branch_name: string;
-  plan_months: PlanMonths;
-  date_display: DateDisplay;
   owner_name: string;
   owner_phone: string;
   owner_email: string;
@@ -1677,8 +1678,15 @@ export const messagesApi = {
     request<{ balance: number; items: SmsMessage[] }>(
       `/api/v1/sms${query({ member_id: memberId })}`,
     ),
-  smsMember: (memberId: string, body: { reminder?: boolean; body?: string }) =>
-    request<SmsMessage>(`/api/v1/members/${memberId}/sms`, send("POST", body)),
+  smsMember: (
+    memberId: string,
+    body: { reminder?: boolean; body?: string },
+    key?: string,
+  ) =>
+    request<SmsMessage>(
+      `/api/v1/members/${memberId}/sms`,
+      once(send("POST", body), key),
+    ),
   /** The gym's wording for this member, to send on WhatsApp (§18.5). */
   memberMessage: (memberId: string, purpose: MessagePurpose) =>
     request<{ text: string; phone: string }>(
@@ -1705,8 +1713,8 @@ export const messagesApi = {
       total_credits: number;
       balance: number;
     }>("/api/v1/notices/cost", send("POST", body)),
-  publishNotice: (body: NoticeInput) =>
-    request<Notice>("/api/v1/notices", send("POST", body)),
+  publishNotice: (body: NoticeInput, key?: string) =>
+    request<Notice>("/api/v1/notices", once(send("POST", body), key)),
   deleteNotice: (id: string) => request<void>(`/api/v1/notices/${id}`, send("DELETE")),
 };
 
@@ -1995,6 +2003,28 @@ export interface ImportPreview {
   ready: number;
   status: "preview" | "committed";
   result: { created: number; skipped: number; problems: [number, string][] } | null;
+}
+
+/** What a platform admin may do in /admin (backend app/core/admin_permissions.py). */
+export const ADMIN_PERMISSIONS = [
+  "admin.billing",
+  "admin.gym_accounts",
+  "admin.pricing",
+  "admin.apps",
+  "admin.changelog",
+] as const;
+export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number] | "admin.admins";
+
+export interface PlatformAdmin {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  is_super_admin: boolean;
+  permissions: AdminPermission[];
+  is_active: boolean;
+  two_step_enabled: boolean;
+  last_login_at: string | null;
 }
 
 export interface PlatformPlan {
@@ -2313,4 +2343,25 @@ export const adminApi = {
     request<PlatformPlan>("/api/v1/admin/plans", send("POST", body)),
   updatePlan: (id: string, body: Partial<PlatformPlan>) =>
     request<PlatformPlan>(`/api/v1/admin/plans/${id}`, send("PATCH", body)),
+  admins: () => request<PlatformAdmin[]>("/api/v1/admin/admins"),
+  addAdmin: (body: {
+    name: string;
+    email: string | null;
+    phone: string | null;
+    password: string;
+    permissions: AdminPermission[];
+  }) => request<PlatformAdmin>("/api/v1/admin/admins", send("POST", body)),
+  updateAdmin: (
+    id: string,
+    body: Partial<
+      Pick<PlatformAdmin, "name" | "email" | "phone" | "permissions" | "is_active">
+    >,
+  ) => request<PlatformAdmin>(`/api/v1/admin/admins/${id}`, send("PATCH", body)),
+  adminPassword: (id: string, new_password: string) =>
+    request<void>(
+      `/api/v1/admin/admins/${id}/password`,
+      send("POST", { new_password }),
+    ),
+  resetAdminTwoStep: (id: string) =>
+    request<PlatformAdmin>(`/api/v1/admin/admins/${id}/two-step/reset`, send("POST")),
 };

@@ -28,10 +28,13 @@ import { errorMessage, messagesApi, reportsApi, type TodayData } from "@/lib/api
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
+import { useHost } from "@/lib/host";
+import { useIdempotencyKey } from "@/lib/idempotency";
 import { useLive } from "@/lib/live";
 import { formatRs } from "@/lib/money";
 import { memberAppUrl } from "@/lib/slug";
 import { useLoad } from "@/lib/useLoad";
+import { useOnce } from "@/lib/useOnce";
 
 // The hours a gym is usually open; any visit outside them widens the chart.
 const OPEN_FROM = 5;
@@ -72,6 +75,9 @@ function QuickAction({
 function ToDo({ data }: { data: TodayData }) {
   const { can } = useAuth();
   const toast = useToast();
+  // One SMS per tap on Remind, however fast the second tap comes.
+  const reminding = useOnce();
+  const keys = useIdempotencyKey();
   const pending = data.pending_requests ?? 0;
   const empty =
     pending === 0 &&
@@ -82,8 +88,10 @@ function ToDo({ data }: { data: TodayData }) {
     !data.leads_due;
 
   async function remind(memberId: string, name: string) {
+    const body = { reminder: true };
     try {
-      await messagesApi.smsMember(memberId, { reminder: true });
+      await messagesApi.smsMember(memberId, body, keys.keyFor({ memberId, ...body }));
+      keys.succeeded();
       toast.success(t("today.reminded", { name }));
     } catch (err) {
       toast.error(errorMessage(err));
@@ -92,7 +100,7 @@ function ToDo({ data }: { data: TodayData }) {
 
   const row = "flex items-center justify-between gap-3 py-2.5";
   const button =
-    "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50";
+    "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50";
 
   return (
     <Card title={t("today.todo")}>
@@ -194,7 +202,10 @@ function ToDo({ data }: { data: TodayData }) {
                         <button
                           type="button"
                           className={button}
-                          onClick={() => void remind(m.member_id, m.name)}
+                          disabled={reminding.busy}
+                          onClick={() =>
+                            reminding.run(() => remind(m.member_id, m.name))
+                          }
                         >
                           <MessageSquare className="size-3.5" aria-hidden />
                           {t("today.remind")}
@@ -268,6 +279,7 @@ function ToDo({ data }: { data: TodayData }) {
 export default function TodayPage() {
   const { me, can } = useAuth();
   const { display } = useGymCalendar();
+  const host = useHost();
   const { data, error, reload } = useLoad(
     () => (me?.gym && can("members.view") ? reportsApi.today() : Promise.resolve(null)),
     [me?.gym?.id],
@@ -313,7 +325,7 @@ export default function TodayPage() {
       {error && <Notice tone="error">{error}</Notice>}
       <NotificationsPrompt />
       {!can("members.view") && (
-        <Notice>{t("staff.memberAppAt", { url: memberAppUrl(me.gym.slug) })}</Notice>
+        <Notice>{t("staff.memberAppAt", { url: memberAppUrl(host, me.gym.slug) })}</Notice>
       )}
       {!data && !error && can("members.view") && (
         <PageSkeleton label={t("common.loading")} />
@@ -435,7 +447,7 @@ export default function TodayPage() {
             </div>
           </div>
           <p className="pt-1 text-sm text-slate-500">
-            {t("staff.memberAppAt", { url: memberAppUrl(me.gym.slug) })}
+            {t("staff.memberAppAt", { url: memberAppUrl(host, me.gym.slug) })}
           </p>
         </>
       )}

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -65,14 +66,13 @@ export function BranchesSection() {
           </li>
         ))}
       </ul>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void run(async () => {
+      <Form
+        onSubmit={() =>
+          run(async () => {
             await branchesApi.create({ name });
             setName("");
-          });
-        }}
+          })
+        }
         className="mt-3 flex items-end gap-2"
       >
         <div className="flex-1">
@@ -84,7 +84,7 @@ export function BranchesSection() {
           />
         </div>
         <Button type="submit">{t("common.add")}</Button>
-      </form>
+      </Form>
       {error && (
         <div className="mt-2">
           <Notice tone="error">{error}</Notice>
@@ -231,7 +231,7 @@ function PlanDialog({
 
   return (
     <Dialog open onClose={onClose} title={plan ? t("plans.edit") : t("plans.add")}>
-      <form onSubmit={(e) => void save(e)} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <Field
           label={t("plans.name")}
           value={form.name}
@@ -384,7 +384,7 @@ function PlanDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -693,7 +693,7 @@ function AddMethodDialog({
   const [error, setError] = useState<string | null>(null);
   return (
     <Dialog open onClose={onClose} title={t("paymentMethods.add")}>
-      <form
+      <Form
         onSubmit={async (e) => {
           e.preventDefault();
           try {
@@ -736,7 +736,7 @@ function AddMethodDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

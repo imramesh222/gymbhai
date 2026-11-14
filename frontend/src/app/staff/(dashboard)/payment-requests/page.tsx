@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
@@ -194,7 +195,7 @@ function Decide({
       onClose={onClose}
       title={action === "approve" ? t("requests.approve") : t("requests.reject")}
     >
-      <form onSubmit={(e) => void submit(e)} className="space-y-3">
+      <Form onSubmit={submit} className="space-y-3">
         {action === "reject" ? (
           <TextArea
             label={t("requests.reason")}
@@ -230,7 +231,7 @@ function Decide({
         >
           {action === "approve" ? t("requests.approve") : t("requests.reject")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

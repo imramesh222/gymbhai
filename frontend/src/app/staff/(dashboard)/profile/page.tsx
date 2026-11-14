@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { DevicesCard } from "@/components/staff/DevicesCard";
 import { LanguageCard } from "@/components/staff/LanguageCard";
@@ -42,7 +43,7 @@ export default function ProfilePage() {
         subtitle={me?.staff.email ?? me?.staff.phone ?? ""}
       />
       <Card title={t("profile.changePassword")}>
-        <form onSubmit={(e) => void submit(e)} className="space-y-3">
+        <Form onSubmit={submit} className="space-y-3">
           <Field
             label={t("profile.currentPassword")}
             value={current}
@@ -62,7 +63,7 @@ export default function ProfilePage() {
           />
           {message && <Notice tone={message.tone}>{message.text}</Notice>}
           <Button type="submit">{t("profile.changePassword")}</Button>
-        </form>
+        </Form>
       </Card>
       <LanguageCard />
       <NotificationsCard />

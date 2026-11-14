@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -65,18 +66,17 @@ export default function TaxSettingsPage() {
   return (
     <>
       <Card title={t("tax.title")}>
-        <form
+        <Form
           className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void run(() =>
+          onSubmit={() =>
+            run(() =>
               taxApi.update({
                 vat_registered: shown.vat_registered,
                 pan: shown.pan.trim() || null,
                 starts_on: shown.vat_registered ? shown.starts_on : null,
               }),
-            );
-          }}
+            )
+          }
         >
           <p className="text-sm text-slate-600">{t("tax.help")}</p>
           <Checkbox
@@ -114,7 +114,7 @@ export default function TaxSettingsPage() {
             </p>
           )}
           <Button type="submit">{t("common.save")}</Button>
-        </form>
+        </Form>
       </Card>
 
       {data.vat_registered && (
@@ -154,14 +154,13 @@ export default function TaxSettingsPage() {
                 </Button>
               </>
             ) : null}
-            <form
+            <Form
               className="grid gap-3 sm:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(() => taxApi.setCbms(login)).then(() =>
+              onSubmit={() =>
+                run(() => taxApi.setCbms(login)).then(() =>
                   setLogin({ username: "", password: "" }),
-                );
-              }}
+                )
+              }
             >
               <Field
                 label={t("tax.cbmsUsername")}
@@ -183,7 +182,7 @@ export default function TaxSettingsPage() {
                   {t("common.save")}
                 </Button>
               </div>
-            </form>
+            </Form>
           </div>
         </Card>
       )}

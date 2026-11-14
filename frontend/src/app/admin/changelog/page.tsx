@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -27,7 +28,7 @@ function Editor({
   const [publish, setPublish] = useState(Boolean(entry?.published_at));
   const [error, setError] = useState<string | null>(null);
   return (
-    <form
+    <Form
       className="space-y-3"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -72,7 +73,7 @@ function Editor({
       />
       {error && <Notice tone="error">{error}</Notice>}
       <Button type="submit">{t("common.save")}</Button>
-    </form>
+    </Form>
   );
 }
 

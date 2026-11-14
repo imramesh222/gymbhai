@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice as Alert } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Checkbox, Select, TextArea } from "@/components/ui/inputs";
@@ -12,6 +13,7 @@ import { branchesApi, errorMessage, messagesApi, type NoticeInput } from "@/lib/
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/dates";
 import { useGymCalendar } from "@/lib/gym";
+import { useIdempotencyKey } from "@/lib/idempotency";
 import { useLoad } from "@/lib/useLoad";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
@@ -28,6 +30,7 @@ export default function NoticesPage() {
     send_sms: false,
   });
   const [branchId, setBranchId] = useState("all");
+  const keys = useIdempotencyKey();
   const [cost, setCost] = useState<Awaited<
     ReturnType<typeof messagesApi.noticeCost>
   > | null>(null);
@@ -50,7 +53,9 @@ export default function NoticesPage() {
         setCost(await messagesApi.noticeCost(input()));
         return;
       }
-      const notice = await messagesApi.publishNotice(input());
+      const body = input();
+      const notice = await messagesApi.publishNotice(body, keys.keyFor(body));
+      keys.succeeded();
       setDraft({ title: "", body: "", send_sms: false });
       setCost(null);
       setMessage({
@@ -73,7 +78,7 @@ export default function NoticesPage() {
     <div className="space-y-4">
       <PageHeader title={t("notices.title")} />
       <Card title={t("notices.new")}>
-        <form onSubmit={(e) => void submit(e)} className="space-y-3">
+        <Form onSubmit={submit} className="space-y-3">
           <Field
             label={t("notices.titleField")}
             value={draft.title}
@@ -138,7 +143,7 @@ export default function NoticesPage() {
                 ? t("notices.confirmSend")
                 : t("notices.publish")}
           </Button>
-        </form>
+        </Form>
       </Card>
       <Card title={t("notices.recent")}>
         {notices.data?.length === 0 && <EmptyState title={t("notices.none")} />}

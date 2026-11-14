@@ -155,17 +155,16 @@ def make_gym(
     slug: str,
     phone: str,
     email: str | None = None,
-    plan_months: str = "bs",
+    plan_months: str | None = "bs",
     date_display: str = "both",
 ) -> GymFixture:
-    """A gym made the way sign-up makes one."""
+    """A gym made the way sign-up makes one, then its calendar chosen as the
+    owner would on Plans (None: not chosen yet)."""
     result = registration.register_gym(
         db,
         GymSignup(
             gym_name=f"Gym {slug}",
             slug=slug,
-            plan_months=plan_months,
-            date_display=date_display,
             owner_name=f"Owner of {slug}",
             owner_phone=phone,
             owner_email=email,
@@ -173,6 +172,11 @@ def make_gym(
             accept_terms=True,
         ),
     )
+    result.gym.settings = {
+        **result.gym.settings,
+        "plan_months": plan_months,
+        "date_display": date_display,
+    }
     db.commit()
     return GymFixture(result.gym, result.branch, result.owner)
 
@@ -294,7 +298,8 @@ def sell(db: Session, fixture: "GymFixture", member, *, paid: int = 0, **sale):
 
 @pytest.fixture
 def platform_admin(db: Session) -> StaffUser:
-    """With two-step sign-in on, as every platform admin must have (§16.1)."""
+    """The super admin, with two-step sign-in on, as every platform admin must
+    have (§16.1)."""
     from app.core.time import utcnow
 
     admin = StaffUser(
@@ -302,6 +307,7 @@ def platform_admin(db: Session) -> StaffUser:
         email="admin@gymbhai.com",
         password_hash=shared_password_hash(),
         is_platform_admin=True,
+        is_super_admin=True,
         totp_nonce="test-nonce",
         totp_enabled_at=utcnow(),
     )

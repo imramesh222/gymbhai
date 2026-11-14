@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.schemas.auth import OptionalEmail, Strict
+from app.schemas.auth import Digits, OptionalEmail, Strict
 from app.schemas.branded_apps import PublicApp
 from app.schemas.messaging import NoticeRead
 from app.schemas.money import PaymentMethodRead, PaymentRead
@@ -44,7 +44,7 @@ class CodeRequested(BaseModel):
 
 
 class CodeVerify(CodeRequest):
-    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    code: Digits = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
     # When several members share the phone: which one is signing in.
     member_id: uuid.UUID | None = None
     # "app": the phone app (PLAN.md §17.2) gets its refresh token in the
@@ -521,7 +521,7 @@ class EmailChangeIn(Strict):
 
 class EmailConfirmIn(Strict):
     email: EmailStr
-    code: str = Field(min_length=4, max_length=8)
+    code: Digits = Field(min_length=4, max_length=8)
 
 
 class FreezeRequestIn(Strict):

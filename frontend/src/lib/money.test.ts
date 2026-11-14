@@ -18,6 +18,12 @@ describe("money", () => {
     expect(parseRs("abc")).toBeNull();
   });
 
+  it("reads what a Nepali keyboard types", () => {
+    expect(parseRs("१,५००")).toBe(1500_00);
+    expect(parseRs("रु १५००.५")).toBe(1500_50);
+    expect(parseRs("रु. 200")).toBe(200_00);
+  });
+
   it("round-trips through an input box", () => {
     expect(toInput(1500_00)).toBe("1500");
     expect(toInput(1500_50)).toBe("1500.50");

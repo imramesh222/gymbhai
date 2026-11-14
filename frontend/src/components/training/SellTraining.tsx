@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Notice } from "@/components/Notice";
+import { PlanMonthsQuestion } from "@/components/settings/PlanMonthsQuestion";
 import {
   PaymentFields,
   toPaymentInput,
@@ -55,6 +56,12 @@ export function SellTraining({
   const collects = can("payments.collect");
 
   if (options.error) return <SellDialog onClose={onClose} error={options.error} />;
+  if (!calendar)
+    return (
+      <SellDialog onClose={onClose}>
+        <PlanMonthsQuestion />
+      </SellDialog>
+    );
   if (!options.data) return <SellDialog onClose={onClose} />;
   if (plans.length === 0 || trainers.length === 0)
     return (

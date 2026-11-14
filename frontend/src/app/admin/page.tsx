@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
@@ -13,15 +14,23 @@ import { t, type MessageKey } from "@/i18n";
 import { AdminSummary } from "@/components/admin/AdminSummary";
 import { STEPS } from "@/components/today/SetupChecklist";
 import { adminApi, errorMessage, type AdminGym } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { formatAd, formatDateTime } from "@/lib/dates";
 import { useLoad } from "@/lib/useLoad";
 
 type Action = "grant" | "credits" | "suspend" | "password" | "two_step";
 
 export default function AdminGymsPage() {
+  const { can } = useAuth();
+  // Every admin sees the gyms; acting on them needs its permission.
+  const billing = can("admin.billing");
+  const accounts = can("admin.gym_accounts");
   const [q, setQ] = useState("");
   const gyms = useLoad(() => adminApi.gyms(q || undefined), [q]);
-  const payments = useLoad(() => adminApi.payments(), []);
+  const payments = useLoad(
+    () => (billing ? adminApi.payments() : Promise.resolve([])),
+    [billing],
+  );
   const plans = useLoad(() => adminApi.plans(), []).data ?? [];
   const [open, setOpen] = useState<{ gym: AdminGym; action: Action } | null>(null);
   const [message, setMessage] = useState<{
@@ -112,7 +121,7 @@ export default function AdminGymsPage() {
               <th className="px-3 py-2.5">{t("admin.sms")}</th>
               <th className="px-3 py-2.5">{t("admin.health")}</th>
               <th className="px-3 py-2.5">{t("admin.setup")}</th>
-              <th className="px-3 py-2.5" />
+              {(billing || accounts) && <th className="px-3 py-2.5" />}
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
@@ -172,34 +181,50 @@ export default function AdminGymsPage() {
                     ))}
                   </ul>
                 </td>
-                <td className="px-3 py-3 align-top">
-                  <Select<Action>
-                    compact
-                    label={t("admin.actions")}
-                    value=""
-                    onChange={(action) => setOpen({ gym: g, action })}
-                    options={[
-                      { value: "grant", label: t("admin.grant") },
-                      { value: "credits", label: t("admin.addCredits") },
-                      {
-                        value: "suspend",
-                        label:
-                          g.status === "suspended"
-                            ? t("admin.unsuspend")
-                            : t("admin.suspend"),
-                      },
-                      { value: "password", label: t("admin.resetOwner") },
-                      ...(g.owner_two_step
-                        ? [
-                            {
-                              value: "two_step" as const,
-                              label: t("admin.resetOwnerTwoStep"),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                </td>
+                {(billing || accounts) && (
+                  <td className="px-3 py-3 align-top">
+                    <Select<Action>
+                      compact
+                      label={t("admin.actions")}
+                      value=""
+                      onChange={(action) => setOpen({ gym: g, action })}
+                      options={[
+                        ...(billing
+                          ? [
+                              { value: "grant" as const, label: t("admin.grant") },
+                              {
+                                value: "credits" as const,
+                                label: t("admin.addCredits"),
+                              },
+                            ]
+                          : []),
+                        ...(accounts
+                          ? [
+                              {
+                                value: "suspend" as const,
+                                label:
+                                  g.status === "suspended"
+                                    ? t("admin.unsuspend")
+                                    : t("admin.suspend"),
+                              },
+                              {
+                                value: "password" as const,
+                                label: t("admin.resetOwner"),
+                              },
+                            ]
+                          : []),
+                        ...(accounts && g.owner_two_step
+                          ? [
+                              {
+                                value: "two_step" as const,
+                                label: t("admin.resetOwnerTwoStep"),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -241,7 +266,7 @@ function ActionDialog({
   function submit(event: React.FormEvent) {
     event.preventDefault();
     if (action === "grant")
-      void run(
+      return run(
         () =>
           adminApi.grant(gym.id, {
             platform_plan_id: planId || null,
@@ -250,24 +275,24 @@ function ActionDialog({
         "admin.granted",
       );
     else if (action === "credits")
-      void run(
+      return run(
         () => adminApi.credits(gym.id, Number(value), reason),
         "admin.creditsAdded",
       );
     else if (action === "suspend")
-      void run(
+      return run(
         () =>
           unsuspend ? adminApi.unsuspend(gym.id) : adminApi.suspend(gym.id, reason),
         unsuspend ? "admin.unsuspendedDone" : "admin.suspendedDone",
       );
     else if (action === "two_step")
-      void run(() => adminApi.resetOwnerTwoStep(gym.id), "admin.twoStepReset");
-    else void run(() => adminApi.ownerPassword(gym.id, value), "admin.passwordReset");
+      return run(() => adminApi.resetOwnerTwoStep(gym.id), "admin.twoStepReset");
+    return run(() => adminApi.ownerPassword(gym.id, value), "admin.passwordReset");
   }
 
   return (
     <Dialog open onClose={onClose} title={`${gym.name}`}>
-      <form onSubmit={submit} className="space-y-3">
+      <Form onSubmit={submit} className="space-y-3">
         {action === "grant" && (
           <>
             <Select
@@ -333,7 +358,7 @@ function ActionDialog({
         >
           {t("common.confirm")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

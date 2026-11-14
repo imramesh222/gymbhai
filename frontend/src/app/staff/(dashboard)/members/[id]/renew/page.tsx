@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Notice } from "@/components/Notice";
+import { PlanMonthsQuestion } from "@/components/settings/PlanMonthsQuestion";
 import {
   emptySale,
   SaleForm,
@@ -76,18 +77,22 @@ export default function RenewPage() {
       {member.valid_until && member.status !== "expired" && (
         <Notice>{t("renew.queued", { date: date(member.renewal_starts_on) })}</Notice>
       )}
-      <Card>
-        <SaleForm
-          plans={plans}
-          branches={branches}
-          value={draft}
-          onChange={setSale}
-          calendar={calendar}
-          display={display}
-          firstMembership={member.first_membership}
-          payer={{ id: member.id, name: member.name, phone: member.phone }}
-        />
-      </Card>
+      {calendar ? (
+        <Card>
+          <SaleForm
+            plans={plans}
+            branches={branches}
+            value={draft}
+            onChange={setSale}
+            calendar={calendar}
+            display={display}
+            firstMembership={member.first_membership}
+            payer={{ id: member.id, name: member.name, phone: member.phone }}
+          />
+        </Card>
+      ) : (
+        <PlanMonthsQuestion />
+      )}
       {saveError && <Notice tone="error">{saveError}</Notice>}
       <ActionBar>
         <span className="text-sm text-slate-600">

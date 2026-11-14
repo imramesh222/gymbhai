@@ -3,12 +3,14 @@
 import { useState } from "react";
 
 import { Button } from "@/components/Button";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Dialog } from "@/components/ui/Dialog";
 import { TextArea } from "@/components/ui/inputs";
 import { SmsCounter } from "@/components/ui/SmsCounter";
 import { t } from "@/i18n";
 import { errorMessage, messagesApi } from "@/lib/api";
+import { useIdempotencyKey } from "@/lib/idempotency";
 
 export function SendSms({
   memberId,
@@ -24,11 +26,13 @@ export function SendSms({
 }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const keys = useIdempotencyKey();
 
   async function send(payload: { reminder?: boolean; body?: string }) {
     setError(null);
     try {
-      await messagesApi.smsMember(memberId, payload);
+      await messagesApi.smsMember(memberId, payload, keys.keyFor(payload));
+      keys.succeeded();
       onSent();
     } catch (err) {
       setError(errorMessage(err));
@@ -40,23 +44,13 @@ export function SendSms({
       <div className="space-y-3">
         {reminder && (
           <>
-            <Button
-              variant="secondary"
-              block
-              onClick={() => void send({ reminder: true })}
-            >
+            <Button variant="secondary" block onClick={() => send({ reminder: true })}>
               {t("followUp.remind")}
             </Button>
             <p className="text-center text-xs text-slate-500">{t("sms.or")}</p>
           </>
         )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send({ body });
-          }}
-          className="space-y-2"
-        >
+        <Form onSubmit={() => send({ body })} className="space-y-2">
           <TextArea
             label={t("sms.message")}
             value={body}
@@ -69,7 +63,7 @@ export function SendSms({
           <Button type="submit" block>
             {t("sms.send")}
           </Button>
-        </form>
+        </Form>
       </div>
     </Dialog>
   );

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { MemberPicker, type Picked } from "@/components/member/MemberPicker";
 import { Avatar } from "@/components/ui/Avatar";
@@ -275,7 +276,7 @@ function EditClass({
   onBack,
 }: {
   gymClass: ClassDetail;
-  onSave: (body: Record<string, unknown>) => void;
+  onSave: (body: Record<string, unknown>) => Promise<unknown>;
   onBack: () => void;
 }) {
   const { display } = useGymCalendar();
@@ -291,9 +292,8 @@ function EditClass({
   const moving = Date.parse(starts) !== Date.parse(gymClass.starts_at);
   const told = gymClass.booked + gymClass.waiting;
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
+    <Form
+      onSubmit={() => {
         const body: Record<string, unknown> = {};
         if (moving) {
           body.starts_at = starts;
@@ -302,7 +302,7 @@ function EditClass({
         if (Number(form.places) !== gymClass.places) body.places = Number(form.places);
         if ((form.instructor_id || null) !== gymClass.instructor_id)
           body.instructor_id = form.instructor_id || null;
-        onSave(body);
+        return onSave(body);
       }}
       className="space-y-3"
     >
@@ -349,7 +349,7 @@ function EditClass({
           {t("common.cancel")}
         </Button>
       </div>
-    </form>
+    </Form>
   );
 }
 
@@ -357,19 +357,13 @@ function CancelClass({
   onSave,
   onBack,
 }: {
-  onSave: (reason: string, sms: boolean) => void;
+  onSave: (reason: string, sms: boolean) => Promise<unknown>;
   onBack: () => void;
 }) {
   const [reason, setReason] = useState("");
   const [sms, setSms] = useState(false);
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave(reason, sms);
-      }}
-      className="space-y-3"
-    >
+    <Form onSubmit={() => onSave(reason, sms)} className="space-y-3">
       <TextArea
         label={t("classes.cancelReason")}
         value={reason}
@@ -385,6 +379,6 @@ function CancelClass({
           {t("common.cancel")}
         </Button>
       </div>
-    </form>
+    </Form>
   );
 }

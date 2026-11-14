@@ -18,9 +18,15 @@ export function formatWholeRs(paisa: number): string {
   return formatRs(Math.round(paisa / 100) * 100);
 }
 
-/** "1,500" or "1500.50" typed by a person -> paisa. Null if not a number. */
+/**
+ * "1,500" or "1500.50" typed by a person -> paisa. Null if not a number.
+ * A Nepali keyboard's "रु १५००" is the same amount.
+ */
 export function parseRs(input: string): number | null {
-  const cleaned = input.replace(/[,\s]/g, "").replace(/^rs\.?/i, "");
+  const cleaned = input
+    .replace(/[०-९]/g, (d) => String("०१२३४५६७८९".indexOf(d)))
+    .replace(/[,\s]/g, "")
+    .replace(/^(rs|रु)\.?/i, "");
   if (cleaned === "") return null;
   if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
   const [whole, fraction = ""] = cleaned.split(".");

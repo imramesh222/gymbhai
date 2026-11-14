@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { WhatsAppLink } from "@/components/member/WhatsApp";
 import { Notice } from "@/components/Notice";
 import { Dialog } from "@/components/ui/Dialog";
@@ -130,7 +131,7 @@ function LeadDetails({
               <Button
                 variant="secondary"
                 onClick={() =>
-                  void run(
+                  run(
                     () => leadsApi.update(lead.id, { status: "contacted" }),
                     t("leads.markedContacted"),
                   )
@@ -143,7 +144,7 @@ function LeadDetails({
               <Button
                 variant="secondary"
                 onClick={() =>
-                  void run(() => leadsApi.trial(lead.id), t("leads.trialSaved"))
+                  run(() => leadsApi.trial(lead.id), t("leads.trialSaved"))
                 }
               >
                 {t("leads.trialToday")}
@@ -153,7 +154,7 @@ function LeadDetails({
               <Button
                 variant="ghost"
                 onClick={() =>
-                  void run(
+                  run(
                     () => leadsApi.update(lead.id, { assigned_to: me.staff.id }),
                     t("leads.taken"),
                   )
@@ -164,19 +165,18 @@ function LeadDetails({
             )}
           </div>
 
-          <form
+          <Form
             className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(
+            onSubmit={() =>
+              run(
                 () =>
                   leadsApi.update(lead.id, {
                     follow_up_on: followUp || null,
                     notes: notes || null,
                   }),
                 t("common.saved"),
-              );
-            }}
+              )
+            }
           >
             <DateInput
               label={t("leads.followUpOn")}
@@ -193,22 +193,21 @@ function LeadDetails({
             <Button type="submit" variant="secondary">
               {t("common.save")}
             </Button>
-          </form>
+          </Form>
 
           {losing ? (
-            <form
+            <Form
               className="space-y-2 rounded-xl bg-slate-50 p-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(
+              onSubmit={() =>
+                run(
                   () =>
                     leadsApi.update(lead.id, {
                       status: "lost",
                       lost_reason: lostReason,
                     }),
                   t("leads.markedLost"),
-                );
-              }}
+                )
+              }
             >
               <Field
                 label={t("leads.lostReason")}
@@ -219,7 +218,7 @@ function LeadDetails({
               <Button type="submit" variant="danger">
                 {t("leads.lost")}
               </Button>
-            </form>
+            </Form>
           ) : (
             <button
               type="button"
@@ -235,7 +234,7 @@ function LeadDetails({
         <Button
           variant="secondary"
           onClick={() =>
-            void run(
+            run(
               () => leadsApi.update(lead.id, { status: "contacted" }),
               t("leads.reopened"),
             )

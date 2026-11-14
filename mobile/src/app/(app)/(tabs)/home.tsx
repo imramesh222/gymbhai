@@ -1,7 +1,7 @@
 /**
  * Home (PLAN.md §7, §17.5): days left, the QR for the door, how busy it is,
- * personal training (§18.3), visits, the latest notice. Everything here works from the saved copy with
- * no signal; the QR above all.
+ * personal training (§18.3), visits. Notices are the bell in the header.
+ * Everything here works from the saved copy with no signal; the QR above all.
  */
 import { router } from "expo-router";
 import { Pressable, View } from "react-native";
@@ -55,16 +55,19 @@ function DaysRing({
           stroke={colors.track}
           strokeWidth={12}
         />
-        <Circle
-          cx={60}
-          cy={60}
-          r={RING_RADIUS}
-          fill="none"
-          stroke={color}
-          strokeWidth={12}
-          strokeLinecap="round"
-          strokeDasharray={`${filled * RING} ${RING}`}
-        />
+        {/* Empty is no arc at all: a round cap on nothing draws a dot. */}
+        {filled > 0 ? (
+          <Circle
+            cx={60}
+            cy={60}
+            r={RING_RADIUS}
+            fill="none"
+            stroke={color}
+            strokeWidth={12}
+            strokeLinecap="round"
+            strokeDasharray={`${filled * RING} ${RING}`}
+          />
+        ) : null}
       </Svg>
       <Txt weight="bold" size={30} color={colors.ink}>
         {days}
@@ -287,29 +290,6 @@ export default function Home() {
           </Txt>
           <Txt size={14} color={colors.muted}>
             {t("app.home.classesHelp")}
-          </Txt>
-        </Pressable>
-      ) : null}
-
-      {me.data.latest_notice ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push("/notices")}
-          style={{
-            backgroundColor: colors.surface,
-            borderRadius: radius.lg,
-            padding: space(4),
-            gap: space(1),
-            borderWidth: 1,
-            borderColor: colors.hairline,
-          }}
-        >
-          <Label>{t("app.home.notice")}</Label>
-          <Txt weight="semibold" color={colors.ink}>
-            {me.data.latest_notice.title}
-          </Txt>
-          <Txt size={14} color={colors.muted} numberOfLines={2}>
-            {me.data.latest_notice.body}
           </Txt>
         </Pressable>
       ) : null}

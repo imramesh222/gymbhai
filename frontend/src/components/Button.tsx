@@ -1,3 +1,8 @@
+"use client";
+
+import { useFormBusy } from "@/components/Form";
+import { useOnce } from "@/lib/useOnce";
+
 const VARIANTS = {
   primary:
     "bg-brand-600 text-white shadow-brand hover:bg-brand-700 active:translate-y-px disabled:bg-brand-300 disabled:shadow-none",
@@ -15,10 +20,13 @@ const SIZES = {
   lg: "gap-2 rounded-xl px-5 py-3 text-base",
 } as const;
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> & {
   variant?: keyof typeof VARIANTS;
   size?: keyof typeof SIZES;
   block?: boolean;
+  /** Return the promise (`() => save()`, not `() => void save()`): the
+   * button stays disabled until it settles, so a double click is one save. */
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => unknown;
 };
 
 export function Button({
@@ -27,14 +35,22 @@ export function Button({
   block,
   className = "",
   type = "button",
+  onClick,
+  disabled,
   ...props
 }: ButtonProps) {
+  const { busy, run } = useOnce();
+  // A submit button waits for its <Form> to finish sending.
+  const formBusy = useFormBusy() && type === "submit";
   return (
     <button
       type={type}
       className={`inline-flex items-center justify-center font-semibold whitespace-nowrap transition-[background-color,box-shadow,transform] duration-150 disabled:cursor-not-allowed disabled:active:translate-y-0 ${
         SIZES[size]
       } ${VARIANTS[variant]} ${block ? "w-full" : ""} ${className}`}
+      disabled={disabled || busy || formBusy}
+      aria-busy={busy || formBusy || undefined}
+      onClick={onClick && ((event) => run(() => onClick(event)))}
       {...props}
     />
   );

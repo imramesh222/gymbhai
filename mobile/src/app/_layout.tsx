@@ -63,7 +63,7 @@ function Navigator({ fontsReady }: { fontsReady: boolean }) {
         <Stack.Protected guard={Boolean(gym) && signedIn}>
           <Stack.Screen name="(app)" />
         </Stack.Protected>
-        {/* Links into the app: gymbhai://<gym>, https://app.gymbhai.com/<gym>/... */}
+        {/* Links into the app: gymbhai://<gym>, https://<our address>/<gym>/... */}
         <Stack.Screen name="[gym]" />
       </Stack>
       {gym && signedIn ? <NotificationTaps /> : null}

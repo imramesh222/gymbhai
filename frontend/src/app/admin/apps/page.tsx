@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { PageSkeleton } from "@/components/ui/Skeleton";
@@ -102,7 +103,7 @@ function AppCard({ app, onSaved }: { app: AdminBrandedApp; onSaved: () => void }
 
   return (
     <Card title={`${app.app_name} · ${app.gym_name}`}>
-      <form onSubmit={(e) => void save(e)} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <div className="flex items-center gap-3 text-sm">
           {app.icon_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -185,11 +186,11 @@ function AppCard({ app, onSaved }: { app: AdminBrandedApp; onSaved: () => void }
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <div className="flex flex-wrap gap-2">
           <Button type="submit">{t("common.save")}</Button>
-          <Button variant="secondary" onClick={() => void download()}>
+          <Button variant="secondary" onClick={() => download()}>
             {t("admin.app.build")}
           </Button>
         </div>
-      </form>
+      </Form>
     </Card>
   );
 }

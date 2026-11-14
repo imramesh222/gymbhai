@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
@@ -186,7 +187,7 @@ function ProductDialog({
       onClose={onClose}
       title={product ? t("shop.editProduct") : t("shop.addProduct")}
     >
-      <form onSubmit={(e) => void save(e)} className="space-y-3">
+      <Form onSubmit={save} className="space-y-3">
         <Field
           label={t("shop.name")}
           value={form.name}
@@ -254,7 +255,7 @@ function ProductDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -275,7 +276,7 @@ function StockDialog({
   const [error, setError] = useState<string | null>(null);
   return (
     <Dialog open onClose={onClose} title={t("shop.stockOf", { name: product.name })}>
-      <form
+      <Form
         className="space-y-3"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -325,7 +326,7 @@ function StockDialog({
         <Button type="submit" block>
           {t("common.save")}
         </Button>
-      </form>
+      </Form>
     </Dialog>
   );
 }

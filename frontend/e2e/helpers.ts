@@ -18,7 +18,11 @@ export function unique() {
 
 export const PASSWORD = "correct-horse-battery";
 
-/** Sign up a gym through the real form and land on the staff dashboard. */
+/**
+ * Sign up a gym through the real form, say how it counts plan months on
+ * Plans (asked before the first sale, PLAN.md §5.1) and land on the staff
+ * dashboard.
+ */
 export async function signUpGym(
   page: Page,
   planMonths: "AD" | "BS" = "BS",
@@ -28,14 +32,18 @@ export async function signUpGym(
   await page.goto(path);
   await page.getByLabel("Gym name").fill(gym.gymName);
   await page.getByLabel("Your gym's address").fill(gym.slug);
-  await page.getByText(`${planMonths} months`, { exact: true }).click();
-  await page.getByText("Both", { exact: true }).click();
   await page.getByLabel("Your name").fill("Sita Sharma");
   await page.getByLabel("Mobile number").fill(gym.phone);
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("checkbox", { name: /I accept the/ }).check();
   await page.getByRole("button", { name: "Create my gym" }).click();
   await page.waitForURL("**/staff");
+
+  await page.goto("/staff/settings/plans");
+  await page.getByText(`${planMonths} months`, { exact: true }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("How do you count months?")).toBeHidden();
+  await page.goto("/staff");
   return gym;
 }
 

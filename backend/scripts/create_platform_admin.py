@@ -1,4 +1,4 @@
-"""Create or reset a platform admin (us), who belongs to no gym.
+"""Create or reset the super admin (us), who belongs to no gym.
 
     docker compose exec api python -m scripts.create_platform_admin \
         --name "Ramesh" --email you@example.com
@@ -9,6 +9,10 @@ Prompts for the password so it never lands in shell history. For scripts,
 Resetting also turns two-step sign-in off: this is the way back in for an
 admin who lost their phone, and needs a shell on the server. Two-step sign-in
 is then set up again at the next sign-in (PLAN.md §16.1).
+
+The super admin has every /admin permission and adds the other admins from
+/admin → Admins, ticking what each may do. Run against an existing admin, it
+makes them a super admin too.
 """
 
 import argparse
@@ -58,10 +62,11 @@ def main() -> int:
         staff.email = email
         staff.phone = phone
         staff.password_hash = hash_password(password)
+        staff.is_super_admin = True
         staff.is_active = True
         two_step.disable(db, staff)
         db.commit()
-    print("Platform admin ready. Set up two-step sign-in at the first sign-in.")
+    print("Super admin ready. Set up two-step sign-in at the first sign-in.")
     return 0
 
 

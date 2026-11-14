@@ -8,7 +8,9 @@ test("sign up a gym, sign out, sign back in with the phone number", async ({
 
   await expect(page.getByRole("heading", { name: "Welcome, Sita" })).toBeVisible();
   await expect(page.getByText("14 days left in your free trial.")).toBeVisible();
-  await expect(page.getByText(`app.gymbhai.com/${gym.slug}`)).toBeVisible();
+  // At the address the app is served from, whatever that is.
+  const host = new URL(page.url()).host;
+  await expect(page.getByText(`${host}/${gym.slug}`)).toBeVisible();
 
   // A reload keeps the session: the refresh cookie restores it.
   await page.reload();

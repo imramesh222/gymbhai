@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
+import { Form } from "@/components/Form";
 import { PushSetting } from "@/components/memberApp/PushPrompt";
 import { Notice } from "@/components/Notice";
 import { Row } from "@/components/ui/Card";
@@ -17,6 +18,7 @@ import { shrinkImage } from "@/lib/image";
 import { memberApi } from "@/lib/memberApi";
 import { useMember } from "@/lib/memberSession";
 import { useLoad } from "@/lib/useLoad";
+import { useOnce } from "@/lib/useOnce";
 import { describeDevice } from "@/lib/userAgent";
 
 /** A new email: a code to it first, then it's theirs (PLAN.md §16.3, 8.5). */
@@ -27,7 +29,7 @@ function EmailChange({ onDone }: { onDone: () => void }) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <form
+    <Form
       className="space-y-3"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -80,7 +82,7 @@ function EmailChange({ onDone }: { onDone: () => void }) {
           {t("common.cancel")}
         </Button>
       </div>
-    </form>
+    </Form>
   );
 }
 
@@ -90,7 +92,7 @@ function EmergencyContact({ initial }: { initial: string | null }) {
   const [state, setState] = useState<"idle" | "saved" | string>("idle");
   const dirty = value.trim() !== (initial ?? "");
   return (
-    <form
+    <Form
       className="space-y-2"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -122,7 +124,7 @@ function EmergencyContact({ initial }: { initial: string | null }) {
           {t("common.save")}
         </Button>
       )}
-    </form>
+    </Form>
   );
 }
 
@@ -186,6 +188,7 @@ function MyDevices() {
   const { me } = useMember();
   const { data, reload } = useLoad(() => memberApi.devices(), []);
   const [message, setMessage] = useState<string | null>(null);
+  const signingOut = useOnce();
   if (!me || !data) return null;
   const others = data.some((device) => !device.current);
   const display = me.gym.date_display;
@@ -204,12 +207,15 @@ function MyDevices() {
         {others && (
           <button
             type="button"
-            className="text-sm font-semibold text-brand-700"
+            className="text-sm font-semibold text-brand-700 disabled:opacity-50"
+            disabled={signingOut.busy}
             onClick={() =>
-              void run(async () => {
-                const { signed_out } = await memberApi.signOutOtherDevices();
-                return t("sessions.signedOutOthers", { count: signed_out });
-              })
+              signingOut.run(() =>
+                run(async () => {
+                  const { signed_out } = await memberApi.signOutOtherDevices();
+                  return t("sessions.signedOutOthers", { count: signed_out });
+                }),
+              )
             }
           >
             {t("sessions.signOutOthers")}
@@ -241,7 +247,7 @@ function MyDevices() {
                 variant="secondary"
                 size="sm"
                 onClick={() =>
-                  void run(async () => {
+                  run(async () => {
                     await memberApi.signOutDevice(device.id);
                     return t("sessions.signedOut");
                   })
@@ -353,7 +359,7 @@ export default function MemberProfile() {
       >
         {t("app.notices")}
       </Link>
-      <Button variant="secondary" block onClick={() => void signOut()}>
+      <Button variant="secondary" block onClick={() => signOut()}>
         {t("common.signOut")}
       </Button>
     </div>

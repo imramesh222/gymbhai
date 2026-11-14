@@ -1,10 +1,10 @@
 import datetime as dt
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.auth import NewPassword, Strict
+from app.schemas.auth import NewPassword, OptionalEmail, OptionalPhone, Strict
 
 MAX_PAISA = 10_000_000_00
 
@@ -251,3 +251,58 @@ class MyReferrals(BaseModel):
     link: str
     free_months: int
     gyms: list[ReferredGym]
+
+
+# --- platform admins (§7 /admin): the super admin adds the others ------------------
+
+
+def _long_enough(value: str) -> str:
+    if len(value) < 12:
+        raise ValueError("Use at least 12 characters for a platform admin.")
+    return value
+
+
+# As scripts.create_platform_admin asks: they can do a lot to every gym.
+AdminPassword = Annotated[NewPassword, AfterValidator(_long_enough)]
+
+
+class PlatformAdminRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: str | None
+    phone: str | None
+    is_super_admin: bool
+    # What they may do (app/core/admin_permissions.py); every key for the
+    # super admin.
+    permissions: list[str]
+    is_active: bool
+    two_step_enabled: bool
+    last_login_at: dt.datetime | None
+
+
+class PlatformAdminCreate(Strict):
+    name: str = Field(min_length=2, max_length=120)
+    email: OptionalEmail = None
+    phone: OptionalPhone = None
+    password: AdminPassword
+    permissions: list[str] = []
+
+    @model_validator(mode="after")
+    def has_login(self) -> "PlatformAdminCreate":
+        if not self.email and not self.phone:
+            raise ValueError("Give an email or a phone number to sign in with.")
+        return self
+
+
+class PlatformAdminUpdate(Strict):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    email: OptionalEmail = None
+    phone: OptionalPhone = None
+    permissions: list[str] | None = None
+    is_active: bool | None = None
+
+
+class AdminPasswordIn(Strict):
+    new_password: AdminPassword

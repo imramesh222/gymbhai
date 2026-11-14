@@ -88,7 +88,8 @@ def test_the_phone_can_read_it_and_it_is_ours(monkeypatch, phone) -> None:
         algorithms=["ES256"],
         audience="https://fcm.googleapis.com",
     )
-    assert claims["sub"] == "mailto:support@gymbhai.com"
+    # support@ at PUBLIC_APP_URL's address (conftest: localhost).
+    assert claims["sub"] == "mailto:support@localhost"
 
 
 @pytest.mark.parametrize("status", [404, 410])

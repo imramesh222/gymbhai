@@ -13,8 +13,8 @@ from pydantic import (
     model_validator,
 )
 
-from app.core.gym_settings import DateDisplay, GymSettings, PlanMonths
-from app.core.phone import normalize_phone
+from app.core.gym_settings import GymSettings
+from app.core.phone import ascii_digits, normalize_phone
 from app.core.slugs import check_slug
 
 MIN_PASSWORD_LENGTH = 8
@@ -57,6 +57,15 @@ NewPassword = Annotated[
 ]
 
 Phone = Annotated[str, AfterValidator(normalize_phone)]
+
+
+def _ascii_digits(value: object) -> object:
+    return ascii_digits(value) if isinstance(value, str) else value
+
+
+# A code or number typed on a Nepali keyboard: ४२१ is 421. Check it with
+# [0-9], not \d, which also lets ४२१ through unchanged.
+Digits = Annotated[str, BeforeValidator(_ascii_digits)]
 OptionalPhone = Annotated[Phone | None, BeforeValidator(_blank_to_none)]
 OptionalEmail = Annotated[
     EmailStr | None, BeforeValidator(_blank_to_none), AfterValidator(_lower)
@@ -67,9 +76,6 @@ class GymSignup(Strict):
     gym_name: str = Field(min_length=2, max_length=120)
     slug: str
     branch_name: str = Field(default="Main branch", min_length=1, max_length=120)
-    # No defaults: the owner must choose (PLAN.md §5.1).
-    plan_months: PlanMonths
-    date_display: DateDisplay
     owner_name: str = Field(min_length=2, max_length=120)
     owner_phone: OptionalPhone = None
     owner_email: OptionalEmail = None
@@ -112,7 +118,7 @@ class PasswordResetRequest(Strict):
 
 class PasswordResetConfirm(Strict):
     identifier: str = Field(min_length=3, max_length=254)
-    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    code: Digits = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
     new_password: NewPassword
 
 
@@ -210,6 +216,7 @@ class StaffRead(BaseModel):
     phone: str | None
     is_owner: bool
     is_platform_admin: bool
+    is_super_admin: bool
     last_login_at: datetime | None
     two_step_enabled: bool
 

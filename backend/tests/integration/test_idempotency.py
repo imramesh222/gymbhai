@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.membership import Membership
+from app.models.messaging import Notice, SmsMessage
 from app.models.payment import Payment
 from app.models.platform import SubscriptionPayment
 from tests.conftest import GymFixture, make_member, priced_plan, sell, sign_in
@@ -96,6 +97,35 @@ def test_paying_us_sent_twice_is_sent_once(
     first, again = twice(client, "/api/v1/subscription/payments", body)
     assert first.status_code == again.status_code == 201
     assert count(db, SubscriptionPayment) == 1
+
+
+def test_an_sms_sent_twice_is_sent_once(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    member = make_member(db, gym_a)
+    sign_in(db, client, gym_a.owner)
+    first, again = twice(
+        client, f"/api/v1/members/{member.id}/sms", {"body": "See you tomorrow!"}
+    )
+    assert first.status_code == again.status_code == 201
+    assert again.json()["id"] == first.json()["id"]
+    assert count(db, SmsMessage) == 1
+
+
+def test_a_notice_published_twice_messages_members_once(
+    client: TestClient, db: Session, gym_a: GymFixture
+) -> None:
+    sell(db, gym_a, make_member(db, gym_a))
+    sign_in(db, client, gym_a.owner)
+    body = {"title": "Closed Saturday", "body": "For Dashain.", "send_sms": True}
+    first = client.post("/api/v1/notices", json=body, headers={"Idempotency-Key": KEY})
+    sent = count(db, SmsMessage)
+    again = client.post("/api/v1/notices", json=body, headers={"Idempotency-Key": KEY})
+    assert first.status_code == again.status_code == 201
+    assert again.json() == first.json()
+    assert first.json()["sms_count"] == sent == 1
+    assert count(db, Notice) == 1
+    assert count(db, SmsMessage) == sent
 
 
 def test_two_payments_with_their_own_keys_are_two_payments(

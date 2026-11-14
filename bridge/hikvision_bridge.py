@@ -19,7 +19,7 @@ keeps working on what it was last told, and the bridge catches up after.
 bridge.json:
 
     {
-      "server": "https://app.gymbhai.com",
+      "server": "https://gymbhai.rawatramesh.com.np",
       "interval": 5,
       "readers": [
         {"token": "the reader's token from Settings → Door scanners",

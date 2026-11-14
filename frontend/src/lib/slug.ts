@@ -10,7 +10,7 @@ export function slugify(name: string): string {
     .replace(/-+$/, "");
 }
 
-/** Where a gym's member app lives. */
-export function memberAppUrl(slug: string): string {
-  return `app.gymbhai.com/${slug || "…"}`;
+/** Where a gym's member app lives, at this site's address (useHost()). */
+export function memberAppUrl(host: string, slug: string): string {
+  return `${host}/${slug || "…"}`;
 }

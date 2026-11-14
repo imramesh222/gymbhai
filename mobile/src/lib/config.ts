@@ -3,20 +3,25 @@ import { Platform } from "react-native";
 
 import { version } from "../../package.json";
 
+const extra = Constants.expoConfig?.extra as
+  | { gym?: string; apiUrl?: string }
+  | undefined;
+
 /**
- * Where the API is. Production by default; in development the Mac's LAN
- * address, e.g. EXPO_PUBLIC_API_URL=http://192.168.1.20:8001 in mobile/.env
- * (README.md). The app talks to the API directly, not through Next.js.
+ * Where the API is. Production by default (app.config.ts has the address);
+ * in development the Mac's LAN address, e.g.
+ * EXPO_PUBLIC_API_URL=http://192.168.1.20:8001 in mobile/.env (README.md).
+ * The app talks to the API directly, not through Next.js.
  */
 export const API_URL = (
-  process.env.EXPO_PUBLIC_API_URL ?? "https://app.gymbhai.com"
+  process.env.EXPO_PUBLIC_API_URL ?? extra?.apiUrl ?? ""
 ).replace(/\/+$/, "");
 
 /** The member app's WebSocket (PLAN.md §17.3). */
 export const SOCKET_URL = `${API_URL.replace(/^http/, "ws")}/api/v1/m/ws`;
 
-/** The domain on gym posters and in the welcome SMS. */
-export const APP_DOMAIN = "app.gymbhai.com";
+/** The address on gym posters and in the welcome SMS: "gymbhai.com.np". */
+export const APP_DOMAIN = API_URL.replace(/^https?:\/\//, "");
 
 /** The brand colour before a gym's own is known. */
 export const DEFAULT_BRAND = "#1d5fd1";
@@ -26,8 +31,7 @@ export const DEFAULT_BRAND = "#1d5fd1";
  * brand (app.config.ts, BRAND=<address>). Null in the GymBhai app, where the
  * member chooses.
  */
-export const BRAND_GYM: string | null =
-  (Constants.expoConfig?.extra as { gym?: string } | undefined)?.gym ?? null;
+export const BRAND_GYM: string | null = extra?.gym ?? null;
 
 /**
  * An image the API gave as a path ("/api/v1/files/..."), or a link made for

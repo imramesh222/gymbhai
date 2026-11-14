@@ -41,9 +41,12 @@ services:
 
   api:
     <<: *backend
+    # A reload waits at most 3 seconds for open connections: an open
+    # dashboard's live stream (/live) never closes by itself, and would hold
+    # the reload, and every request after it, forever.
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --timeout-graceful-shutdown 3"
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:

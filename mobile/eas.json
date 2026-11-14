@@ -17,22 +17,13 @@
       "channel": "preview",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://app.gymbhai.com"
       }
     },
     "production": {
-      "channel": "production",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://app.gymbhai.com"
-      }
+      "channel": "production"
     },
     "branded": {
-      "channel": "production",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://app.gymbhai.com"
-      }
+      "channel": "production"
     }
   },
   "submit": {

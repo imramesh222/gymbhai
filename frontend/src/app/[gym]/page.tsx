@@ -46,16 +46,19 @@ export default function MemberHome() {
             stroke="#e9eef5"
             strokeWidth="12"
           />
-          <circle
-            cx="60"
-            cy="60"
-            r="52"
-            fill="none"
-            stroke={color}
-            strokeWidth="12"
-            strokeLinecap="round"
-            strokeDasharray={`${filled * RING} ${RING}`}
-          />
+          {/* Empty is no arc at all: a round cap on nothing draws a dot. */}
+          {filled > 0 && (
+            <circle
+              cx="60"
+              cy="60"
+              r="52"
+              fill="none"
+              stroke={color}
+              strokeWidth="12"
+              strokeLinecap="round"
+              strokeDasharray={`${filled * RING} ${RING}`}
+            />
+          )}
           <text
             x="60"
             y="60"

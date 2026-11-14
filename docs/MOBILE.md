@@ -129,7 +129,7 @@ The app talks to whatever `EXPO_PUBLIC_API_URL` was when it was built:
   Keep the Mac awake with `make up` running while they test.
 - **Testers anywhere**: a public HTTPS address, i.e. the staging or production
   server (`docs/DEPLOY.md`). Build with
-  `EXPO_PUBLIC_API_URL=https://app.gymbhai.com make apk`.
+  `EXPO_PUBLIC_API_URL=https://gymbhai.rawatramesh.com.np make apk`.
 
 It is signed with a test key: fine to install by hand, not for the Play Store.
 
@@ -239,10 +239,11 @@ Once: `npm install -g eas-cli`, then `eas login`, and run everything from `mobil
 | Profile | What it makes | Talks to |
 |---|---|---|
 | `development` | A development build `.apk` (like `make apk-dev`): loads code live from `npx expo start` | your Mac's dev server |
-| `preview` | A test `.apk` for testers (like `make apk`), with a download link from Expo | `https://app.gymbhai.com` |
-| `production` | The Play Store bundle (`.aab`) / App Store build | `https://app.gymbhai.com` |
+| `preview` | A test `.apk` for testers (like `make apk`), with a download link from Expo | `https://gymbhai.rawatramesh.com.np` |
+| `production` | The Play Store bundle (`.aab`) / App Store build | `https://gymbhai.rawatramesh.com.np` |
 
-`preview` and `production` point at the real domain: use them once the
+The real address is `DOMAIN` in `app.config.ts`, the one place the app has
+it. `preview` and `production` point at the real domain: use them once the
 server is deployed (`docs/DEPLOY.md`). Before that, use `make apk` or the
 `development` profile.
 
@@ -275,7 +276,7 @@ the same `version` in `app.config.ts`: a change in native code (a new Expo
 module, a permission, the icon) needs a new build, and then bump `version`.
 Updates use `EXPO_PUBLIC_API_URL` from your shell or `.env.local` when you run
 the command, so for `preview` run
-`EXPO_PUBLIC_API_URL=https://app.gymbhai.com eas update --channel preview ...`.
+`EXPO_PUBLIC_API_URL=https://gymbhai.rawatramesh.com.np eas update --channel preview ...`.
 
 ## 8. When something goes wrong
 

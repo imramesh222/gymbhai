@@ -19,9 +19,11 @@ Language = Literal["en", "ne"]
 class GymSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Chosen at sign-up; there is deliberately no default (PLAN.md §5.1).
-    plan_months: PlanMonths
-    date_display: DateDisplay
+    # How plan months are counted has deliberately no default (PLAN.md §5.1):
+    # None until the owner chooses, on Plans or the first sale, and nothing
+    # with months can be sold before then. Dates show in both to start.
+    plan_months: PlanMonths | None = None
+    date_display: DateDisplay = "both"
 
     # What happens at the door while a member owes money (§5.3).
     dues_rule: DuesRule = "warn"

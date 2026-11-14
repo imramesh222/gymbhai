@@ -463,7 +463,7 @@ export default function MemberPage() {
                 </Button>
               )}
               {can("door.check_in") && !member.is_archived && (
-                <Button variant="secondary" onClick={() => void checkIn()}>
+                <Button variant="secondary" onClick={() => checkIn()}>
                   {t("palette.checkIn")}
                 </Button>
               )}

@@ -9,6 +9,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.api.routes import (
     admin,
+    admins,
     adms,
     auth,
     branches,
@@ -86,6 +87,7 @@ ROUTERS: list[tuple[str, APIRouter]] = [
     (settings.api_v1_prefix, member_socket.router),
     (settings.api_v1_prefix, subscription.router),
     (settings.api_v1_prefix, admin.router),
+    (settings.api_v1_prefix, admins.router),
     (settings.api_v1_prefix, branded_apps.admin_router),
     (settings.api_v1_prefix, files.router),
     (settings.api_v1_prefix, receipts.router),

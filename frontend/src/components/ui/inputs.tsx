@@ -124,7 +124,7 @@ export function DateInput({
           <button
             type="button"
             onClick={() => setInBs(!inBs)}
-            className="text-xs font-medium text-brand-700 hover:underline"
+            className="-my-1 py-1 text-xs font-medium text-brand-700 hover:underline"
           >
             {inBs ? t("date.enterAd") : t("date.enterBs")}
           </button>

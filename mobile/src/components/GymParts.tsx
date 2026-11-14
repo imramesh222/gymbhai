@@ -61,16 +61,19 @@ export function GymLogo({
 
 /**
  * The top of the signed-in app: the gym's colour, deepened towards the
- * corner, its logo and name, and who is signed in.
+ * corner, its logo and name, who is signed in, and on the right `action`
+ * (the notices bell).
  */
 export function GymHeader({
   name,
   logoUrl,
   memberName,
+  action,
 }: {
   name: string;
   logoUrl: string | null;
   memberName?: string;
+  action?: React.ReactNode;
 }) {
   const brand = useBrand();
   const insets = useSafeAreaInsets();
@@ -105,6 +108,7 @@ export function GymHeader({
             </Txt>
           ) : null}
         </View>
+        {action}
       </View>
     </LinearGradient>
   );

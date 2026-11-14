@@ -142,3 +142,24 @@ test("the Date header corrects the clock the QR is drawn with", async () => {
   expect(serverNow() - Date.now()).toBeGreaterThan(4 * 60_000);
   expect(serverNow() - Date.now()).toBeLessThan(6 * 60_000);
 });
+
+test("no answer at all is no signal, not a spinner for ever", async () => {
+  jest.useFakeTimers();
+  try {
+    // A connection that hangs: only the abort ends it.
+    answers = [
+      (call) =>
+        new Promise((_, reject) =>
+          call.init.signal?.addEventListener("abort", () =>
+            reject(new TypeError("Aborted")),
+          ),
+        ),
+    ];
+    const sent = request("/api/v1/m/me", { body: {} });
+    const settled = expect(sent).rejects.toBeInstanceOf(NetworkError);
+    await jest.advanceTimersByTimeAsync(20_000);
+    await settled;
+  } finally {
+    jest.useRealTimers();
+  }
+});
