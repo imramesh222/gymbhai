@@ -1,0 +1,28 @@
+name: Mirror to GitLab
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-gitlab
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # Never forced and never deletes: a branch that has moved on its own on
+      # GitLab fails the job instead of being overwritten. origin/HEAD is a
+      # pointer, not a branch, so it is left out.
+      - name: Push every branch and tag to GitLab
+        env:
+          # A GitLab access token with the write_repository scope.
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          git push "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/ramesh2468/gymbhai.git" \
+            "refs/remotes/origin/*:refs/heads/*" "^refs/heads/HEAD" \
+            "refs/tags/*:refs/tags/*"
