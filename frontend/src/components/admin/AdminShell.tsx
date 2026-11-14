@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { Notice } from "@/components/Notice";
 import { LogoMark } from "@/components/ui/Logo";
@@ -29,6 +29,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const { me, loading, signOut, can } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const nav = useRef<HTMLElement>(null);
+
+  // On a phone, where the menu scrolls, bring the page that is open into view:
+  // "My account" sits past the edge of the screen.
+  useEffect(() => {
+    nav.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [pathname, loading]);
 
   useEffect(() => {
     if (loading) return;
@@ -54,18 +63,23 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh">
       {/* Dark, so nobody confuses our console with a gym's dashboard. */}
       <header className="bg-slate-900 text-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+        {/* On a phone the menu is one row under the name that scrolls sideways:
+            wrapped, it took four lines and a third of the screen. */}
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
           <span className="flex items-center gap-2.5">
             <LogoMark className="size-8" />
             <span className="font-semibold tracking-tight">{t("admin.title")}</span>
           </span>
-          <nav className="flex flex-wrap items-center justify-end gap-1 text-sm">
+          <nav
+            ref={nav}
+            className="no-scrollbar -mx-4 flex items-center gap-1 overflow-x-auto px-4 text-sm lg:mx-0 lg:px-0"
+          >
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 aria-current={pathname === link.href ? "page" : undefined}
-                className={`rounded-lg px-3 py-1.5 font-medium transition ${
+                className={`shrink-0 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap transition ${
                   pathname === link.href
                     ? "bg-white/10 text-white"
                     : "text-slate-300 hover:bg-white/5 hover:text-white"
@@ -80,7 +94,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 await signOut();
                 router.replace("/staff/login");
               }}
-              className="rounded-lg px-3 py-1.5 font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
+              className="shrink-0 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap text-slate-300 transition hover:bg-white/5 hover:text-white"
             >
               {t("common.signOut")}
             </button>

@@ -84,7 +84,7 @@ export default function ClassesPage() {
               {t("classes.weekOf", { date: date(from) })}
             </span>
             {tab !== "mine" && (branches.data?.length ?? 0) > 1 && (
-              <div className="ml-auto w-48">
+              <div className="w-full sm:ml-auto sm:w-48">
                 <Select
                   label={t("sale.branch")}
                   value={branchId}

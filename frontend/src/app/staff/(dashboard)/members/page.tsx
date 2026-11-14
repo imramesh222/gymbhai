@@ -12,6 +12,7 @@ import { EmptyState, ListCard, PageHeader } from "@/components/ui/Card";
 import { DataTable, type Column, type SortState } from "@/components/ui/DataTable";
 import { ExtendEveryone } from "@/components/members/ExtendEveryone";
 import { Dialog } from "@/components/ui/Dialog";
+import { FilterChips } from "@/components/ui/FilterChips";
 import { Menu } from "@/components/ui/Menu";
 import { TextArea } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
@@ -271,39 +272,17 @@ export default function MembersPage() {
         aria-label={t("members.search")}
         className="w-full rounded-xl bg-white px-4 py-3 text-base shadow-card ring-1 ring-hairline outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500"
       />
-      <div
-        role="group"
-        aria-label={t("members.filters")}
-        className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1"
-      >
-        {FILTERS.map((f) => {
-          const active = f.key === filter.key;
-          const count = counts.data?.[f.key];
-          return (
-            <button
-              key={f.key}
-              type="button"
-              aria-pressed={active}
-              onClick={() => choose(f.key)}
-              className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-                active
-                  ? "bg-brand-600 text-white shadow-brand"
-                  : "bg-white text-slate-600 shadow-card ring-1 ring-hairline hover:bg-slate-50"
-              }`}
-            >
-              {t(f.label)}
-              {count !== undefined && (
-                <>
-                  {" "}
-                  <span className={active ? "text-white/80" : "text-slate-500"}>
-                    {count}
-                  </span>
-                </>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <FilterChips
+        label={t("members.filters")}
+        className="mt-3"
+        chips={FILTERS.map((f) => ({
+          key: f.key,
+          label: t(f.label),
+          count: counts.data?.[f.key],
+        }))}
+        value={filter.key}
+        onChange={choose}
+      />
 
       {selected.size > 0 && (
         <div className="sticky top-16 z-20 mt-3 flex items-center justify-between gap-3 rounded-xl bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lifted lg:top-4">
@@ -371,8 +350,14 @@ export default function MembersPage() {
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-slate-500">
                     {m.erased_at ? m.member_code : `${m.member_code} · ${m.phone}`}
-                    {m.current && ` · ${m.current.plan_name}`}
                   </span>
+                  {/* On a line of its own: after the code and number there
+                      was room for only "· 3 …" of it. */}
+                  {m.current && (
+                    <span className="block truncate text-xs text-slate-500">
+                      {m.current.plan_name}
+                    </span>
+                  )}
                 </span>
                 <span className="shrink-0 text-right">
                   <StatusBadge status={m.status} />

@@ -40,6 +40,24 @@ def test_render_fills_known_placeholders_only() -> None:
     )
 
 
+def test_render_says_one_day_not_one_days() -> None:
+    wording = "Hi {name}, {days} days left on your {gym} membership."
+    values = {"name": "Sita", "gym": "Himalayan Fitness"}
+    # A reminder that caught up late, or a rule a gym set to one day.
+    assert render(wording, {**values, "days": 1}) == (
+        "Hi Sita, 1 day left on your Himalayan Fitness membership."
+    )
+    assert render(wording, {**values, "days": 3}) == (
+        "Hi Sita, 3 days left on your Himalayan Fitness membership."
+    )
+    # Only the words after the number change, and only for one.
+    assert render("It's been {days} days. 21 days is the record.", {"days": 1}) == (
+        "It's been 1 day. 21 days is the record."
+    )
+    # Nepali has no plural to fix.
+    assert render("{days} दिन बाँकी", {"days": 1}) == "1 दिन बाँकी"
+
+
 def transport(status: int, body: dict) -> httpx.Client:
     seen: dict = {}
 

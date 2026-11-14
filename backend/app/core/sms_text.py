@@ -17,6 +17,8 @@ _GSM = set(
 _GSM_EXTENDED = set("^{}\\[~]|€")
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+# "{days} days" in a gym's wording: one day is "1 day", not "1 days".
+_DAYS_PLURAL = re.compile(r"\{days\} days\b")
 
 # What a template may use. Unknown placeholders are left as typed, so a
 # mistake shows up in the preview instead of breaking the send.
@@ -53,6 +55,10 @@ def segments(text: str) -> int:
 
 
 def render(template: str, values: Mapping[str, object]) -> str:
+    # A reminder caught up a day or two late, or a rule set to one day.
+    if values.get("days") == 1:
+        template = _DAYS_PLURAL.sub("{days} day", template)
+
     def fill(match: re.Match[str]) -> str:
         key = match.group(1)
         return (

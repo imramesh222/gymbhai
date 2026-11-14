@@ -8,6 +8,7 @@ import { Form } from "@/components/Form";
 import { Notice } from "@/components/Notice";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
+import { FilterChips } from "@/components/ui/FilterChips";
 import { Checkbox, MoneyInput, TextArea } from "@/components/ui/inputs";
 import { Money } from "@/components/ui/Money";
 import { t, type MessageKey } from "@/i18n";
@@ -37,18 +38,15 @@ export default function PaymentRequestsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("requests.title")} subtitle={t("requests.help")} />
-      <div className="flex gap-2">
-        {(["pending", "approved", "rejected"] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setStatus(s)}
-            className={`rounded-full border px-3 py-1 text-sm ${status === s ? "border-brand-600 bg-brand-600 text-white" : "border-slate-300"}`}
-          >
-            {t(`app.request.${s}` as MessageKey)}
-          </button>
-        ))}
-      </div>
+      <FilterChips
+        label={t("members.filters")}
+        chips={(["pending", "approved", "rejected"] as const).map((s) => ({
+          key: s,
+          label: t(`app.request.${s}` as MessageKey),
+        }))}
+        value={status}
+        onChange={setStatus}
+      />
       {data?.length === 0 && <EmptyState title={t("requests.none")} />}
       {data?.map((r) => (
         <Card key={r.id}>

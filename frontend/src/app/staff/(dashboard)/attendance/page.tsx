@@ -6,6 +6,7 @@ import { useState } from "react";
 import { BarChart } from "@/components/charts/BarChart";
 import { Heatmap } from "@/components/charts/Heatmap";
 import { Card, EmptyState, PageHeader, Stat } from "@/components/ui/Card";
+import { FilterChips } from "@/components/ui/FilterChips";
 import { DateInput } from "@/components/ui/inputs";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { t } from "@/i18n";
@@ -32,6 +33,8 @@ const WEEKDAYS = [
 ] as const;
 // The heatmap's hours: when gyms are open; a visit outside them is rare.
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 5);
+// The quick ranges: the last so many days, today included.
+const RANGES = [7, 30, 90];
 
 function hourLabel(hour: number): string {
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
@@ -65,34 +68,24 @@ export default function AttendancePage() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("attendance.title")} />
-      <div
-        role="group"
-        aria-label={t("attendance.range")}
-        className="flex flex-wrap gap-2"
-      >
-        {[7, 30, 90].map((n) => {
-          const active =
-            from === addDays(todayInNepal(), -(n - 1)) && to === todayInNepal();
-          return (
-            <button
-              key={n}
-              type="button"
-              aria-pressed={active}
-              onClick={() => {
-                setFrom(addDays(todayInNepal(), -(n - 1)));
-                setTo(todayInNepal());
-              }}
-              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-                active
-                  ? "bg-brand-600 text-white shadow-brand"
-                  : "bg-white text-slate-600 shadow-card ring-1 ring-hairline hover:bg-slate-50"
-              }`}
-            >
-              {t("attendance.lastDays", { count: n })}
-            </button>
-          );
-        })}
-      </div>
+      <FilterChips
+        label={t("attendance.range")}
+        chips={RANGES.map((n) => ({
+          key: String(n),
+          label: t("attendance.lastDays", { count: n }),
+        }))}
+        value={
+          to === todayInNepal()
+            ? (RANGES.map(String).find(
+                (n) => from === addDays(todayInNepal(), -(Number(n) - 1)),
+              ) ?? null)
+            : null
+        }
+        onChange={(n) => {
+          setFrom(addDays(todayInNepal(), -(Number(n) - 1)));
+          setTo(todayInNepal());
+        }}
+      />
       <div className="grid grid-cols-2 gap-3">
         <DateInput
           label={t("payments.from")}
