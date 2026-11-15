@@ -442,6 +442,9 @@ def cancel_booking(
     """Give a place back (or leave the queue). After the gym's cut-off it's
     a late cancel. The place goes to the first in the queue."""
     lock(db, gym_class)
+    # Read after the lock: a cancel that finished meanwhile may have moved it
+    # off the waitlist, and then it holds a place to pass on.
+    db.refresh(booking)
     if booking.status == CANCELLED:
         raise AppError(409, "booking_cancelled", "This booking is already cancelled.")
     now = utcnow()

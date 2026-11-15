@@ -20,12 +20,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.tenancy import get_in_gym
 from app.core.errors import AppError
+from app.core.time import utcnow
 from app.db.base import Base
+from app.models.branded_app import APP_BUILDING, BrandedApp
+from app.models.classes import ClassBooking, GymClass
+from app.models.gym import Gym
 from app.models.member import Member
 from app.models.member_app import DUPLICATE, METHOD_MANUAL, PaymentRequest
 from app.models.membership import Membership
 from app.models.payment import Payment
-from app.services import checkins
+from app.services import branded_apps, checkins, classes
 from app.services import memberships as ms
 from app.services import payment_requests as requests_service
 from tests.conftest import (
@@ -35,6 +39,13 @@ from tests.conftest import (
     make_member,
     priced_plan,
     sell,
+)
+from tests.integration.test_classes import (
+    TOMORROW,
+    class_on,
+    member_with_plan,
+    slot_on,
+    zumba,
 )
 
 HOLD = 0.5  # how long the first transaction stays open after its write
@@ -192,6 +203,77 @@ def test_two_renewals_at_once_queue_up(sessions, gym: GymFixture) -> None:
     assert second.start_date > first.end_date
     # Only the first membership carries the admission fee.
     assert (first.admission_fee, second.admission_fee) == (500_00, 0)
+
+
+def test_leaving_the_queue_as_a_place_comes_free_passes_it_on(
+    sessions, gym: GymFixture
+) -> None:
+    """One place, two waiting. The place is given back just as the first in
+    the queue (who gets it) leaves: it goes on to the second."""
+    with sessions() as db:
+        slot = slot_on(db, gym, zumba(db, gym, places=1), TOMORROW)
+        gym_class = class_on(db, slot, TOMORROW)
+        club = db.get(Gym, gym.gym.id)
+        people = [
+            member_with_plan(db, gym, f"98120000{i}", name=f"M{i}") for i in range(3)
+        ]
+        booked, leaving, waiting = (
+            classes.book(db, club, m, gym_class).id for m in people
+        )
+        db.commit()
+        class_id = gym_class.id
+
+    def cancel(booking_id) -> Callable[[Session], ClassBooking]:
+        def run(db: Session) -> ClassBooking:
+            return classes.cancel_booking(
+                db,
+                db.get(Gym, gym.gym.id),
+                db.get(ClassBooking, booking_id),
+                db.get(GymClass, class_id),
+            )
+
+        return run
+
+    race(sessions, cancel(booked), cancel(leaving))
+
+    with sessions() as db:
+        assert db.get(ClassBooking, waiting).status == classes.BOOKED
+
+
+def test_a_gym_cant_withdraw_an_app_we_have_just_started(
+    sessions, gym: GymFixture
+) -> None:
+    with sessions() as db:
+        package, bundle = branded_apps.identifiers("race-gym")
+        row = BrandedApp(
+            gym_id=gym.gym.id,
+            app_name="Race Gym",
+            color="#1f6feb",
+            android_package=package,
+            ios_bundle_id=bundle,
+            asked_by=gym.owner.id,
+            asked_at=utcnow(),
+        )
+        db.add(row)
+        db.commit()
+        app_id = row.id
+
+    def build(db: Session) -> BrandedApp:
+        row = db.get(BrandedApp, app_id, with_for_update=True)
+        return branded_apps.admin_update(
+            db, gym.owner, row, {"status": APP_BUILDING}, None
+        )
+
+    def withdraw(db: Session) -> BrandedApp:
+        row = branded_apps.of_gym(db, gym.gym.id, for_update=True)
+        return branded_apps.withdraw(db, gym.owner, row, None)
+
+    first, second = race(sessions, build, withdraw)
+
+    assert isinstance(first, BrandedApp)
+    assert isinstance(second, AppError) and second.code == "app_started"
+    with sessions() as db:
+        assert db.get(BrandedApp, app_id).status == APP_BUILDING
 
 
 def test_the_same_payment_sent_twice_at_once_is_saved_once(

@@ -63,8 +63,14 @@ def offered(db: Session) -> bool:
     return setup is not None and monthly is not None
 
 
-def of_gym(db: Session, gym_id: uuid.UUID) -> BrandedApp | None:
-    return db.scalar(select(BrandedApp).where(BrandedApp.gym_id == gym_id))
+def of_gym(
+    db: Session, gym_id: uuid.UUID, *, for_update: bool = False
+) -> BrandedApp | None:
+    """`for_update` for every change: the gym and we both move its status."""
+    stmt = select(BrandedApp).where(BrandedApp.gym_id == gym_id)
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    return db.scalar(stmt)
 
 
 def identifiers(slug: str) -> tuple[str, str]:
@@ -88,7 +94,7 @@ def ask(
     """Ask for the app, or change what was asked while we haven't started."""
     if not offered(db):
         raise AppError(409, "app_not_offered", "Your own app isn't offered yet.")
-    row = of_gym(db, gym.id)
+    row = of_gym(db, gym.id, for_update=True)
     if row is not None and row.status not in (APP_ASKED, APP_STOPPED):
         raise AppError(
             409,

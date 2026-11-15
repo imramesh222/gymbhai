@@ -67,7 +67,8 @@ def _gym(db: Session, ctx: StaffContext) -> Gym:
 
 
 def _own(db: Session, ctx: StaffContext) -> BrandedApp:
-    row = service.of_gym(db, ctx.gym_id)
+    """Locked: only ever loaded to change it."""
+    row = service.of_gym(db, ctx.gym_id, for_update=True)
     if row is None:
         raise not_found("You haven't asked for your own app.")
     return row
@@ -106,10 +107,10 @@ async def upload_icon(
     db: Session = Depends(get_db),
     ctx: StaffContext = Depends(SETUP),
 ) -> BrandedAppRead:
-    row = _own(db, ctx)
     data = await file.read(storage.MAX_BYTES + 1)
     if len(data) > storage.MAX_BYTES:
         raise AppError(413, "file_too_large", "That file is too large.")
+    row = _own(db, ctx)
     service.set_icon(db, ctx.staff, row, data, request)
     db.commit()
     return _read(db, row)
@@ -160,8 +161,12 @@ def _admin_reads(db: Session, rows: list[BrandedApp]) -> list[AdminBrandedAppRea
     ]
 
 
-def _admin_row(db: Session, app_id: uuid.UUID) -> BrandedApp:
-    row = db.get(BrandedApp, app_id)
+def _admin_row(
+    db: Session, app_id: uuid.UUID, *, for_update: bool = False
+) -> BrandedApp:
+    row = db.get(
+        BrandedApp, app_id, with_for_update=for_update, populate_existing=for_update
+    )
     if row is None:
         raise not_found("No such app.")
     return row
@@ -183,7 +188,7 @@ def update_app(
     db: Session = Depends(get_db),
     admin: StaffUser = ADMIN,
 ) -> AdminBrandedAppRead:
-    row = _admin_row(db, app_id)
+    row = _admin_row(db, app_id, for_update=True)
     changes = payload.model_dump(exclude_unset=True)
     service.admin_update(db, admin, row, changes, request)
     db.commit()
