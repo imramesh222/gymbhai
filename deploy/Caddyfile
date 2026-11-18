@@ -1,9 +1,15 @@
 # HTTPS for GymBhai (PLAN.md §3, §13). Caddy gets and renews the certificates.
 {
 	email {$ACME_EMAIL}
+	# Behind Cloudflare Tunnel (docker-compose.tunnel.yml) the visitor's
+	# address arrives from cloudflared, which is trusted to pass it on.
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+	}
 }
 
-{$APP_DOMAIN} {
+# SITE_PREFIX "http://" behind the tunnel: Cloudflare holds the certificate.
+{$SITE_PREFIX}{$APP_DOMAIN} {
 	# Live updates (backend/app/services/live.py) are a stream, and the
 	# phone app's a WebSocket (/api/v1/m/ws, PLAN.md §17.3): never
 	# compressed, which would hold small events back, and flushed at once.
@@ -51,6 +57,6 @@
 }
 
 # The bare domain goes to the app until there is a marketing site.
-{$ROOT_DOMAIN} {
+{$SITE_PREFIX}{$ROOT_DOMAIN} {
 	redir https://{$APP_DOMAIN}{uri}
 }

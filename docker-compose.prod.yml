@@ -26,11 +26,12 @@ services:
     # Every finished WAL segment goes to R2, and a segment finishes at least
     # once a minute: a lost server loses about a minute, not a day (PLAN.md
     # §11). On the command line, not in postgresql.conf, so a restored copy
-    # never archives into the live archive.
+    # never archives into the live archive. WAL_ARCHIVE=off only while there
+    # is no bucket yet: no copy anywhere but this disk.
     command:
       - postgres
       - -c
-      - archive_mode=on
+      - archive_mode=${WAL_ARCHIVE:-on}
       - -c
       - archive_command=/usr/local/bin/pgbackrest-archive-push.sh %p
       - -c

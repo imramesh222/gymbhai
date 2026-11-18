@@ -1,0 +1,31 @@
+# A computer of our own, behind Cloudflare Tunnel: no open ports, no fixed
+# address, Cloudflare holds the certificate (docs/DEPLOY.md, "On a computer of
+# your own"). On top of the production file:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.tunnel.yml \
+#     --env-file .env.prod up -d --build
+# Set TUNNEL_TOKEN and TRUSTED_PROXY_COUNT=2 in .env.prod: Cloudflare, then
+# Caddy.
+services:
+  caddy:
+    ports: !reset []
+    environment:
+      SITE_PREFIX: "http://"
+      TRUSTED_PROXIES: private_ranges
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.6.1
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:80 run --token ${TUNNEL_TOKEN:?TUNNEL_TOKEN}
+    depends_on:
+      - caddy
+
+  # Uploads on this disk while STORAGE_BACKEND=local (no bucket yet).
+  api:
+    volumes:
+      - media:/app/media
+  worker:
+    volumes:
+      - media:/app/media
+
+volumes:
+  media:

@@ -9,7 +9,7 @@ What you need first — none of this can be done from the code:
 
 | | What | Notes |
 |---|---|---|
-| 1 | A VPS | 2 vCPU, 4 GB RAM, 40 GB disk is plenty for the pilot. Ubuntu 24.04. |
+| 1 | A VPS | 2 vCPU, 4 GB RAM, 40 GB disk is plenty for the pilot. Ubuntu 24.04. No VPS yet: §9, a computer of your own. |
 | 2 | The domain | `rawatramesh.com.np`, with DNS on Cloudflare. |
 | 3 | An S3-compatible bucket account | Cloudflare R2: two buckets, `gymbhai-files` and `gymbhai-backups`, and an API token for both. |
 | 4 | An SMS gateway account | Sparrow or Aakash, with credit. Apply for sender IDs early: approval takes time (PLAN.md §10). |
@@ -200,3 +200,33 @@ $C exec backup base-backup.sh full
 
 `latest` replays everything the archive has: about the last minute before
 the old server stopped is all that can be lost.
+
+## 9. On a computer of your own, behind Cloudflare Tunnel
+
+No VPS yet: any computer that stays on (and awake) during gym hours can run
+it. Cloudflare Tunnel brings visitors in, so no router ports are opened and
+the home connection needs no fixed address; Cloudflare holds the certificate.
+When that computer is off or offline, GymBhai is down for everyone.
+
+Once, with `cloudflared` installed (`brew install cloudflared`):
+
+```sh
+cloudflared tunnel login        # in the browser: rawatramesh.com.np → Authorize
+cloudflared tunnel create gymbhai
+cloudflared tunnel route dns gymbhai gymbhai.rawatramesh.com.np
+cloudflared tunnel token gymbhai   # → TUNNEL_TOKEN in .env.prod
+```
+
+In `.env.prod`: `TUNNEL_TOKEN`, and `TRUSTED_PROXY_COUNT=2` (Cloudflare, then
+Caddy). Without a bucket yet: `STORAGE_BACKEND=local` and `WAL_ARCHIVE=off`,
+which leave the only copy of the data on this disk, so test data only.
+
+Every command in this guide then takes the tunnel file as well:
+
+```sh
+docker compose -f docker-compose.prod.yml -f docker-compose.tunnel.yml \
+  --env-file .env.prod up -d --build db api worker web caddy cloudflared
+```
+
+`backup` is left out until there is a bucket. Keep the Mac awake with
+`caffeinate -ims`, and Docker Desktop running.
